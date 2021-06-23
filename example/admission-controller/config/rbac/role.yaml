@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: validator-role
+rules:
+# TODO: need update with more strict rules
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'

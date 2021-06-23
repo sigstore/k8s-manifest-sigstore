@@ -1,0 +1,9 @@
+
+namespace: k8s-manifest-sigstore
+
+namePrefix: k8s-manifest-
+
+resources:
+- ../common
+- ../rbac
+- ../webhook

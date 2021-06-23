@@ -1,0 +1,6 @@
+resources:
+- namespace.yaml
+- deployment.yaml
+
+configurations:
+- kustomizeconfig.yaml

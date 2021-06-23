@@ -5,6 +5,8 @@
 *.so
 *.dylib
 
+./kubectl-sigstore
+
 # Test binary, built with `go test -c`
 *.test
 
