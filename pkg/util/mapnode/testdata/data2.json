@@ -1,0 +1,157 @@
+{
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+        "creationTimestamp": "2020-03-09T05:19:11Z",
+        "generateName": "sample-go-operator-b8bb6c748-",
+        "labels": {
+            "name": "sample-go-operator",
+            "pod-template-hash": "b8bb6c748"
+        },
+        "name": "sample-go-operator-b8bb6c748-vz2m8",
+        "namespace": "test-go-operator",
+        "ownerReferences": [
+            {
+                "apiVersion": "apps/v1",
+                "blockOwnerDeletion": true,
+                "controller": true,
+                "kind": "ReplicaSet",
+                "name": "sample-go-operator-b8bb6c748",
+                "uid": "4b78a793-50f0-4a20-ba99-bebafaa60f31"
+            }
+        ],
+        "resourceVersion": "402534",
+        "selfLink": "/api/v1/namespaces/test-go-operator/pods/sample-go-operator-b8bb6c748-vz2m8",
+        "uid": "6885d94e-6fd1-40c8-847b-85fcf00abbdc"
+    },
+    "spec": {
+        "containers": [
+            {
+                "command": [
+                    "sample-go-operator"
+                ],
+                "env": [
+                    {
+                        "name": "WATCH_NAMESPACE",
+                        "valueFrom": {
+                            "fieldRef": {
+                                "apiVersion": "v1",
+                                "fieldPath": "metadata.namespace"
+                            }
+                        }
+                    },
+                    {
+                        "name": "POD_NAME",
+                        "valueFrom": {
+                            "fieldRef": {
+                                "apiVersion": "v1",
+                                "fieldPath": "metadata.name"
+                            }
+                        }
+                    },
+                    {
+                        "name": "OPERATOR_NAME",
+                        "value": "sample-go-operator"
+                    }
+                ],
+                "image": "sample-go-operator:local",
+                "imagePullPolicy": "Always",
+                "name": "sample-go-operator",
+                "resources": {},
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File",
+                "volumeMounts": [
+                    {
+                        "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                        "name": "sample-go-operator-token-lxn92",
+                        "readOnly": true
+                    }
+                ]
+            }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": true,
+        "nodeName": "minikube",
+        "priority": 0,
+        "restartPolicy": "Always",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+            "privileged": true
+        },
+        "serviceAccount": "sample-go-operator",
+        "serviceAccountName": "sample-go-operator",
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+            {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/not-ready",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+            },
+            {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/unreachable",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+            }
+        ],
+        "volumes": [
+            {
+                "name": "sample-go-operator-token-lxn92",
+                "secret": {
+                    "defaultMode": 420,
+                    "secretName": "sample-go-operator-token-lxn92"
+                }
+            }
+        ]
+    },
+    "status": {
+        "conditions": [
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2020-03-09T05:19:11Z",
+                "status": "True",
+                "type": "Initialized"
+            },
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2020-03-09T05:19:13Z",
+                "status": "True",
+                "type": "Ready"
+            },
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2020-03-09T05:19:13Z",
+                "status": "True",
+                "type": "ContainersReady"
+            },
+            {
+                "lastProbeTime": null,
+                "lastTransitionTime": "2020-03-09T05:19:11Z",
+                "status": "True",
+                "type": "PodScheduled"
+            }
+        ],
+        "containerStatuses": [
+            {
+                "containerID": "docker://a5771eba38babec412f55b728a101601beb701ee341077280036c05d5f4b605d",
+                "image": "sample-go-operator:local",
+                "imageID": "docker://sha256:9a4febf14706677aa4e71de150a0616bd2b6d28392c25a5517742aa3b540097b",
+                "lastState": {},
+                "name": "sample-go-operator",
+                "ready": true,
+                "restartCount": 0,
+                "state": {
+                    "running": {
+                        "startedAt": "2020-03-09T05:19:12Z"
+                    }
+                }
+            }
+        ],
+        "hostIP": "192.168.64.28",
+        "phase": "Running",
+        "podIP": "172.17.0.8",
+        "qosClass": "BestEffort",
+        "startTime": "2020-03-09T05:19:11Z"
+    }
+}

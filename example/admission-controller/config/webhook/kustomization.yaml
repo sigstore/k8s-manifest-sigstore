@@ -1,0 +1,22 @@
+resources:
+- webhook.yaml
+- service.yaml
+
+secretGenerator:
+- name: validator-tls
+  files:
+  - cert/tls.crt
+  - cert/tls.key
+  - cert/ca_crt
+
+vars:
+- name: WEBHOOK_CA_BUNDLE
+  objref:
+    kind: Secret
+    name: validator-tls
+    apiVersion: v1
+  fieldref:
+    fieldpath: data.ca_crt
+
+configurations:
+- kustomizeconfig.yaml

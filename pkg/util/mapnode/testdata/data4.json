@@ -1,0 +1,58 @@
+{
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+        "annotations": {
+        "signPaths": "apiVersion,kind,metadata.name,spec.template.spec.containers[].env[]",
+        "kubernetes.io/createdby": "openshift.io/dockercfg-hoge-fuga"
+        },
+        "name": "sample-operator"
+    },
+    "spec": {
+        "replicas": 1,
+        "selector": {
+        "matchLabels": {
+            "name": "sample-operator"
+        }
+        },
+        "template": {
+        "metadata": {
+            "labels": {
+            "name": "sample-operator"
+            }
+        },
+        "spec": {
+            "containers": [
+            {
+                "env": [
+                {
+                    "name": "WATCH_NAMESPACE",
+                    "valueFrom": {
+                    "fieldRef": {
+                        "fieldPath": "metadata.namespace"
+                    }
+                    }
+                },
+                {
+                    "name": "POD_NAME",
+                    "valueFrom": {
+                    "fieldRef": {
+                        "fieldPath": "metadata.name"
+                    }
+                    }
+                },
+                {
+                    "name": "OPERATOR_NAME",
+                    "value": "sample-operator"
+                }
+                ],
+                "image": "sampleregistry/sample-operator:dev",
+                "imagePullPolicy": "Always",
+                "name": "sample-operator"
+            }
+            ],
+            "serviceAccountName": "sample-operator"
+        }
+        }
+    }
+}

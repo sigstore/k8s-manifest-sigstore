@@ -1,0 +1,31 @@
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    caBundle: $(WEBHOOK_CA_BUNDLE)
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-resource
+  failurePolicy: Ignore
+  name: k8smanifest.sigstore.dev
+  namespaceSelector:
+    matchLabels:
+      k8s-manifest-sigstore: "true"
+  rules:
+  - apiGroups:
+    - ''
+    apiVersions:
+    - 'v1'
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - '*'
+  sideEffects: NoneOnDryRun
