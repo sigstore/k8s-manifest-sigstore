@@ -31,8 +31,12 @@ func TarGzCompress(src string, buf io.Writer) error {
 	zr := gzip.NewWriter(buf)
 	tw := tar.NewWriter(zr)
 
+	var errV error
 	// walk through every file in the folder
-	filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+	errV = filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		// generate tar header
 		header, err := tar.FileInfoHeader(fi, file)
 		if err != nil {
@@ -60,13 +64,17 @@ func TarGzCompress(src string, buf io.Writer) error {
 		return nil
 	})
 
+	if errV != nil {
+		return errV
+	}
+
 	// produce tar
-	if err := tw.Close(); err != nil {
-		return err
+	if errV = tw.Close(); errV != nil {
+		return errV
 	}
 	// produce gzip
-	if err := zr.Close(); err != nil {
-		return err
+	if errV = zr.Close(); errV != nil {
+		return errV
 	}
 	//
 	return nil

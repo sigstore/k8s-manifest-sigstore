@@ -29,8 +29,8 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	k8ssigutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
-	mapnode "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util/mapnode"
+	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 
 	"github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/pkg/cosign"

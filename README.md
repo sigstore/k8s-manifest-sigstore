@@ -14,7 +14,7 @@ The plugin is a standalone executable file `kubectl-sigstore`.
 
 To build this file, run the following. 
 ```
-git clone git@github.com:yuji-watanabe-jp/k8s-manifest-sigstore.git
+git clone git@github.com:sigstore/k8s-manifest-sigstore.git
 cd k8s-manifest-sigstore
 make
 ```

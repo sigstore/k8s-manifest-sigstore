@@ -20,7 +20,7 @@ import (
 	"os"
 
 	"github.com/ghodss/yaml"
-	k8ssigutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
+	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 

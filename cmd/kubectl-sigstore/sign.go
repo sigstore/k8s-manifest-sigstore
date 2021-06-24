@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/k8smanifest"
 )
 
 func NewCmdSign() *cobra.Command {

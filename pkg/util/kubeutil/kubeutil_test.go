@@ -29,7 +29,7 @@ import (
 func TestKubeConfig(t *testing.T) {
 	var err error
 	var config *rest.Config
-	config, err = GetInClusterConfig()
+	_, err = GetInClusterConfig()
 	t.Log("GetInClusterConfig(); ", err)
 
 	// config, err = GetOutOfClusterConfig()

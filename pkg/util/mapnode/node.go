@@ -160,7 +160,7 @@ func (n *Node) KeyExists(concatKey string) bool {
 }
 
 func (n *Node) DeepCopyInto(n2 *Node) {
-	copier.Copy(&n2, &n)
+	_ = copier.Copy(&n2, &n)
 }
 
 func (n *Node) Copy() *Node {
@@ -845,7 +845,7 @@ func recursiveGetByKey(m map[string]interface{}, i int, keyList []string) (inter
 	val, ok := m[key]
 	current := strings.Join(keyList[:i+1], ".")
 	if !ok {
-		return nil, errors.New(fmt.Sprintf("key `%s` not found", current))
+		return nil, fmt.Errorf("key `%s` not found", current)
 	}
 	if i == len(keyList)-1 {
 		return val, nil
@@ -867,7 +867,7 @@ func recursiveGetByKey(m map[string]interface{}, i int, keyList []string) (inter
 			return valIf, nil
 		}
 	} else {
-		return nil, errors.New(fmt.Sprintf("cannot cast `%s` to map[string]interface{}", current))
+		return nil, fmt.Errorf("cannot cast `%s` to map[string]interface{}", current)
 	}
 }
 
@@ -908,13 +908,13 @@ func splitConcatKey(concatKey string) []string {
 // extract actual diff (remove "key-only diffs" in list)
 func removeKeyDiffsInListNode(items []Difference) []Difference {
 	items2 := []Difference{}
+	re, _ := regexp.Compile(`\.\d+\.`)
 	for _, item := range items {
-		keyOk, _ := regexp.MatchString(`\.\d+\.`, item.Key)
+		keyOk := re.MatchString(item.Key)
 		valBeforeNil := (item.Values["before"] == nil)
 		valAfterNil := (item.Values["after"] == nil)
 		addThis := true
 		if keyOk && (valBeforeNil || valAfterNil) {
-			re := regexp.MustCompile(`\.\d+\.`)
 			searchKey := re.ReplaceAllString(item.Key, `\.\d+\.`)
 			for _, tmpItem := range items {
 				keyMatched, _ := regexp.MatchString(searchKey, tmpItem.Key)

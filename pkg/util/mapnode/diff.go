@@ -52,10 +52,10 @@ func (d *DiffPattern) Match(d2 *Difference) bool {
 		if reflect.DeepEqual(d.Values, d2.Values) {
 			return true
 		}
-		d1before, _ := d.Values["before"]
-		d2before, _ := d2.Values["before"]
-		d1after, _ := d.Values["after"]
-		d2after, _ := d2.Values["after"]
+		d1before := d.Values["before"]
+		d2before := d2.Values["before"]
+		d1after := d.Values["after"]
+		d2after := d2.Values["after"]
 		d1bStr, ok1 := d1before.(string)
 		d2bStr, ok2 := d2before.(string)
 		d1aStr, ok3 := d1after.(string)

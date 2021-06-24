@@ -54,8 +54,7 @@ func (ri ResourceInfo) Map() map[string]string {
 func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 
 	foundYAMLs := [][]byte{}
-	var err error
-	err = filepath.Walk(dirPath, func(fpath string, info os.FileInfo, err error) error {
+	err := filepath.Walk(dirPath, func(fpath string, info os.FileInfo, err error) error {
 		if err == nil && (path.Ext(info.Name()) == ".yaml" || path.Ext(info.Name()) == ".yml") {
 			yamlBytes, err := ioutil.ReadFile(fpath)
 			if err == nil && isK8sResourceYAML(yamlBytes) {
@@ -189,8 +188,5 @@ func matchResourceInfo(msgInfos, reqInfos map[string]string, useKeys []string) b
 func isK8sResourceYAML(data []byte) bool {
 	var obj *unstructured.Unstructured
 	err := yaml.Unmarshal(data, &obj)
-	if err == nil {
-		return true
-	}
-	return false
+	return err == nil
 }

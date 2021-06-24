@@ -65,9 +65,9 @@ func DryRunCreate(objBytes []byte, namespace string) ([]byte, error) {
 		var crdObj map[string]interface{}
 		err := json.Unmarshal(objJsonBytes, &crdObj)
 		if err == nil {
-			specMapIf, _ := crdObj["spec"]
+			specMapIf := crdObj["spec"]
 			specMap, _ := specMapIf.(map[string]interface{})
-			namesMapIf, _ := specMap["names"]
+			namesMapIf := specMap["names"]
 			namesMap, _ := namesMapIf.(map[string]interface{})
 			if namesMap["kind"] != nil {
 				namesMap["kind"] = "Sim" + namesMap["kind"].(string)
@@ -84,7 +84,7 @@ func DryRunCreate(objBytes []byte, namespace string) ([]byte, error) {
 			specMap["names"] = namesMap
 			crdObj["spec"] = specMap
 
-			metaMapIf, _ := crdObj["metadata"]
+			metaMapIf := crdObj["metadata"]
 			metaMap, _ := metaMapIf.(map[string]interface{})
 			if metaMap["name"] != nil {
 				metaMap["name"] = "sim" + metaMap["name"].(string)

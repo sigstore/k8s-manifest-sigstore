@@ -1,4 +1,4 @@
-module github.com/yuji-watanabe-jp/k8s-manifest-sigstore
+module github.com/sigstore/k8s-manifest-sigstore
 
 go 1.16
 
@@ -26,7 +26,7 @@ require (
 
 replace (
 	github.com/sigstore/cosign => github.com/sigstore/cosign v0.4.1-0.20210602105506-5cb21aa7fbf9
-	github.com/yuji-watanabe-jp/k8s-manifest-sigstore => ./
+	github.com/sigstore/k8s-manifest-sigstore => ./
 	k8s.io/api => k8s.io/api v0.19.0
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.19.0
 	k8s.io/apimachinery => k8s.io/apimachinery v0.19.0

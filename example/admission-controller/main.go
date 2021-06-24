@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"os"
 
+	k8smnfconfig "github.com/sigstore/k8s-manifest-sigstore/example/admission-controller/pkg/config"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	log "github.com/sirupsen/logrus"
-	k8smnfconfig "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/example/admission-controller/pkg/config"
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/k8smanifest"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 

@@ -85,7 +85,6 @@ func SetKubeConfig(conf *rest.Config) {
 	if conf != nil {
 		cfg = conf
 	}
-	return
 }
 
 func MatchLabels(obj metav1.Object, labelSelector *metav1.LabelSelector) (bool, error) {

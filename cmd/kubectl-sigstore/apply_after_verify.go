@@ -22,10 +22,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
+	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/k8smanifest"
-	k8ssigutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
 )
 
 func NewCmdApplyAfterVerify() *cobra.Command {

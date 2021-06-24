@@ -26,9 +26,9 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/k8smanifest"
-	k8smnfutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util/kubeutil"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
+	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

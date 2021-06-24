@@ -28,8 +28,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	k8ssigutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util/mapnode"
+	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
@@ -147,9 +147,8 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	annotationMap := map[string]interface{}{}
 	if imageRef != "" {
 		annotationMap[ImageRefAnnotationKey] = imageRef
-	} else {
-		// TODO: support annotation signature
 	}
+	// TODO: support annotation signature
 
 	signedYAMLs := [][]byte{}
 	sumErr := []string{}

@@ -32,11 +32,11 @@ func TestNode(t *testing.T) {
 	mergeTestByte2 := []byte(`{"metadata":{"namespace":"test-ns"}}`)
 
 	var testMap map[string]interface{}
-	json.Unmarshal(testMapBytes, &testMap)
+	_ = json.Unmarshal(testMapBytes, &testMap)
 	testNode, _ := NewFromMap(testMap)
 
 	var testMap2 map[string]interface{}
-	json.Unmarshal(testMap2Bytes, &testMap2)
+	_ = json.Unmarshal(testMap2Bytes, &testMap2)
 	testNode2, _ := NewFromMap(testMap2)
 
 	whitelist := []string{

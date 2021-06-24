@@ -29,9 +29,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
+	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/spf13/cobra"
-	"github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/k8smanifest"
-	k8ssigutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -155,7 +155,7 @@ func makeResourceResultTable(results []*k8smanifest.VerifyResourceResult) []byte
 	}
 	writer := new(bytes.Buffer)
 	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
-	w.Write([]byte(tableResult))
+	_, _ = w.Write([]byte(tableResult))
 	w.Flush()
 	result := writer.Bytes()
 	return result

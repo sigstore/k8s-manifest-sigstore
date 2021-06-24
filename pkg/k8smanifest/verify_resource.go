@@ -25,9 +25,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	k8ssigutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util"
-	kubeutil "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util/kubeutil"
-	mapnode "github.com/yuji-watanabe-jp/k8s-manifest-sigstore/pkg/util/mapnode"
+	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
+	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
 
 const defaultDryRunNamespace = "default"
@@ -158,7 +158,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, image v1.Image, ig
 	objBytes, _ := json.Marshal(obj.Object)
 
 	// CASE1: direct match
-	matched, diff, err = directMatch(objBytes, foundBytes)
+	matched, _, err = directMatch(objBytes, foundBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during diract match")
 	}
@@ -167,7 +167,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, image v1.Image, ig
 	}
 
 	// CASE2: dryrun create match
-	matched, diff, err = dryrunCreateMatch(objBytes, foundBytes)
+	matched, _, err = dryrunCreateMatch(objBytes, foundBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
 	}
@@ -279,31 +279,4 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult
 	}
 	return false, diff, nil
 
-}
-
-func dryrunPatchMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, error) {
-	objNode, err := mapnode.NewFromBytes(objBytes)
-	if err != nil {
-		return false, nil, errors.Wrap(err, "failed to initialize object node")
-	}
-	patchedBytes, err := kubeutil.StrategicMergePatch(objBytes, manifestBytes, "")
-	if err != nil {
-		return false, nil, errors.Wrap(err, "error during getting patched bytes")
-	}
-	patchedNode, _ := mapnode.NewFromBytes(patchedBytes)
-	nsMaskedPatchedNode := patchedNode.Mask([]string{"metadata.namespace"})
-	simPatchedObj, err := kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), defaultDryRunNamespace)
-	if err != nil {
-		return false, nil, errors.Wrap(err, "error during DryRunCreate for Patch:")
-	}
-	simNode, _ := mapnode.NewFromYamlBytes(simPatchedObj)
-	mask := CommonResourceMaskKeys
-	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
-	maskedObjNode := objNode.Mask(mask)
-	maskedSimNode := simNode.Mask(mask)
-	diff := maskedObjNode.Diff(maskedSimNode)
-	if diff == nil || diff.Size() == 0 {
-		return true, nil, nil
-	}
-	return false, diff, nil
 }

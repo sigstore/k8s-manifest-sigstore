@@ -101,7 +101,7 @@ func getYAMLsInArtifact(gzipStream io.Reader) ([][]byte, error) {
 	}
 	defer os.RemoveAll(dir)
 
-	for true {
+	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
 			break
@@ -147,5 +147,8 @@ func getYAMLsInArtifact(gzipStream io.Reader) ([][]byte, error) {
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	return foundYAMLs, nil
 }
