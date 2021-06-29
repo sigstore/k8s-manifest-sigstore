@@ -96,21 +96,32 @@ func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) 
 		}
 	}
 
-	results := []*k8smanifest.VerifyResourceResult{}
+	results := []SingleResult{}
 	for _, obj := range objs {
-		result, err := k8smanifest.VerifyResource(obj, imageRef, keyPath, vo)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			return nil
+		log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
+		vResult, err := k8smanifest.VerifyResource(obj, imageRef, keyPath, vo)
+		r := SingleResult{
+			Object: obj,
 		}
-		log.Debug("kind: ", obj.GetKind(), ", name: ", obj.GetName(), ", result: ", result)
-		results = append(results, result)
+		if err == nil {
+			r.Result = vResult
+		} else {
+			r.Error = err
+		}
+		log.Debug("result: ", r)
+		results = append(results, r)
 	}
 
 	resultTable := makeResourceResultTable(results)
 	fmt.Println(string(resultTable))
 
 	return nil
+}
+
+type SingleResult struct {
+	Object unstructured.Unstructured         `json:"obj"`
+	Result *k8smanifest.VerifyResourceResult `json:"result"`
+	Error  error                             `json:"err"`
 }
 
 func splitArgs(args []string) ([]string, []string) {
@@ -140,17 +151,30 @@ func splitArgs(args []string) ([]string, []string) {
 	return mainArgs, kubectlArgs
 }
 
-func makeResourceResultTable(results []*k8smanifest.VerifyResourceResult) []byte {
-	tableResult := "NAME\tINSCOPE\tVERIFIED\tSIGNER\tAGE\t\n"
+func makeResourceResultTable(results []SingleResult) []byte {
+	tableResult := "NAME\tINSCOPE\tVERIFIED\tSIGNER\tERROR\tAGE\t\n"
 	for _, r := range results {
+		// object
 		obj := r.Object
-		verified := strconv.FormatBool(r.Verified)
 		resName := obj.GetName()
 		resTime := obj.GetCreationTimestamp()
 		resAge := getAge(resTime)
-		inscope := strconv.FormatBool(r.InScope)
-		signer := r.Signer
-		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", resName, inscope, verified, signer, resAge)
+		// verify result
+		verified := "false"
+		inscope := "true"
+		signer := ""
+		if r.Result != nil {
+			verified = strconv.FormatBool(r.Result.Verified)
+			inscope = strconv.FormatBool(r.Result.InScope)
+			signer = r.Result.Signer
+		}
+		// error
+		errStr := ""
+		if r.Error != nil {
+			errStr = r.Error.Error()
+		}
+		// make a row string
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resName, inscope, verified, signer, errStr, resAge)
 		tableResult = fmt.Sprintf("%s%s", tableResult, line)
 	}
 	writer := new(bytes.Buffer)

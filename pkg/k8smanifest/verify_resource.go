@@ -52,11 +52,10 @@ var CommonResourceMaskKeys = []string{
 }
 
 type VerifyResourceResult struct {
-	Object   unstructured.Unstructured `json:"-"`
-	Verified bool                      `json:"verified"`
-	InScope  bool                      `json:"inScope"`
-	Signer   string                    `json:"signer"`
-	Diff     *mapnode.DiffResult       `json:"diff"`
+	Verified bool                `json:"verified"`
+	InScope  bool                `json:"inScope"`
+	Signer   string              `json:"signer"`
+	Diff     *mapnode.DiffResult `json:"diff"`
 }
 
 func (r *VerifyResourceResult) String() string {
@@ -107,7 +106,6 @@ func VerifyResource(obj unstructured.Unstructured, imageRef, keyPath string, vo 
 		}
 		if !ok {
 			return &VerifyResourceResult{
-				Object:   obj,
 				Verified: false,
 				InScope:  inScope,
 				Signer:   "",
@@ -126,7 +124,6 @@ func VerifyResource(obj unstructured.Unstructured, imageRef, keyPath string, vo 
 	}
 
 	return &VerifyResourceResult{
-		Object:   obj,
 		Verified: verified,
 		InScope:  inScope,
 		Signer:   signerName,
