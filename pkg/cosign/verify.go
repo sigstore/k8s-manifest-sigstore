@@ -31,12 +31,6 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-const (
-	tmpMessageFile     = "k8s-manifest-sigstore-message"
-	tmpCertificateFile = "k8s-manifest-sigstore-certificate"
-	tmpSignatureFile   = "k8s-manifest-sigstore-signature"
-)
-
 func VerifyImage(imageRef string, pubkeyPath *string) (bool, string, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {

@@ -22,9 +22,6 @@ import (
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 )
 
-const certBeginByte = "-----BEGIN CERTIFICATE-----"
-const certEndByte = "-----END CERTIFICATE-----"
-
 func SignImage(imageRef string, keyPath *string) error {
 	// TODO: check usecase for yaml signing
 	imageAnnotation := map[string]interface{}{}

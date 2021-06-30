@@ -42,14 +42,6 @@ const (
 	BundleAnnotationKey      = "cosign.sigstore.dev/bundle" // bundle is not supported in cosign.SignBlob() so far
 )
 
-var annotationKeyMap = map[string]string{
-	"signature":   SignatureAnnotationKey,
-	"certificate": CertificateAnnotationKey,
-	"message":     MessageAnnotationKey,
-	"bundle":      BundleAnnotationKey,
-	"imageRef":    ImageRefAnnotationKey,
-}
-
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
 
 	output := ""
