@@ -18,7 +18,6 @@ package k8smanifest
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -28,56 +27,86 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 
-	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 )
 
 const (
 	ImageRefAnnotationKey    = "cosign.sigstore.dev/imageRef"
-	SignatureAnnotationKey   = "cosign.sigstore.dev/siganture"
+	SignatureAnnotationKey   = "cosign.sigstore.dev/signature"
 	CertificateAnnotationKey = "cosign.sigstore.dev/certificate"
 	MessageAnnotationKey     = "cosign.sigstore.dev/message"
-	BundleAnnotationKey      = "cosign.sigstore.dev/bundle"
+	BundleAnnotationKey      = "cosign.sigstore.dev/bundle" // bundle is not supported in cosign.SignBlob() so far
 )
 
-func Sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool) ([]byte, error) {
+func Sign(inputDir string, so *SignOption) ([]byte, error) {
+
+	output := ""
+	if so.UpdateAnnotation {
+		output = so.Output
+	}
+
+	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath).Sign(inputDir, output)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to sign the specified content")
+	}
+
+	return signedBytes, nil
+}
+
+type Signer interface {
+	Sign(inputDir, output string) ([]byte, error)
+}
+
+func NewSigner(imageRef, keyPath string) Signer {
+	var prikeyPath *string
+	if keyPath != "" {
+		prikeyPath = &keyPath
+	}
+	if imageRef == "" {
+		// TODO: support annotation signature
+		return nil
+	} else {
+		return &ImageSigner{imageRef: imageRef, prikeyPath: prikeyPath}
+	}
+}
+
+type ImageSigner struct {
+	imageRef   string
+	prikeyPath *string
+}
+
+func (s *ImageSigner) Sign(inputDir, output string) ([]byte, error) {
 	var inputDataBuffer bytes.Buffer
 	err := k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to compress an input file/dir")
 	}
 	var signedBytes []byte
-
-	if imageRef != "" {
-		// upload files as image
-		err := uploadFileToRegistry(inputDataBuffer.Bytes(), imageRef)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to upload image with manifest")
-		}
-		// sign the image
-		err = signImage(imageRef, keyPath)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to sign image")
-		}
-		if updateAnnotation {
-			// generate a signed YAML file
-			signedBytes, err = generateSignedYAMLManifest(inputDir, imageRef, nil)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to generate a signed YAML")
-			}
-			err = ioutil.WriteFile(output, signedBytes, 0644)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to write a signed YAML into")
-			}
-		}
-	} else {
-		// TODO: support annotation signature instead of error
-		return nil, errors.New("imageRef is empty")
+	// upload files as image
+	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.imageRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
-
+	// sign the image
+	err = k8scosign.SignImage(s.imageRef, s.prikeyPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to sign image")
+	}
+	if output != "" {
+		// generate a signed YAML file
+		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate a signed YAML")
+		}
+		err = ioutil.WriteFile(output, signedBytes, 0644)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to write a signed YAML into")
+		}
+	}
 	return signedBytes, nil
 }
 
@@ -110,30 +139,6 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 	return nil
 }
 
-func signImage(imageRef, keyPath string) error {
-	// TODO: check usecase for yaml signing
-	imageAnnotation := map[string]interface{}{}
-
-	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
-	sk := false
-	idToken := ""
-
-	// TODO: handle the case that COSIGN_EXPERIMENTAL env var is not set
-
-	opt := cosigncli.SignOpts{
-		Annotations: imageAnnotation,
-		Sk:          sk,
-		IDToken:     idToken,
-	}
-
-	if keyPath != "" {
-		opt.KeyRef = keyPath
-		opt.Pf = cosigncli.GetPass
-	}
-
-	return cosigncli.SignCmd(context.Background(), opt, imageRef, true, "", false, false)
-}
-
 func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte) ([]byte, error) {
 	if imageRef == "" && len(sigMaps) == 0 {
 		return nil, errors.New("either image ref or signature infos are required for generating a signed YAML")
@@ -148,7 +153,6 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	if imageRef != "" {
 		annotationMap[ImageRefAnnotationKey] = imageRef
 	}
-	// TODO: support annotation signature
 
 	signedYAMLs := [][]byte{}
 	sumErr := []string{}

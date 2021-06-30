@@ -21,17 +21,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/spf13/cobra"
+	metatable "k8s.io/apimachinery/pkg/api/meta/table"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -87,18 +86,25 @@ func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) 
 		objs = append(objs, tmpObj)
 	}
 
-	vo := &k8smanifest.VerifyOption{}
+	vo := &k8smanifest.VerifyResourceOption{}
 	if configPath != "" {
-		vo, err = k8smanifest.LoadVerifyConfig(configPath)
+		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return nil
 		}
 	}
 
+	if imageRef != "" {
+		vo.ImageRef = imageRef
+	}
+	if keyPath != "" {
+		vo.KeyPath = keyPath
+	}
+
 	results := []*k8smanifest.VerifyResourceResult{}
 	for _, obj := range objs {
-		result, err := k8smanifest.VerifyResource(obj, imageRef, keyPath, vo)
+		result, err := k8smanifest.VerifyResource(obj, vo)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return nil
@@ -107,7 +113,7 @@ func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) 
 		results = append(results, result)
 	}
 
-	resultTable := makeResourceResultTable(results)
+	resultTable := makeResourceResultTable(objs, results)
 	fmt.Println(string(resultTable))
 
 	return nil
@@ -116,7 +122,8 @@ func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) 
 func splitArgs(args []string) ([]string, []string) {
 	mainArgs := []string{}
 	kubectlArgs := []string{}
-	mainArgsCondition := map[string]bool{
+	mainArgsConditionSingle := map[string]bool{}
+	mainArgsConditionDouble := map[string]bool{
 		"--image":  true,
 		"-i":       true,
 		"--key":    true,
@@ -129,7 +136,9 @@ func splitArgs(args []string) ([]string, []string) {
 		if skipIndex[i] {
 			continue
 		}
-		if mainArgsCondition[s] {
+		if mainArgsConditionSingle[s] {
+			mainArgs = append(mainArgs, args[i])
+		} else if mainArgsConditionDouble[s] {
 			mainArgs = append(mainArgs, args[i])
 			mainArgs = append(mainArgs, args[i+1])
 			skipIndex[i+1] = true
@@ -140,17 +149,31 @@ func splitArgs(args []string) ([]string, []string) {
 	return mainArgs, kubectlArgs
 }
 
-func makeResourceResultTable(results []*k8smanifest.VerifyResourceResult) []byte {
-	tableResult := "NAME\tINSCOPE\tVERIFIED\tSIGNER\tAGE\t\n"
-	for _, r := range results {
-		obj := r.Object
-		verified := strconv.FormatBool(r.Verified)
+// generate result bytes in a table which will be shown in output
+func makeResourceResultTable(objs []unstructured.Unstructured, results []*k8smanifest.VerifyResourceResult) []byte {
+	tableResult := "NAME\tINSCOPE\tVERIFIED\tSIGNER\tERROR\tAGE\t\n"
+	for i, r := range results {
+		// object
+		obj := objs[i]
 		resName := obj.GetName()
 		resTime := obj.GetCreationTimestamp()
 		resAge := getAge(resTime)
-		inscope := strconv.FormatBool(r.InScope)
-		signer := r.Signer
-		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", resName, inscope, verified, signer, resAge)
+		// verify result
+		verified := "false"
+		inscope := "true"
+		signer := ""
+		if r != nil {
+			verified = strconv.FormatBool(r.Verified)
+			inscope = strconv.FormatBool(r.InScope)
+			signer = r.Signer
+		}
+		// failure reason
+		reason := ""
+		if r.Diff != nil && r.Diff.Size() > 0 {
+			reason = fmt.Sprintf("diff: %s", r.Diff)
+		}
+		// make a row string
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resName, inscope, verified, signer, reason, resAge)
 		tableResult = fmt.Sprintf("%s%s", tableResult, line)
 	}
 	writer := new(bytes.Buffer)
@@ -161,11 +184,7 @@ func makeResourceResultTable(results []*k8smanifest.VerifyResourceResult) []byte
 	return result
 }
 
+// convert the timestamp info to human readable string
 func getAge(t metav1.Time) string {
-	ut := t.Time.UTC()
-	dur := time.Now().UTC().Sub(ut)
-	durStrBase := strings.Split(dur.String(), ".")[0] + "s"
-	re := regexp.MustCompile(`\d+[a-z]`)
-	age := re.FindString(durStrBase)
-	return age
+	return metatable.ConvertToHumanReadableDateType(t)
 }

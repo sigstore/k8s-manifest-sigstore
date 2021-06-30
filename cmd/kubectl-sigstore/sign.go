@@ -55,11 +55,18 @@ func NewCmdSign() *cobra.Command {
 }
 
 func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool) error {
-	if output == "" {
+	if output == "" && updateAnnotation {
 		output = inputDir + ".signed"
 	}
 
-	_, err := k8smanifest.Sign(inputDir, imageRef, keyPath, output, updateAnnotation)
+	so := &k8smanifest.SignOption{
+		ImageRef:         imageRef,
+		KeyPath:          keyPath,
+		Output:           output,
+		UpdateAnnotation: updateAnnotation,
+	}
+
+	_, err := k8smanifest.Sign(inputDir, so)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return nil
