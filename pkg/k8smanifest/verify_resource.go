@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 
@@ -50,6 +51,10 @@ var CommonResourceMaskKeys = []string{
 	"metadata.uid",
 	"status",
 }
+
+// This is common ignore fields for changes by k8s system
+//go:embed resources/known-changes.yaml
+var knownChangesBytes []byte
 
 type VerifyResourceResult struct {
 	Verified bool                `json:"verified"`
@@ -95,6 +100,10 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 			ignoreFields = fields
 		}
 	}
+	// add known k8s ignore fields
+	if ok, fields := loadKnownK8sIgnoreFields().Match(obj); ok {
+		ignoreFields = append(ignoreFields, fields...)
+	}
 
 	var manifestInRef []byte
 	manifestInRef, err = NewManifestFetcher(vo.ImageRef).Fetch(objBytes)
@@ -133,6 +142,11 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	kind := obj.GetKind()
 	name := obj.GetName()
 	namespace := obj.GetNamespace()
+	clusterScope := false
+	if namespace == "" {
+		clusterScope = true
+	}
+	isCRD := kind == "CustomResourceDefinition"
 
 	log.Debug("obj: apiVersion", apiVersion, "kind", kind, "name", name)
 	log.Debug("manifest in image:", string(manifestInImage))
@@ -157,7 +171,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	}
 
 	// CASE2: dryrun create match
-	matched, diff, err = dryrunCreateMatch(objBytes, foundBytes)
+	matched, diff, err = dryrunCreateMatch(objBytes, foundBytes, clusterScope, isCRD)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
 	}
@@ -167,7 +181,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 
 	// CASE3: dryrun apply match
 	if checkDryRunForApply {
-		matched, diff, err = dryrunApplyMatch(objBytes, foundBytes)
+		matched, diff, err = dryrunApplyMatch(objBytes, foundBytes, clusterScope, isCRD)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during dryrun apply match")
 		}
@@ -216,7 +230,7 @@ func directMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, err
 	return false, diff, nil
 }
 
-func dryrunCreateMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, error) {
+func dryrunCreateMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) (bool, *mapnode.DiffResult, error) {
 	objNode, err := mapnode.NewFromBytes(objBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize object node")
@@ -226,7 +240,12 @@ func dryrunCreateMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResul
 		return false, nil, errors.Wrap(err, "failed to initialize manifest node")
 	}
 	nsMaskedManifestBytes := mnfNode.Mask([]string{"metadata.namespace"}).ToYaml()
-	simBytes, err := kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), defaultDryRunNamespace)
+	var simBytes []byte
+	if clusterScope {
+		simBytes, err = kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), "")
+	} else {
+		simBytes, err = kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), defaultDryRunNamespace)
+	}
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to dryrun with the found YAML in image")
 	}
@@ -236,6 +255,12 @@ func dryrunCreateMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResul
 	}
 	mask := CommonResourceMaskKeys
 	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
+	if isCRD {
+		mask = append(mask, "spec.names.kind")
+		mask = append(mask, "spec.names.listKind")
+		mask = append(mask, "spec.names.singular")
+		mask = append(mask, "spec.names.plural")
+	}
 	maskedObjNode := objNode.Mask(mask)
 	maskedSimNode := simNode.Mask(mask)
 	diff := maskedObjNode.Diff(maskedSimNode)
@@ -245,7 +270,7 @@ func dryrunCreateMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResul
 	return false, diff, nil
 }
 
-func dryrunApplyMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, error) {
+func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) (bool, *mapnode.DiffResult, error) {
 	objNode, err := mapnode.NewFromBytes(objBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize object node")
@@ -253,17 +278,28 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult
 	objNamespace := objNode.GetString("metadata.namespace")
 	_, patchedBytes, err := kubeutil.GetApplyPatchBytes(manifestBytes, objNamespace)
 	if err != nil {
-		return false, nil, errors.Wrap(err, "error during getting patched bytes")
+		return false, nil, errors.Wrap(err, "error during getting applied bytes")
 	}
 	patchedNode, _ := mapnode.NewFromBytes(patchedBytes)
 	nsMaskedPatchedNode := patchedNode.Mask([]string{"metadata.namespace"})
-	simPatchedObj, err := kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), defaultDryRunNamespace)
+	var simPatchedObj []byte
+	if clusterScope {
+		simPatchedObj, err = kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), "")
+	} else {
+		simPatchedObj, err = kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), defaultDryRunNamespace)
+	}
 	if err != nil {
-		return false, nil, errors.Wrap(err, "error during DryRunCreate for Patch")
+		return false, nil, errors.Wrap(err, "error during DryRunCreate for apply")
 	}
 	simNode, _ := mapnode.NewFromYamlBytes(simPatchedObj)
 	mask := CommonResourceMaskKeys
 	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
+	if isCRD {
+		mask = append(mask, "spec.names.kind")
+		mask = append(mask, "spec.names.listKind")
+		mask = append(mask, "spec.names.singular")
+		mask = append(mask, "spec.names.plural")
+	}
 	maskedObjNode := objNode.Mask(mask)
 	maskedSimNode := simNode.Mask(mask)
 	diff := maskedObjNode.Diff(maskedSimNode)
@@ -272,4 +308,14 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult
 	}
 	return false, diff, nil
 
+}
+
+func loadKnownK8sIgnoreFields() ObjectFieldBindingList {
+	var empty ObjectFieldBindingList
+	var knownK8sIgnoreOption *verifyOption
+	err := yaml.Unmarshal(knownChangesBytes, &knownK8sIgnoreOption)
+	if err != nil {
+		return empty
+	}
+	return knownK8sIgnoreOption.IgnoreFields
 }
