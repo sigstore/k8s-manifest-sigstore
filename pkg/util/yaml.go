@@ -69,6 +69,19 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 	return foundYAMLs, nil
 }
 
+func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
+	var obj *unstructured.Unstructured
+	err := yaml.Unmarshal(objBytes, &obj)
+	if err != nil {
+		return false, nil
+	}
+	apiVersion := obj.GetAPIVersion()
+	kind := obj.GetKind()
+	name := obj.GetName()
+	namespace := obj.GetNamespace()
+	return FindSingleYaml(concatYamlBytes, apiVersion, kind, name, namespace)
+}
+
 func FindSingleYaml(concatYamlBytes []byte, apiVersion, kind, name, namespace string) (bool, []byte) {
 	gv, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {

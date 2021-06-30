@@ -32,12 +32,13 @@ func NewCmdVerify() *cobra.Command {
 	var imageRef string
 	var filename string
 	var keyPath string
+	var configPath string
 	cmd := &cobra.Command{
 		Use:   "verify -f <YAMLFILE> [-i <IMAGE>]",
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := verify(filename, imageRef, keyPath)
+			err := verify(filename, imageRef, keyPath, configPath)
 			if err != nil {
 				return err
 			}
@@ -48,11 +49,12 @@ func NewCmdVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "file name which will be signed (if dir, all YAMLs inside it will be signed)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
+	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 
 	return cmd
 }
 
-func verify(filename, imageRef, keyPath string) error {
+func verify(filename, imageRef, keyPath, configPath string) error {
 	manifest, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -67,7 +69,22 @@ func verify(filename, imageRef, keyPath string) error {
 	log.Debug("annotations", annotations)
 	log.Debug("imageRef", imageRef)
 
-	result, err := k8smanifest.Verify(manifest, imageRef, keyPath)
+	vo := &k8smanifest.VerifyManifestOption{}
+	if configPath != "" {
+		vo, err = k8smanifest.LoadVerifyManifestConfig(configPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return nil
+		}
+	}
+	if imageRef != "" {
+		vo.ImageRef = imageRef
+	}
+	if keyPath != "" {
+		vo.KeyPath = keyPath
+	}
+
+	result, err := k8smanifest.VerifyManifest(manifest, vo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return nil

@@ -21,26 +21,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/ghodss/yaml"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	metatable "k8s.io/apimachinery/pkg/api/meta/table"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+const (
+	resultAPIVersion = "cosign.sigstore.dev/v1alpha1" // use this only for output result as json/yaml
+	resultKind       = "VerifyResourceResult"         // use this only for output result as json/yaml
+)
+
+var supportedOutputFormat = map[string]bool{"json": true, "yaml": true}
 
 func NewCmdVerifyResource() *cobra.Command {
 
 	var imageRef string
 	var keyPath string
 	var configPath string
+	var outputFormat string
 	cmd := &cobra.Command{
 		Use:   "verify-resource -f <YAMLFILE> [-i <IMAGE>]",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -48,7 +57,7 @@ func NewCmdVerifyResource() *cobra.Command {
 			fullArgs := getOriginalFullArgs("verify-resource")
 			_, kubeGetArgs := splitArgs(fullArgs)
 
-			err := verifyResource(kubeGetArgs, imageRef, keyPath, configPath)
+			err := verifyResource(kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
 			if err != nil {
 				return err
 			}
@@ -60,11 +69,18 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
+	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
 	return cmd
 }
 
-func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) error {
+func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+	if outputFormat != "" {
+		if !supportedOutputFormat[outputFormat] {
+			return fmt.Errorf("`%s` is not supported output format", outputFormat)
+		}
+	}
+
 	kArgs := []string{"get", "--output", "json"}
 	kArgs = append(kArgs, kubeGetArgs...)
 	log.Debug("kube get args", strings.Join(kArgs, " "))
@@ -87,19 +103,26 @@ func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) 
 		objs = append(objs, tmpObj)
 	}
 
-	vo := &k8smanifest.VerifyOption{}
+	vo := &k8smanifest.VerifyResourceOption{}
 	if configPath != "" {
-		vo, err = k8smanifest.LoadVerifyConfig(configPath)
+		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return nil
 		}
 	}
 
+	if imageRef != "" {
+		vo.ImageRef = imageRef
+	}
+	if keyPath != "" {
+		vo.KeyPath = keyPath
+	}
+
 	results := []SingleResult{}
 	for _, obj := range objs {
 		log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
-		vResult, err := k8smanifest.VerifyResource(obj, imageRef, keyPath, vo)
+		vResult, err := k8smanifest.VerifyResource(obj, vo)
 		r := SingleResult{
 			Object: obj,
 		}
@@ -112,35 +135,42 @@ func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath string) 
 		results = append(results, r)
 	}
 
-	resultTable := makeResourceResultTable(results)
-	fmt.Println(string(resultTable))
+	var resultBytes []byte
+	if outputFormat == "" {
+		resultBytes = makeResourceResultTable(results)
+	} else if outputFormat == "json" {
+		resultBytes, _ = json.MarshalIndent(VerifyResourceResult(results), "", "    ") // pretty print json as well as kubectl get -o json
+	} else if outputFormat == "yaml" {
+		resultBytes, _ = yaml.Marshal(VerifyResourceResult(results))
+	}
+
+	fmt.Println(string(resultBytes))
 
 	return nil
-}
-
-type SingleResult struct {
-	Object unstructured.Unstructured         `json:"obj"`
-	Result *k8smanifest.VerifyResourceResult `json:"result"`
-	Error  error                             `json:"err"`
 }
 
 func splitArgs(args []string) ([]string, []string) {
 	mainArgs := []string{}
 	kubectlArgs := []string{}
-	mainArgsCondition := map[string]bool{
+	mainArgsConditionSingle := map[string]bool{}
+	mainArgsConditionDouble := map[string]bool{
 		"--image":  true,
 		"-i":       true,
 		"--key":    true,
 		"-k":       true,
 		"--config": true,
 		"-c":       true,
+		"--output": true,
+		"-o":       true,
 	}
 	skipIndex := map[int]bool{}
 	for i, s := range args {
 		if skipIndex[i] {
 			continue
 		}
-		if mainArgsCondition[s] {
+		if mainArgsConditionSingle[s] {
+			mainArgs = append(mainArgs, args[i])
+		} else if mainArgsConditionDouble[s] {
 			mainArgs = append(mainArgs, args[i])
 			mainArgs = append(mainArgs, args[i+1])
 			skipIndex[i+1] = true
@@ -151,6 +181,7 @@ func splitArgs(args []string) ([]string, []string) {
 	return mainArgs, kubectlArgs
 }
 
+// generate result bytes in a table which will be shown in output
 func makeResourceResultTable(results []SingleResult) []byte {
 	tableResult := "NAME\tINSCOPE\tVERIFIED\tSIGNER\tERROR\tAGE\t\n"
 	for _, r := range results {
@@ -168,13 +199,16 @@ func makeResourceResultTable(results []SingleResult) []byte {
 			inscope = strconv.FormatBool(r.Result.InScope)
 			signer = r.Result.Signer
 		}
-		// error
-		errStr := ""
+		// failure reason
+		reason := ""
 		if r.Error != nil {
-			errStr = r.Error.Error()
+			reason = r.Error.Error()
+			reason = strings.Split(reason, ":")[0]
+		} else if r.Result.Diff != nil && r.Result.Diff.Size() > 0 {
+			reason = fmt.Sprintf("diff: %s", r.Result.Diff)
 		}
 		// make a row string
-		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resName, inscope, verified, signer, errStr, resAge)
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resName, inscope, verified, signer, reason, resAge)
 		tableResult = fmt.Sprintf("%s%s", tableResult, line)
 	}
 	writer := new(bytes.Buffer)
@@ -185,11 +219,100 @@ func makeResourceResultTable(results []SingleResult) []byte {
 	return result
 }
 
+// convert the timestamp info to human readable string
 func getAge(t metav1.Time) string {
-	ut := t.Time.UTC()
-	dur := time.Now().UTC().Sub(ut)
-	durStrBase := strings.Split(dur.String(), ".")[0] + "s"
-	re := regexp.MustCompile(`\d+[a-z]`)
-	age := re.FindString(durStrBase)
-	return age
+	return metatable.ConvertToHumanReadableDateType(t)
+}
+
+type SingleResult struct {
+	Object unstructured.Unstructured         `json:"-"`
+	Result *k8smanifest.VerifyResourceResult `json:"result"`
+	Error  error                             `json:"-"`
+}
+
+type VerifyResourceResult []SingleResult
+
+// SingleResult contains a target object itself, but it is too much to show result.
+// So only corev1.ObjectReference will be shown in an output.
+func (r SingleResult) MarshalJSON() ([]byte, error) {
+	objRef := obj2ref(r.Object)
+	errStr := ""
+	if r.Error != nil {
+		errStr = r.Error.Error()
+	}
+	return json.Marshal(&struct {
+		Object corev1.ObjectReference            `json:"object"`
+		Result *k8smanifest.VerifyResourceResult `json:"result"`
+		Error  string                            `json:"error"`
+	}{
+		Object: objRef,
+		Result: r.Result,
+		Error:  errStr,
+	})
+}
+
+// SingleResult contains a target object itself, but it is too much to show result.
+// So only corev1.ObjectReference will be shown in an output.
+func (r SingleResult) MarshalYAML() ([]byte, error) {
+	objRef := obj2ref(r.Object)
+	errStr := ""
+	if r.Error != nil {
+		errStr = r.Error.Error()
+	}
+	return yaml.Marshal(&struct {
+		Object corev1.ObjectReference            `json:"object"`
+		Result *k8smanifest.VerifyResourceResult `json:"result"`
+		Error  string                            `json:"error"`
+	}{
+		Object: objRef,
+		Result: r.Result,
+		Error:  errStr,
+	})
+}
+
+// VerifyResourceResult is a wrapper for list of SingleResult,
+// and it will be output as a k8s resource for consistency with kubectl get xxxx -o json
+func (r VerifyResourceResult) MarshalJSON() ([]byte, error) {
+	results := []SingleResult{}
+	for _, sr := range r {
+		results = append(results, sr)
+	}
+	return json.Marshal(&struct {
+		APIVersion string         `json:"apiVersion"`
+		Kind       string         `json:"kind"`
+		Results    []SingleResult `json:"results"`
+	}{
+		APIVersion: resultAPIVersion,
+		Kind:       resultKind,
+		Results:    results,
+	})
+}
+
+// VerifyResourceResult is a wrapper for list of SingleResult,
+// and it will be output as a k8s resource for consistency with kubectl get xxxx -o yaml
+func (r VerifyResourceResult) MarshalYAML() ([]byte, error) {
+	results := []SingleResult{}
+	for _, sr := range r {
+		results = append(results, sr)
+	}
+	return yaml.Marshal(&struct {
+		APIVersion string         `json:"apiVersion"`
+		Kind       string         `json:"kind"`
+		Results    []SingleResult `json:"results"`
+	}{
+		APIVersion: resultAPIVersion,
+		Kind:       resultKind,
+		Results:    results,
+	})
+}
+
+func obj2ref(obj unstructured.Unstructured) corev1.ObjectReference {
+	return corev1.ObjectReference{
+		Kind:            obj.GetKind(),
+		Namespace:       obj.GetNamespace(),
+		Name:            obj.GetName(),
+		UID:             obj.GetUID(),
+		APIVersion:      obj.GetAPIVersion(),
+		ResourceVersion: obj.GetResourceVersion(),
+	}
 }

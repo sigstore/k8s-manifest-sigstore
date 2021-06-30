@@ -14,26 +14,28 @@
 // limitations under the License.
 //
 
-package main
+package util
 
 import (
-	"os"
-
-	log "github.com/sirupsen/logrus"
+	"bytes"
+	"compress/gzip"
+	"io/ioutil"
 )
 
-func init() {
-	rootCmd.AddCommand(NewCmdSign())
-	rootCmd.AddCommand(NewCmdVerify())
-	rootCmd.AddCommand(NewCmdVerifyResource())
-	rootCmd.AddCommand(NewCmdApplyAfterVerify())
-
-	log.SetLevel(log.InfoLevel)
+func GzipCompress(in []byte) []byte {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	_, _ = writer.Write(in)
+	writer.Close()
+	return buffer.Bytes()
 }
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+func GzipDecompress(in []byte) []byte {
+	reader := bytes.NewReader(in)
+	gzreader, _ := gzip.NewReader(reader)
+	out, err := ioutil.ReadAll(gzreader)
+	if err != nil {
+		return in
 	}
-	os.Exit(0)
+	return out
 }

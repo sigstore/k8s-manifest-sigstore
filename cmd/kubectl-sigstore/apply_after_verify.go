@@ -33,6 +33,7 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 	var imageRef string
 	var filename string
 	var keyPath string
+	var configPath string
 	cmd := &cobra.Command{
 		Use:   "apply-after-verify -f <YAMLFILE> [-i <IMAGE>]",
 		Short: "A command to apply Kubernetes YAML manifests only after verifying signature",
@@ -42,7 +43,7 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 			if filename != "" {
 				kubeApplyArgs = append(kubeApplyArgs, []string{"--filename", filename}...)
 			}
-			err := applyAfterVerify(filename, imageRef, keyPath, kubeApplyArgs)
+			err := applyAfterVerify(filename, imageRef, keyPath, configPath, kubeApplyArgs)
 			if err != nil {
 				return err
 			}
@@ -54,11 +55,12 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "file name which will be signed (if dir, all YAMLs inside it will be signed)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
+	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 
 	return cmd
 }
 
-func applyAfterVerify(filename, imageRef, keyPath string, kubeApplyArgs []string) error {
+func applyAfterVerify(filename, imageRef, keyPath, configPath string, kubeApplyArgs []string) error {
 	manifest, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -73,7 +75,22 @@ func applyAfterVerify(filename, imageRef, keyPath string, kubeApplyArgs []string
 	log.Debug("annotations", annotations)
 	log.Debug("imageRef", imageRef)
 
-	result, err := k8smanifest.Verify(manifest, imageRef, keyPath)
+	vo := &k8smanifest.VerifyManifestOption{}
+	if configPath != "" {
+		vo, err = k8smanifest.LoadVerifyManifestConfig(configPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return nil
+		}
+	}
+	if imageRef != "" {
+		vo.ImageRef = imageRef
+	}
+	if keyPath != "" {
+		vo.KeyPath = keyPath
+	}
+
+	result, err := k8smanifest.VerifyManifest(manifest, vo)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return nil
@@ -114,20 +131,25 @@ func getOriginalFullArgs(separator string) []string {
 func splitApplyArgs(args []string) ([]string, []string) {
 	mainArgs := []string{}
 	kubectlArgs := []string{}
-	mainArgsCondition := map[string]bool{
+	mainArgsConditionSingle := map[string]bool{}
+	mainArgsConditionDouble := map[string]bool{
 		"--filename": true,
 		"-f":         true,
 		"--image":    true,
 		"-i":         true,
 		"--key":      true,
 		"-k":         true,
+		"--config":   true,
+		"-c":         true,
 	}
 	skipIndex := map[int]bool{}
 	for i, s := range args {
 		if skipIndex[i] {
 			continue
 		}
-		if mainArgsCondition[s] {
+		if mainArgsConditionSingle[s] {
+			mainArgs = append(mainArgs, args[i])
+		} else if mainArgsConditionDouble[s] {
 			mainArgs = append(mainArgs, args[i])
 			mainArgs = append(mainArgs, args[i+1])
 			skipIndex[i+1] = true
