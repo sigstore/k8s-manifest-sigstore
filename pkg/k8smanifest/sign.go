@@ -39,7 +39,7 @@ const (
 	SignatureAnnotationKey   = "cosign.sigstore.dev/signature"
 	CertificateAnnotationKey = "cosign.sigstore.dev/certificate"
 	MessageAnnotationKey     = "cosign.sigstore.dev/message"
-	BundleAnnotationKey      = "cosign.sigstore.dev/bundle" // bundle is not supported in cosign.SignBlob() so far
+	BundleAnnotationKey      = "cosign.sigstore.dev/bundle" // bundle is not supported in cosign.SignBlob() yet
 )
 
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
