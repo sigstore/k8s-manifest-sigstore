@@ -60,6 +60,7 @@ type VerifyResourceResult struct {
 	Verified bool                `json:"verified"`
 	InScope  bool                `json:"inScope"`
 	Signer   string              `json:"signer"`
+	SigRef   string              `json:"sigRef"`
 	Diff     *mapnode.DiffResult `json:"diff"`
 }
 
@@ -75,6 +76,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	verified := false
 	inScope := true // assume that input resource is in scope in verify-resource
 	signerName := ""
+	sigRef := ""
 	var err error
 
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
@@ -84,6 +86,9 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		if found {
 			vo.ImageRef = annoImageRef
 		}
+	}
+	if vo.ImageRef != "" {
+		sigRef = vo.ImageRef
 	}
 
 	// check if the resource should be skipped or not
@@ -132,6 +137,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		Verified: verified,
 		InScope:  inScope,
 		Signer:   signerName,
+		SigRef:   sigRef,
 		Diff:     diff,
 	}, nil
 }
