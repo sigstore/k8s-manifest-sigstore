@@ -20,11 +20,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ghodss/yaml"
@@ -50,6 +52,9 @@ func NewCmdVerifyResource() *cobra.Command {
 	var keyPath string
 	var configPath string
 	var outputFormat string
+	var stdinYAMLs [][]byte
+	var doGet bool
+	var namespace string
 	cmd := &cobra.Command{
 		Use:   "verify-resource -f <YAMLFILE> [-i <IMAGE>]",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -57,9 +62,15 @@ func NewCmdVerifyResource() *cobra.Command {
 			fullArgs := getOriginalFullArgs("verify-resource")
 			_, kubeGetArgs := splitArgs(fullArgs)
 
-			err := verifyResource(kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
+			var err error
+			stdinYAMLs, err = readStdinAsYAMLs()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to read stdin as resource YAMLs")
+			}
+
+			err = verifyResource(stdinYAMLs, doGet, namespace, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
+			if err != nil {
+				return errors.Wrap(err, "failed to verify resource")
 			}
 			return nil
 		},
@@ -68,41 +79,87 @@ func NewCmdVerifyResource() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
+	cmd.PersistentFlags().BoolVarP(&doGet, "get", "g", false, "whether to get resources in cluster")
+	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "namespace to get resources")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
 	return cmd
 }
 
-func verifyResource(kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+func verifyResource(yamls [][]byte, doGet bool, namespace string, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
 			return fmt.Errorf("`%s` is not supported output format", outputFormat)
 		}
 	}
 
-	kArgs := []string{"get", "--output", "json"}
-	kArgs = append(kArgs, kubeGetArgs...)
-	log.Debug("kube get args", strings.Join(kArgs, " "))
-	resultJSON, err := k8ssigutil.CmdExec("kubectl", kArgs...)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		return nil
-	}
-	var tmpObj unstructured.Unstructured
-	err = json.Unmarshal([]byte(resultJSON), &tmpObj)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		return nil
-	}
 	objs := []unstructured.Unstructured{}
-	if tmpObj.IsList() {
-		tmpList, _ := tmpObj.ToList()
-		objs = append(objs, tmpList.Items...)
+	if yamls == nil {
+		kArgs := []string{"get", "--output", "json"}
+		kArgs = append(kArgs, kubeGetArgs...)
+		log.Debug("kube get args", strings.Join(kArgs, " "))
+		resultJSON, err := k8ssigutil.CmdExec("kubectl", kArgs...)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return nil
+		}
+		var tmpObj unstructured.Unstructured
+		err = json.Unmarshal([]byte(resultJSON), &tmpObj)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return nil
+		}
+
+		if tmpObj.IsList() {
+			tmpList, _ := tmpObj.ToList()
+			objs = append(objs, tmpList.Items...)
+		} else {
+			objs = append(objs, tmpObj)
+		}
 	} else {
-		objs = append(objs, tmpObj)
+		sumErr := []string{}
+		for _, objyaml := range yamls {
+			var tmpObj unstructured.Unstructured
+			tmpErr := yaml.Unmarshal(objyaml, &tmpObj)
+			if tmpErr != nil {
+				sumErr = append(sumErr, tmpErr.Error())
+			}
+			objs = append(objs, tmpObj)
+		}
+		if len(objs) == 0 && len(sumErr) > 0 {
+			fmt.Fprintln(os.Stderr, fmt.Errorf("failed to read stdin data as resource YAMLs: %s", strings.Join(sumErr, "; ")))
+			return nil
+		}
+
+		if doGet {
+			objsInCluster := []unstructured.Unstructured{}
+			for _, obj := range objs {
+				args := []string{"get", "--output", "json"}
+				if namespace != "" {
+					args = append(args, "--namespace")
+					args = append(args, namespace)
+				}
+				args = append(args, obj.GetKind())
+				args = append(args, obj.GetName())
+				objJSON, err := k8ssigutil.CmdExec("kubectl", args...)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err.Error())
+					return nil
+				}
+				var tmpObj unstructured.Unstructured
+				err = yaml.Unmarshal([]byte(objJSON), &tmpObj)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err.Error())
+					return nil
+				}
+				objsInCluster = append(objsInCluster, tmpObj)
+			}
+			objs = objsInCluster
+		}
 	}
 
+	var err error
 	vo := &k8smanifest.VerifyResourceOption{}
 	if configPath != "" {
 		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
@@ -181,9 +238,42 @@ func splitArgs(args []string) ([]string, []string) {
 	return mainArgs, kubectlArgs
 }
 
+func readStdinAsYAMLs() ([][]byte, error) {
+	stdinBytes, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, err
+	}
+
+	yamls := [][]byte{}
+	if k8ssigutil.IsConcatYAMLs(stdinBytes) {
+		yamls = k8ssigutil.SplitConcatYAMLs(stdinBytes)
+	} else {
+		var tmpObj unstructured.Unstructured
+		err = yaml.Unmarshal(stdinBytes, &tmpObj)
+		if err != nil {
+			return nil, err
+		}
+
+		if tmpObj.IsList() {
+			objList, _ := tmpObj.ToList()
+			for _, obj := range objList.Items {
+				objYAML, _ := yaml.Marshal(obj.Object)
+				yamls = append(yamls, objYAML)
+			}
+		} else {
+			yamls = append(yamls, stdinBytes)
+		}
+	}
+
+	if len(yamls) == 0 {
+		return nil, nil
+	}
+	return yamls, nil
+}
+
 // generate result bytes in a table which will be shown in output
 func makeResourceResultTable(results []SingleResult) []byte {
-	tableResult := "NAME\tVALID\tSIGNER\tSIG_REF\tERROR\tAGE\t\n"
+	tableResult := "KIND\tNAME\tVALID\tSIGNER\tSIG_REF\tERROR\tAGE\t\n"
 	for _, r := range results {
 		// if it is out of scope (=skipped by config), skip to show it too
 		inscope := true
@@ -197,6 +287,7 @@ func makeResourceResultTable(results []SingleResult) []byte {
 		// object
 		obj := r.Object
 		resName := obj.GetName()
+		resKind := obj.GetKind()
 		resTime := obj.GetCreationTimestamp()
 		resAge := getAge(resTime)
 		// verify result
@@ -218,7 +309,7 @@ func makeResourceResultTable(results []SingleResult) []byte {
 			reason = fmt.Sprintf("diff: %s", r.Result.Diff)
 		}
 		// make a row string
-		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resName, valid, signer, sigRef, reason, resAge)
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, signer, sigRef, reason, resAge)
 		tableResult = fmt.Sprintf("%s%s", tableResult, line)
 	}
 	writer := new(bytes.Buffer)
