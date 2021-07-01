@@ -22,13 +22,34 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const logLevelEnvKey = "K8S_MANIFEST_SIGSTORE_LOG_LEVEL"
+
+var logLevelMap = map[string]log.Level{
+	"panic": log.PanicLevel,
+	"fatal": log.FatalLevel,
+	"error": log.ErrorLevel,
+	"warn":  log.WarnLevel,
+	"info":  log.InfoLevel,
+	"debug": log.DebugLevel,
+	"trace": log.TraceLevel,
+}
+
 func init() {
 	rootCmd.AddCommand(NewCmdSign())
 	rootCmd.AddCommand(NewCmdVerify())
 	rootCmd.AddCommand(NewCmdVerifyResource())
 	rootCmd.AddCommand(NewCmdApplyAfterVerify())
 
-	log.SetLevel(log.InfoLevel)
+	logLevelStr := os.Getenv(logLevelEnvKey)
+	if logLevelStr == "" {
+		logLevelStr = "info"
+	}
+	logLevel, ok := logLevelMap[logLevelStr]
+	if !ok {
+		logLevel = log.InfoLevel
+	}
+
+	log.SetLevel(logLevel)
 }
 
 func main() {
