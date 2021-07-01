@@ -24,10 +24,39 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-type VerifyOption struct {
-	SkipObjects  ObjectReferenceList    `json:"skipObjects,omitempty"`
+// option for Sign()
+type SignOption struct {
+	// these options should be input from CLI arguments
+	KeyPath          string `json:"-"`
+	ImageRef         string `json:"-"`
+	Output           string `json:"-"`
+	UpdateAnnotation bool   `json:"-"`
+}
+
+// option for VerifyResource()
+type VerifyResourceOption struct {
+	verifyOption `json:""`
+	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
+
+	CheckDryRunForApply bool `json:"-"`
+}
+
+// option for VerifyManifest()
+type VerifyManifestOption struct {
+	verifyOption `json:""`
+}
+
+// common options for verify functions
+// this verifyOption should not be used directly by those functions
+type verifyOption struct {
 	IgnoreFields ObjectFieldBindingList `json:"ignoreFields,omitempty"`
 	Signers      SignerList             `json:"signers,omitempty"`
+
+	// these options should be input from CLI arguments
+	KeyPath  string `json:"-"`
+	ImageRef string `json:"-"`
+	UseCache bool   `json:"-"`
+	CacheDir string `json:"-"`
 }
 
 type ObjectReference struct {
@@ -122,12 +151,25 @@ func (l SignerList) Match(signerName string) bool {
 	return false
 }
 
-func LoadVerifyConfig(fpath string) (*VerifyOption, error) {
+func LoadVerifyManifestConfig(fpath string) (*VerifyManifestOption, error) {
 	cfgBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		return nil, err
 	}
-	var option *VerifyOption
+	var option *VerifyManifestOption
+	err = yaml.Unmarshal(cfgBytes, &option)
+	if err != nil {
+		return nil, err
+	}
+	return option, nil
+}
+
+func LoadVerifyResourceConfig(fpath string) (*VerifyResourceOption, error) {
+	cfgBytes, err := os.ReadFile(fpath)
+	if err != nil {
+		return nil, err
+	}
+	var option *VerifyResourceOption
 	err = yaml.Unmarshal(cfgBytes, &option)
 	if err != nil {
 		return nil, err
