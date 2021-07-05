@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -44,6 +45,10 @@ const (
 	resultKind       = "VerifyResourceResult"         // use this only for output result as json/yaml
 )
 
+// This is common ignore fields for changes by k8s system
+//go:embed resources/default-config.yaml
+var defaultConfigBytes []byte
+
 var supportedOutputFormat = map[string]bool{"json": true, "yaml": true}
 
 func NewCmdVerifyResource() *cobra.Command {
@@ -53,7 +58,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var configPath string
 	var outputFormat string
 	var stdinYAMLs [][]byte
-	var doGet bool
+	var withVerifiedManifest bool
 	var namespace string
 	cmd := &cobra.Command{
 		Use:   "verify-resource -f <YAMLFILE> [-i <IMAGE>]",
@@ -68,7 +73,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				return errors.Wrap(err, "failed to read stdin as resource YAMLs")
 			}
 
-			err = verifyResource(stdinYAMLs, doGet, namespace, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
+			err = verifyResource(stdinYAMLs, withVerifiedManifest, namespace, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
 			if err != nil {
 				return errors.Wrap(err, "failed to verify resource")
 			}
@@ -79,7 +84,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
-	cmd.PersistentFlags().BoolVarP(&doGet, "get", "g", false, "whether to get resources in cluster")
+	cmd.PersistentFlags().BoolVarP(&withVerifiedManifest, "with-verified-manifest", "m", false, "if specified, skip signature verification and do manifest matching with target objects in cluster")
 	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "namespace to get resources")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
@@ -87,7 +92,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, doGet bool, namespace string, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+func verifyResource(yamls [][]byte, withVerifiedManifest bool, namespace string, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
 			return fmt.Errorf("`%s` is not supported output format", outputFormat)
@@ -132,7 +137,7 @@ func verifyResource(yamls [][]byte, doGet bool, namespace string, kubeGetArgs []
 			return nil
 		}
 
-		if doGet {
+		if withVerifiedManifest {
 			objsInCluster := []unstructured.Unstructured{}
 			for _, obj := range objs {
 				args := []string{"get", "--output", "json"}
@@ -160,8 +165,10 @@ func verifyResource(yamls [][]byte, doGet bool, namespace string, kubeGetArgs []
 	}
 
 	var err error
-	vo := &k8smanifest.VerifyResourceOption{}
-	if configPath != "" {
+	var vo *k8smanifest.VerifyResourceOption
+	if configPath == "" {
+		vo = loadDefaultConfig()
+	} else {
 		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
@@ -174,6 +181,9 @@ func verifyResource(yamls [][]byte, doGet bool, namespace string, kubeGetArgs []
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
+	}
+	if withVerifiedManifest {
+		vo.SkipSignatureVerification = true
 	}
 
 	results := []SingleResult{}
@@ -416,4 +426,13 @@ func obj2ref(obj unstructured.Unstructured) corev1.ObjectReference {
 		APIVersion:      obj.GetAPIVersion(),
 		ResourceVersion: obj.GetResourceVersion(),
 	}
+}
+
+func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
+	var defaultConfig *k8smanifest.VerifyResourceOption
+	err := yaml.Unmarshal(defaultConfigBytes, &defaultConfig)
+	if err != nil {
+		return nil
+	}
+	return defaultConfig
 }
