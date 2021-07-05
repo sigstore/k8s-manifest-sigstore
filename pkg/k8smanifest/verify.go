@@ -47,6 +47,7 @@ type SignatureVerifier interface {
 }
 
 func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *string) SignatureVerifier {
+	i := &ImageSignatureVerifier{onMemoryCacheEnabled: true}
 	var annotations map[string]string
 	if imageRef == "" {
 		annotations = k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
@@ -54,11 +55,18 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 			imageRef = annoImageRef
 		}
 	}
+	
+	i.imageRef = imageRef
+
+	if *pubkeyPath != "" {
+		i.pubkeyPath = pubkeyPath
+	}
+
 	if imageRef == "" {
 		// TODO: support annotation signature
 		return nil
 	} else {
-		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true}
+		return i
 	}
 }
 
