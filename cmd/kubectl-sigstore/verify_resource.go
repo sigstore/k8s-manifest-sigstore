@@ -154,6 +154,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	if keyPath != "" {
 		vo.KeyPath = keyPath
 	}
+	if withVerifiedManifest {
+		vo.SkipSignatureVerification = true
+	}
 
 	results := []resourceResult{}
 	for _, obj := range objs {
@@ -511,8 +514,11 @@ func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
 	}
 	return defaultConfig
 }
+<<<<<<< HEAD
 
 func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyResourceOption {
 	dvo := loadDefaultConfig()
 	return vo.AddDefaultConfig(dvo)
 }
+=======
+>>>>>>> c327810 (update to match new use-cases)
