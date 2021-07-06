@@ -49,6 +49,7 @@ func VerifyImage(imageRef string, pubkeyPath *string) (bool, string, error) {
 			return false, "", fmt.Errorf("error loading public key; %s", err.Error())
 		}
 		co.PubKey = tmpPubkey
+		co.Tlog = false
 	}
 
 	rekorSever := cli.TlogServer()
