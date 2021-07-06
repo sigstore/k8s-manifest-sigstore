@@ -154,7 +154,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	if keyPath != "" {
 		vo.KeyPath = keyPath
 	}
-	if withVerifiedManifest {
+	if checkDrift {
+		vo.UseManifestInOption = true
+		vo.Manifests = yamls
 		vo.SkipSignatureVerification = true
 	}
 
@@ -187,6 +189,16 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	fmt.Println(string(resultBytes))
 
 	return nil
+}
+
+func readManifestYAMLFile(fpath string) ([][]byte, error) {
+	yamls := [][]byte{}
+	content, err := ioutil.ReadFile(fpath)
+	if err != nil {
+		return nil, err
+	}
+	yamls = k8ssigutil.SplitConcatYAMLs(content)
+	return yamls, nil
 }
 
 func readManifestYAMLFile(fpath string) ([][]byte, error) {
