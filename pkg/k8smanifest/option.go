@@ -39,8 +39,10 @@ type VerifyResourceOption struct {
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
-	SkipSignatureVerification bool `json:"-"`
-	CheckDryRunForApply       bool `json:"-"`
+	UseManifestInOption       bool     `json:"-"`
+	Manifests                 [][]byte `json:"-"`
+	SkipSignatureVerification bool     `json:"-"`
+	CheckDryRunForApply       bool     `json:"-"`
 }
 
 // option for VerifyManifest()

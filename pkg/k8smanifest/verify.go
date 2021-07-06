@@ -135,8 +135,10 @@ type ManifestFetcher interface {
 	Fetch(objYAMLBytes []byte) ([]byte, error)
 }
 
-func NewManifestFetcher(imageRef string) ManifestFetcher {
-	if imageRef == "" {
+func NewManifestFetcher(imageRef string, useManifestInOption bool, givenManifests [][]byte) ManifestFetcher {
+	if useManifestInOption {
+		return &SimpleManifestFetcher{manifests: givenManifests}
+	} else if imageRef == "" {
 		// TODO: support annotation signature
 		return nil
 	} else {
@@ -227,6 +229,20 @@ func (f *ImageManifestFetcher) getManifestFromMemCache(imageRef string) (bool, [
 func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAMLbytes []byte, err error) {
 	key := fmt.Sprintf("cache/fetch-manifest/%s", imageRef)
 	_ = onMemoryCacheForVerifyResource.Set(key, concatYAMLbytes, err)
+}
+
+// SimpleManifestFetcher is a fetcher implementation for given manfiest
+type SimpleManifestFetcher struct {
+	manifests [][]byte
+}
+
+func (f *SimpleManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, error) {
+	concatYAMLs := k8smnfutil.ConcatenateYAMLs(f.manifests)
+	found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLs, objYAMLBytes)
+	if !found {
+		return nil, errors.New("failed to find a YAML manifest in the given manifests")
+	}
+	return foundManifest, nil
 }
 
 type VerifyResult struct {

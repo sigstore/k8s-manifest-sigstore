@@ -82,7 +82,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	var manifestInRef []byte
-	manifestInRef, err = NewManifestFetcher(vo.ImageRef).Fetch(objBytes)
+	manifestInRef, err = NewManifestFetcher(vo.ImageRef, vo.UseManifestInOption, vo.Manifests).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}

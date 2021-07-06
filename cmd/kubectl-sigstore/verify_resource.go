@@ -53,12 +53,13 @@ var supportedOutputFormat = map[string]bool{"json": true, "yaml": true}
 
 func NewCmdVerifyResource() *cobra.Command {
 
+	var filename string
 	var imageRef string
 	var keyPath string
 	var configPath string
 	var outputFormat string
-	var stdinYAMLs [][]byte
-	var withVerifiedManifest bool
+	var manifestYAMLs [][]byte
+	var checkDrift bool
 	var namespace string
 	cmd := &cobra.Command{
 		Use:   "verify-resource -f <YAMLFILE> [-i <IMAGE>]",
@@ -68,12 +69,19 @@ func NewCmdVerifyResource() *cobra.Command {
 			_, kubeGetArgs := splitArgs(fullArgs)
 
 			var err error
-			stdinYAMLs, err = readStdinAsYAMLs()
-			if err != nil {
-				return errors.Wrap(err, "failed to read stdin as resource YAMLs")
+			if filename != "" && filename != "-" {
+				manifestYAMLs, err = readManifestYAMLFile(filename)
+				if err != nil {
+					return errors.Wrap(err, "failed to read manifest YAML file")
+				}
+			} else if filename == "-" {
+				manifestYAMLs, err = readStdinAsYAMLs()
+				if err != nil {
+					return errors.Wrap(err, "failed to read stdin as resource YAMLs")
+				}
 			}
 
-			err = verifyResource(stdinYAMLs, withVerifiedManifest, namespace, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
+			err = verifyResource(manifestYAMLs, checkDrift, namespace, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
 			if err != nil {
 				return errors.Wrap(err, "failed to verify resource")
 			}
@@ -82,9 +90,10 @@ func NewCmdVerifyResource() *cobra.Command {
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 	}
 
+	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
-	cmd.PersistentFlags().BoolVarP(&withVerifiedManifest, "with-verified-manifest", "m", false, "if specified, skip signature verification and do manifest matching with target objects in cluster")
+	cmd.PersistentFlags().BoolVar(&checkDrift, "check-drift", false, "if specified, skip signature verification and check if there is any drift between manifest and object in cluster")
 	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "namespace to get resources")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
@@ -92,7 +101,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, withVerifiedManifest bool, namespace string, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+func verifyResource(yamls [][]byte, checkDrift bool, namespace string, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
 			return fmt.Errorf("`%s` is not supported output format", outputFormat)
@@ -137,7 +146,7 @@ func verifyResource(yamls [][]byte, withVerifiedManifest bool, namespace string,
 			return nil
 		}
 
-		if withVerifiedManifest {
+		if checkDrift {
 			objsInCluster := []unstructured.Unstructured{}
 			for _, obj := range objs {
 				args := []string{"get", "--output", "json"}
@@ -182,7 +191,9 @@ func verifyResource(yamls [][]byte, withVerifiedManifest bool, namespace string,
 	if keyPath != "" {
 		vo.KeyPath = keyPath
 	}
-	if withVerifiedManifest {
+	if checkDrift {
+		vo.UseManifestInOption = true
+		vo.Manifests = yamls
 		vo.SkipSignatureVerification = true
 	}
 
@@ -246,6 +257,16 @@ func splitArgs(args []string) ([]string, []string) {
 		}
 	}
 	return mainArgs, kubectlArgs
+}
+
+func readManifestYAMLFile(fpath string) ([][]byte, error) {
+	yamls := [][]byte{}
+	content, err := ioutil.ReadFile(fpath)
+	if err != nil {
+		return nil, err
+	}
+	yamls = k8ssigutil.SplitConcatYAMLs(content)
+	return yamls, nil
 }
 
 func readStdinAsYAMLs() ([][]byte, error) {
