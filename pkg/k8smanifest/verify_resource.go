@@ -115,8 +115,13 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 			return nil, errors.Wrap(err, "failed to verify signature")
 		}
 
-		verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
+	var sigVerified bool
+	sigVerified, signerName, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
+	if err != nil {
+		return nil, errors.Wrap(err, "error occured during signature verification")
 	}
+
+	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
 	return &VerifyResourceResult{
 		Verified:   verified,

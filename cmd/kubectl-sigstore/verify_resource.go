@@ -100,6 +100,11 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
+	cmd.PersistentFlags().StringVarP(&kubectlOptions.LabelSelector, "selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
+	cmd.PersistentFlags().StringVar(&kubectlOptions.FieldSelector, "field-selector", "", "Selector (field query) to filter on, supports '=', '==', and '!='.(e.g. --field-selector key1=value1,key2=value2). The server only supports a limited number of field queries per type.")
+	cmd.PersistentFlags().BoolVarP(&kubectlOptions.AllNamespaces, "all-namespaces", "A", false, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
+
+	kubectlOptions.ConfigFlags.AddFlags(cmd.Flags())
 
 	return cmd
 }
@@ -153,11 +158,6 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
-	}
-	if checkDrift {
-		vo.UseManifestInOption = true
-		vo.Manifests = yamls
-		vo.SkipSignatureVerification = true
 	}
 
 	results := []resourceResult{}
