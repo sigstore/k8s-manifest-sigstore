@@ -16,10 +16,11 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.1.3
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.20.2
-	k8s.io/apimachinery v0.21.1
-	k8s.io/client-go v0.20.2
-	k8s.io/kube-openapi v0.0.0-20210113233702-8566a335510f
+	k8s.io/api v0.21.2
+	k8s.io/apimachinery v0.21.2
+	k8s.io/cli-runtime v0.21.2
+	k8s.io/client-go v0.21.2
+	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 	k8s.io/kubectl v0.19.4
 	sigs.k8s.io/controller-runtime v0.0.0-00010101000000-000000000000
 )
@@ -27,13 +28,13 @@ require (
 replace (
 	github.com/sigstore/cosign => github.com/sigstore/cosign v0.4.1-0.20210602105506-5cb21aa7fbf9
 	github.com/sigstore/k8s-manifest-sigstore => ./
-	k8s.io/api => k8s.io/api v0.19.0
-	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.19.0
-	k8s.io/apimachinery => k8s.io/apimachinery v0.19.0
-	k8s.io/apiserver => k8s.io/apiserver v0.19.0
-	k8s.io/cli-runtime => k8s.io/cli-runtime v0.19.0
-	k8s.io/client-go => k8s.io/client-go v0.19.0
-	k8s.io/code-generator => k8s.io/code-generator v0.19.0
-	k8s.io/kubectl => k8s.io/kubectl v0.19.0
+	k8s.io/api => k8s.io/api v0.21.2
+	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.2
+	k8s.io/apimachinery => k8s.io/apimachinery v0.21.2
+	k8s.io/apiserver => k8s.io/apiserver v0.21.2
+	k8s.io/cli-runtime => k8s.io/cli-runtime v0.21.2
+	k8s.io/client-go => k8s.io/client-go v0.21.2
+	k8s.io/code-generator => k8s.io/code-generator v0.21.2
+	k8s.io/kubectl => k8s.io/kubectl v0.21.2
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.8.3
 )

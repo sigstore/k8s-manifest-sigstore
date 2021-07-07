@@ -19,6 +19,7 @@ package k8smanifest
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -63,8 +64,7 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 	}
 
 	if imageRef == "" {
-		// TODO: support annotation signature
-		return nil
+		return &AnnotationSignatureVerifier{}
 	} else {
 		return i
 	}
@@ -129,69 +129,108 @@ func (v *ImageSignatureVerifier) setResultToMemCache(imageRef string, verified b
 	_ = onMemoryCacheForVerifyResource.Set(key, verified, signerName, err)
 }
 
+type AnnotationSignatureVerifier struct {
+}
+
+func (v *AnnotationSignatureVerifier) Verify() (bool, string, error) {
+	// TODO: support annotation signature
+	return false, "", errors.New("annotation-embedded signature is not supported yet")
+}
+
 // This is an interface for fetching YAML manifest
 // a function Fetch() fetches a YAML manifest which matches the input object's kind, name and so on
 type ManifestFetcher interface {
-	Fetch(objYAMLBytes []byte) ([]byte, error)
+	Fetch(objYAMLBytes []byte) ([]byte, string, error)
 }
 
-func NewManifestFetcher(imageRef string, useManifestInOption bool, givenManifests [][]byte) ManifestFetcher {
-	if useManifestInOption {
-		return &SimpleManifestFetcher{manifests: givenManifests}
-	} else if imageRef == "" {
-		// TODO: support annotation signature
-		return nil
+func NewManifestFetcher(imageRef string) ManifestFetcher {
+	if imageRef == "" {
+		return &AnnotationManifestFetcher{}
 	} else {
-		return &ImageManifestFetcher{imageRef: imageRef, onMemoryCacheEnabled: true}
+		return &ImageManifestFetcher{imageRefString: imageRef, onMemoryCacheEnabled: true}
 	}
 }
 
 // ImageManifestFetcher is a fetcher implementation for image reference
 type ImageManifestFetcher struct {
-	imageRef             string
+	imageRefString       string
 	onMemoryCacheEnabled bool
 }
 
-func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, error) {
-	imageRef := f.imageRef
-	if imageRef == "" {
+func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error) {
+	imageRefString := f.imageRefString
+	if imageRefString == "" {
 		annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 		if annoImageRef, ok := annotations[ImageRefAnnotationKey]; ok {
-			imageRef = annoImageRef
+			imageRefString = annoImageRef
 		}
 	}
-	if imageRef == "" {
-		return nil, errors.New("no image reference is found")
+	if imageRefString == "" {
+		return nil, "", errors.New("no image reference is found")
 	}
 
+	imageRefList := splitImageRefString(imageRefString)
+	for _, imageRef := range imageRefList {
+		concatYAMLbytes, err := f.fetchManifestInSingleImage(imageRef)
+		if err != nil {
+			return nil, "", err
+		}
+		found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes)
+		if found {
+			return foundManifest, imageRef, nil
+		}
+	}
+	return nil, "", errors.New("failed to find a YAML manifest in the image")
+}
+
+func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleImageRef string) ([]byte, error) {
 	var concatYAMLbytes []byte
 	var err error
 	if f.onMemoryCacheEnabled {
 		cacheFound := false
 		// try getting YAML manifests from on-memory cache
-		cacheFound, concatYAMLbytes, err = f.getManifestFromMemCache(imageRef)
+		cacheFound, concatYAMLbytes, err = f.getManifestFromMemCache(singleImageRef)
 		// if cache not found, do fetch and set the result to cache
 		if !cacheFound {
 			// fetch YAML manifests from actual image
-			concatYAMLbytes, err = f.getConcatYAMLFromImageRef(imageRef)
+			concatYAMLbytes, err = f.getConcatYAMLFromImageRef(singleImageRef)
 			if err == nil {
 				// set the result to on-memory cache
-				f.setManifestToMemCache(imageRef, concatYAMLbytes, err)
+				f.setManifestToMemCache(singleImageRef, concatYAMLbytes, err)
 			}
 		}
 	} else {
 		// fetch YAML manifests from actual image
-		concatYAMLbytes, err = f.getConcatYAMLFromImageRef(imageRef)
+		concatYAMLbytes, err = f.getConcatYAMLFromImageRef(singleImageRef)
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get YAMLs in the image")
 	}
+	return concatYAMLbytes, nil
+}
 
-	found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes)
-	if !found {
-		return nil, errors.New("failed to find a YAML manifest in the image")
+func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
+	imageRefString := f.imageRefString
+	imageRefList := splitImageRefString(imageRefString)
+
+	yamls := [][]byte{}
+	for _, imageRef := range imageRefList {
+		concatYAMLbytes, err := f.fetchManifestInSingleImage(imageRef)
+		if err != nil {
+			return nil, err
+		}
+		yamlsInImage := k8smnfutil.SplitConcatYAMLs(concatYAMLbytes)
+		yamls = append(yamls, yamlsInImage...)
 	}
-	return foundManifest, nil
+	return yamls, nil
+}
+
+func splitImageRefString(imageRefString string) []string {
+	imageRefList := strings.Split(imageRefString, ",")
+	for i := range imageRefList {
+		imageRefList[i] = strings.TrimSpace(imageRefList[i])
+	}
+	return imageRefList
 }
 
 func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byte, error) {
@@ -231,18 +270,12 @@ func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAML
 	_ = onMemoryCacheForVerifyResource.Set(key, concatYAMLbytes, err)
 }
 
-// SimpleManifestFetcher is a fetcher implementation for given manfiest
-type SimpleManifestFetcher struct {
-	manifests [][]byte
+type AnnotationManifestFetcher struct {
 }
 
-func (f *SimpleManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, error) {
-	concatYAMLs := k8smnfutil.ConcatenateYAMLs(f.manifests)
-	found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLs, objYAMLBytes)
-	if !found {
-		return nil, errors.New("failed to find a YAML manifest in the given manifests")
-	}
-	return foundManifest, nil
+func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error) {
+	// TODO: support annotation signature
+	return nil, "", errors.New("annotation-embedded signature is not supported yet")
 }
 
 type VerifyResult struct {

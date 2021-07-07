@@ -59,16 +59,17 @@ func NewCmdVerifyResource() *cobra.Command {
 	var configPath string
 	var outputFormat string
 	var manifestYAMLs [][]byte
-	var checkDrift bool
-	var namespace string
 	cmd := &cobra.Command{
 		Use:   "verify-resource -f <YAMLFILE> [-i <IMAGE>]",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fullArgs := getOriginalFullArgs("verify-resource")
-			_, kubeGetArgs := splitArgs(fullArgs)
-
 			var err error
+			kubeGetArgs := args
+			err = kubectlOptions.SetNamespaceOptions()
+			if err != nil {
+				return errors.Wrap(err, "failed to set namespace options with kubeconfig")
+			}
+
 			if filename != "" && filename != "-" {
 				manifestYAMLs, err = readManifestYAMLFile(filename)
 				if err != nil {
@@ -81,99 +82,57 @@ func NewCmdVerifyResource() *cobra.Command {
 				}
 			}
 
-			err = verifyResource(manifestYAMLs, checkDrift, namespace, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
+			err = verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
 			if err != nil {
 				return errors.Wrap(err, "failed to verify resource")
 			}
 			return nil
 		},
-		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 	}
 
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename")
-	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
+	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
-	cmd.PersistentFlags().BoolVar(&checkDrift, "check-drift", false, "if specified, skip signature verification and check if there is any drift between manifest and object in cluster")
-	cmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "namespace to get resources")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
+	cmd.PersistentFlags().StringVarP(&kubectlOptions.LabelSelector, "selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
+	cmd.PersistentFlags().StringVar(&kubectlOptions.FieldSelector, "field-selector", "", "Selector (field query) to filter on, supports '=', '==', and '!='.(e.g. --field-selector key1=value1,key2=value2). The server only supports a limited number of field queries per type.")
+	cmd.PersistentFlags().BoolVarP(&kubectlOptions.AllNamespaces, "all-namespaces", "A", false, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
+
+	kubectlOptions.ConfigFlags.AddFlags(cmd.Flags())
 
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, checkDrift bool, namespace string, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
-			return fmt.Errorf("`%s` is not supported output format", outputFormat)
+			return fmt.Errorf("output format `%s` is not supported", outputFormat)
 		}
+	}
+
+	if len(kubeGetArgs) == 0 && yamls == nil && imageRef == "" {
+		return errors.New("at least one of the following is required: `--image` option, resource kind or stdin YAML manifests")
 	}
 
 	objs := []unstructured.Unstructured{}
-	if yamls == nil {
-		kArgs := []string{"get", "--output", "json"}
-		kArgs = append(kArgs, kubeGetArgs...)
-		log.Debug("kube get args", strings.Join(kArgs, " "))
-		resultJSON, err := k8ssigutil.CmdExec("kubectl", kArgs...)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			return nil
-		}
-		var tmpObj unstructured.Unstructured
-		err = json.Unmarshal([]byte(resultJSON), &tmpObj)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			return nil
-		}
-
-		if tmpObj.IsList() {
-			tmpList, _ := tmpObj.ToList()
-			objs = append(objs, tmpList.Items...)
-		} else {
-			objs = append(objs, tmpObj)
-		}
-	} else {
-		sumErr := []string{}
-		for _, objyaml := range yamls {
-			var tmpObj unstructured.Unstructured
-			tmpErr := yaml.Unmarshal(objyaml, &tmpObj)
-			if tmpErr != nil {
-				sumErr = append(sumErr, tmpErr.Error())
-			}
-			objs = append(objs, tmpObj)
-		}
-		if len(objs) == 0 && len(sumErr) > 0 {
-			fmt.Fprintln(os.Stderr, fmt.Errorf("failed to read stdin data as resource YAMLs: %s", strings.Join(sumErr, "; ")))
-			return nil
-		}
-
-		if checkDrift {
-			objsInCluster := []unstructured.Unstructured{}
-			for _, obj := range objs {
-				args := []string{"get", "--output", "json"}
-				if namespace != "" {
-					args = append(args, "--namespace")
-					args = append(args, namespace)
-				}
-				args = append(args, obj.GetKind())
-				args = append(args, obj.GetName())
-				objJSON, err := k8ssigutil.CmdExec("kubectl", args...)
-				if err != nil {
-					fmt.Fprintln(os.Stderr, err.Error())
-					return nil
-				}
-				var tmpObj unstructured.Unstructured
-				err = yaml.Unmarshal([]byte(objJSON), &tmpObj)
-				if err != nil {
-					fmt.Fprintln(os.Stderr, err.Error())
-					return nil
-				}
-				objsInCluster = append(objsInCluster, tmpObj)
-			}
-			objs = objsInCluster
+	if len(kubeGetArgs) > 0 {
+		objs, err = kubectlOptions.Get(kubeGetArgs, "")
+	} else if yamls != nil {
+		objs, err = getObjsFromManifests(yamls)
+	} else if imageRef != "" {
+		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef)
+		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
+		var yamlsInImage [][]byte
+		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
+			objs, err = getObjsFromManifests(yamlsInImage)
 		}
 	}
+	if err != nil {
+		return errors.Wrap(err, "failed to get objects in cluster")
+	}
 
-	var err error
 	var vo *k8smanifest.VerifyResourceOption
 	if configPath == "" {
 		vo = loadDefaultConfig()
@@ -190,11 +149,6 @@ func verifyResource(yamls [][]byte, checkDrift bool, namespace string, kubeGetAr
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
-	}
-	if checkDrift {
-		vo.UseManifestInOption = true
-		vo.Manifests = yamls
-		vo.SkipSignatureVerification = true
 	}
 
 	results := []SingleResult{}
@@ -225,38 +179,6 @@ func verifyResource(yamls [][]byte, checkDrift bool, namespace string, kubeGetAr
 	fmt.Println(string(resultBytes))
 
 	return nil
-}
-
-func splitArgs(args []string) ([]string, []string) {
-	mainArgs := []string{}
-	kubectlArgs := []string{}
-	mainArgsConditionSingle := map[string]bool{}
-	mainArgsConditionDouble := map[string]bool{
-		"--image":  true,
-		"-i":       true,
-		"--key":    true,
-		"-k":       true,
-		"--config": true,
-		"-c":       true,
-		"--output": true,
-		"-o":       true,
-	}
-	skipIndex := map[int]bool{}
-	for i, s := range args {
-		if skipIndex[i] {
-			continue
-		}
-		if mainArgsConditionSingle[s] {
-			mainArgs = append(mainArgs, args[i])
-		} else if mainArgsConditionDouble[s] {
-			mainArgs = append(mainArgs, args[i])
-			mainArgs = append(mainArgs, args[i+1])
-			skipIndex[i+1] = true
-		} else {
-			kubectlArgs = append(kubectlArgs, args[i])
-		}
-	}
-	return mainArgs, kubectlArgs
 }
 
 func readManifestYAMLFile(fpath string) ([][]byte, error) {
@@ -300,6 +222,43 @@ func readStdinAsYAMLs() ([][]byte, error) {
 		return nil, nil
 	}
 	return yamls, nil
+}
+
+func getObjsFromManifests(yamls [][]byte) ([]unstructured.Unstructured, error) {
+	sumErr := []string{}
+	manifestObjs := []unstructured.Unstructured{}
+	for _, objyaml := range yamls {
+		var tmpObj unstructured.Unstructured
+		tmpErr := yaml.Unmarshal(objyaml, &tmpObj)
+		if tmpErr != nil {
+			sumErr = append(sumErr, tmpErr.Error())
+		}
+		manifestObjs = append(manifestObjs, tmpObj)
+	}
+	if len(manifestObjs) == 0 && len(sumErr) > 0 {
+		return nil, fmt.Errorf("failed to read stdin data as resource YAMLs: %s", strings.Join(sumErr, "; "))
+	}
+
+	objs := []unstructured.Unstructured{}
+	allErrs := []string{}
+	for _, mnfobj := range manifestObjs {
+		args := []string{mnfobj.GetKind(), mnfobj.GetName()}
+		namespaceInManifest := mnfobj.GetNamespace()
+		tmpObjs, err := kubectlOptions.Get(args, namespaceInManifest)
+		if err != nil {
+			allErrs = append(allErrs, err.Error())
+			continue
+		}
+		if len(tmpObjs) == 0 {
+			allErrs = append(allErrs, fmt.Sprintf("failed to find a resource: kind: %s, namespace: %s, name: %s", mnfobj.GetKind(), mnfobj.GetNamespace(), mnfobj.GetName()))
+			continue
+		}
+		objs = append(objs, tmpObjs[0])
+	}
+	if len(objs) == 0 && len(allErrs) > 0 {
+		return nil, fmt.Errorf("error occurred during getting resources: %s", strings.Join(allErrs, "; "))
+	}
+	return objs, nil
 }
 
 // generate result bytes in a table which will be shown in output

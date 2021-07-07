@@ -38,6 +38,15 @@ func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, e
 	signerName := ""
 	var err error
 
+	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
+	if vo.ImageRef == "" {
+		annotations := obj.GetAnnotations()
+		annoImageRef, found := annotations[ImageRefAnnotationKey]
+		if found {
+			vo.ImageRef = annoImageRef
+		}
+	}
+
 	// get ignore fields configuration for this resource if found
 	ignoreFields := []string{}
 	if vo != nil {
@@ -47,7 +56,7 @@ func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, e
 	}
 
 	var manifestInRef []byte
-	manifestInRef, err = NewManifestFetcher("", true, [][]byte{manifest}).Fetch(manifest)
+	manifestInRef, _, err = NewManifestFetcher(vo.ImageRef).Fetch(manifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}

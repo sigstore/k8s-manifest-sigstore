@@ -20,6 +20,7 @@ import (
 	"os"
 
 	log "github.com/sirupsen/logrus"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 const logLevelEnvKey = "K8S_MANIFEST_SIGSTORE_LOG_LEVEL"
@@ -34,7 +35,13 @@ var logLevelMap = map[string]log.Level{
 	"trace": log.TraceLevel,
 }
 
+var kubectlOptions KubectlOptions
+
 func init() {
+	kubectlOptions = KubectlOptions{
+		ConfigFlags: genericclioptions.NewConfigFlags(true),
+	}
+
 	rootCmd.AddCommand(NewCmdSign())
 	rootCmd.AddCommand(NewCmdVerify())
 	rootCmd.AddCommand(NewCmdVerifyResource())

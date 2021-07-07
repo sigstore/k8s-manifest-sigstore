@@ -54,16 +54,18 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	sigRef := ""
 	var err error
 
+	imageRefString := ""
+	if vo != nil {
+		imageRefString = vo.ImageRef
+	}
+
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
-	if vo.ImageRef == "" {
+	if imageRefString == "" {
 		annotations := obj.GetAnnotations()
 		annoImageRef, found := annotations[ImageRefAnnotationKey]
 		if found {
-			vo.ImageRef = annoImageRef
+			imageRefString = annoImageRef
 		}
-	}
-	if vo.ImageRef != "" {
-		sigRef = vo.ImageRef
 	}
 
 	// check if the resource should be skipped or not
@@ -82,7 +84,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	var manifestInRef []byte
-	manifestInRef, err = NewManifestFetcher(vo.ImageRef, vo.UseManifestInOption, vo.Manifests).Fetch(objBytes)
+	manifestInRef, sigRef, err = NewManifestFetcher(imageRefString).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
@@ -92,22 +94,18 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
 	}
 
-	if vo.SkipSignatureVerification {
-		verified = mnfMatched
-	} else {
-		var keyPath *string
-		if vo.KeyPath != "" {
-			keyPath = &(vo.KeyPath)
-		}
-
-		var sigVerified bool
-		sigVerified, signerName, err = NewSignatureVerifier(objBytes, vo.ImageRef, keyPath).Verify()
-		if err != nil {
-			return nil, errors.Wrap(err, "error occured during signature verification")
-		}
-
-		verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
+	var keyPath *string
+	if vo.KeyPath != "" {
+		keyPath = &(vo.KeyPath)
 	}
+
+	var sigVerified bool
+	sigVerified, signerName, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
+	if err != nil {
+		return nil, errors.Wrap(err, "error occured during signature verification")
+	}
+
+	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
 	return &VerifyResourceResult{
 		Verified: verified,
