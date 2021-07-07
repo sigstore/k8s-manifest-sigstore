@@ -263,7 +263,7 @@ func getObjsFromManifests(yamls [][]byte) ([]unstructured.Unstructured, error) {
 
 // generate result bytes in a table which will be shown in output
 func makeResourceResultTable(results []SingleResult) []byte {
-	tableResult := "KIND\tNAME\tVALID\tSIGNER\tSIG_REF\tERROR\tAGE\t\n"
+	tableResult := "KIND\tNAME\tVALID\tSIGNER\tSIG_REF\tERROR\tSIGNED\tAGE\t\n"
 	for _, r := range results {
 		// if it is out of scope (=skipped by config), skip to show it too
 		inscope := true
@@ -285,10 +285,15 @@ func makeResourceResultTable(results []SingleResult) []byte {
 
 		signer := ""
 		sigRef := ""
+		sigAge := ""
 		if r.Result != nil {
 			valid = strconv.FormatBool(r.Result.Verified)
 			signer = r.Result.Signer
 			sigRef = r.Result.SigRef
+			if r.Result.SignedTime != nil {
+				t := r.Result.SignedTime
+				sigAge = getAge(metav1.Time{Time: *t})
+			}
 		}
 		// failure reason
 		reason := ""
@@ -299,7 +304,7 @@ func makeResourceResultTable(results []SingleResult) []byte {
 			reason = fmt.Sprintf("diff: %s", r.Result.Diff)
 		}
 		// make a row string
-		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, signer, sigRef, reason, resAge)
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, signer, sigRef, reason, sigAge, resAge)
 		tableResult = fmt.Sprintf("%s%s", tableResult, line)
 	}
 	writer := new(bytes.Buffer)

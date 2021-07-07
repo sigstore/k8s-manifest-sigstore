@@ -44,7 +44,7 @@ func init() {
 }
 
 type SignatureVerifier interface {
-	Verify() (bool, string, error)
+	Verify() (bool, string, *int64, error)
 }
 
 func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *string) SignatureVerifier {
@@ -76,42 +76,43 @@ type ImageSignatureVerifier struct {
 	onMemoryCacheEnabled bool
 }
 
-func (v *ImageSignatureVerifier) Verify() (bool, string, error) {
+func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	imageRef := v.imageRef
 	if imageRef == "" {
-		return false, "", errors.New("no image reference is found")
+		return false, "", nil, errors.New("no image reference is found")
 	}
 
 	if v.onMemoryCacheEnabled {
 		// try getting result from on-memory cache
-		cacheFound, verified, signerName, err := v.getResultFromMemCache(imageRef)
+		cacheFound, verified, signerName, signedTimestamp, err := v.getResultFromMemCache(imageRef)
 		// if found, return it
 		if cacheFound {
-			return verified, signerName, err
+			return verified, signerName, signedTimestamp, err
 		}
 		// otherwise, do normal image verification
-		verified, signerName, err = k8smnfcosign.VerifyImage(imageRef, v.pubkeyPath)
+		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(imageRef, v.pubkeyPath)
 		// set the result to on-memory cache
-		v.setResultToMemCache(imageRef, verified, signerName, err)
-		return verified, signerName, err
+		v.setResultToMemCache(imageRef, verified, signerName, signedTimestamp, err)
+		return verified, signerName, signedTimestamp, err
 	} else {
 		// do normal image verification
 		return k8smnfcosign.VerifyImage(imageRef, v.pubkeyPath)
 	}
 }
 
-func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef string) (bool, bool, string, error) {
+func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef string) (bool, bool, string, *int64, error) {
 	key := fmt.Sprintf("cache/verify-image/%s", imageRef)
 	result, err := onMemoryCacheForVerifyResource.Get(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
-		return false, false, "", nil
+		return false, false, "", nil, nil
 	}
 	if len(result) != 3 {
-		return false, false, "", fmt.Errorf("cache returns inconsistent data: a length of verify image result must be 3, but got %v", len(result))
+		return false, false, "", nil, fmt.Errorf("cache returns inconsistent data: a length of verify image result must be 3, but got %v", len(result))
 	}
 	verified := false
 	signerName := ""
+	var signedTimestamp *int64
 	if result[0] != nil {
 		verified = result[0].(bool)
 	}
@@ -119,22 +120,25 @@ func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef string) (bool, b
 		signerName = result[1].(string)
 	}
 	if result[2] != nil {
-		err = result[2].(error)
+		signedTimestamp = result[2].(*int64)
 	}
-	return true, verified, signerName, err
+	if result[3] != nil {
+		err = result[3].(error)
+	}
+	return true, verified, signerName, signedTimestamp, err
 }
 
-func (v *ImageSignatureVerifier) setResultToMemCache(imageRef string, verified bool, signerName string, err error) {
+func (v *ImageSignatureVerifier) setResultToMemCache(imageRef string, verified bool, signerName string, signedTimestamp *int64, err error) {
 	key := fmt.Sprintf("cache/verify-image/%s", imageRef)
-	_ = onMemoryCacheForVerifyResource.Set(key, verified, signerName, err)
+	_ = onMemoryCacheForVerifyResource.Set(key, verified, signerName, signedTimestamp, err)
 }
 
 type AnnotationSignatureVerifier struct {
 }
 
-func (v *AnnotationSignatureVerifier) Verify() (bool, string, error) {
+func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 	// TODO: support annotation signature
-	return false, "", errors.New("annotation-embedded signature is not supported yet")
+	return false, "", nil, errors.New("annotation-embedded signature is not supported yet")
 }
 
 // This is an interface for fetching YAML manifest

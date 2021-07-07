@@ -18,6 +18,7 @@ package k8smanifest
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
@@ -32,11 +33,12 @@ import (
 const defaultDryRunNamespace = "default"
 
 type VerifyResourceResult struct {
-	Verified bool                `json:"verified"`
-	InScope  bool                `json:"inScope"`
-	Signer   string              `json:"signer"`
-	SigRef   string              `json:"sigRef"`
-	Diff     *mapnode.DiffResult `json:"diff"`
+	Verified   bool                `json:"verified"`
+	InScope    bool                `json:"inScope"`
+	Signer     string              `json:"signer"`
+	SignedTime *time.Time          `json:"signedTime"`
+	SigRef     string              `json:"sigRef"`
+	Diff       *mapnode.DiffResult `json:"diff"`
 }
 
 func (r *VerifyResourceResult) String() string {
@@ -51,6 +53,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	verified := false
 	inScope := true // assume that input resource is in scope in verify-resource
 	signerName := ""
+	var signedTimestamp *int64
 	sigRef := ""
 	var err error
 
@@ -100,7 +103,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	var sigVerified bool
-	sigVerified, signerName, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
+	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "error occured during signature verification")
 	}
@@ -108,11 +111,12 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
 	return &VerifyResourceResult{
-		Verified: verified,
-		InScope:  inScope,
-		Signer:   signerName,
-		SigRef:   sigRef,
-		Diff:     diff,
+		Verified:   verified,
+		InScope:    inScope,
+		Signer:     signerName,
+		SignedTime: getTime(signedTimestamp),
+		SigRef:     sigRef,
+		Diff:       diff,
 	}, nil
 }
 
@@ -304,4 +308,12 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) 
 	}
 	return false, diff, nil
 
+}
+
+func getTime(tstamp *int64) *time.Time {
+	if tstamp == nil {
+		return nil
+	}
+	t := time.Unix(*tstamp, 0)
+	return &t
 }
