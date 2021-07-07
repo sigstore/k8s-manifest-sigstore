@@ -116,7 +116,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		}
 
 	var sigVerified bool
-	sigVerified, signerName, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
+	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "error occured during signature verification")
 	}

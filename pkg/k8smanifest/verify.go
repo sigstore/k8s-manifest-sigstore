@@ -182,14 +182,6 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 	return false, "", nil, errors.New("annotation-embedded signature is not supported yet")
 }
 
-type AnnotationSignatureVerifier struct {
-}
-
-func (v *AnnotationSignatureVerifier) Verify() (bool, string, error) {
-	// TODO: support annotation signature
-	return false, "", errors.New("annotation-embedded signature is not supported yet")
-}
-
 // This is an interface for fetching YAML manifest
 // a function Fetch() fetches a YAML manifest which matches the input object's kind, name and so on
 type ManifestFetcher interface {

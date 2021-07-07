@@ -21,10 +21,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-<<<<<<< HEAD
 	"k8s.io/kubectl/pkg/scheme"
-=======
->>>>>>> f196856 (use kubectl configflags to avoid kubectl command execution in verify-resource)
 )
 
 const logLevelEnvKey = "K8S_MANIFEST_SIGSTORE_LOG_LEVEL"

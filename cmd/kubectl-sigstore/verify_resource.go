@@ -368,9 +368,14 @@ func makeResourceResultTable(result VerifyResourceResult) []byte {
 		valid := "false"
 
 		sigRef := ""
+		sigAge := ""
 		if r.Result != nil {
 			valid = strconv.FormatBool(r.Result.Verified)
 			sigRef = r.Result.SigRef
+			if r.Result.SignedTime != nil {
+				t := r.Result.SignedTime
+				sigAge = getAge(metav1.Time{Time: *t})
+			}
 		}
 		// failure reason
 		reason := ""
@@ -526,11 +531,8 @@ func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
 	}
 	return defaultConfig
 }
-<<<<<<< HEAD
 
 func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyResourceOption {
 	dvo := loadDefaultConfig()
 	return vo.AddDefaultConfig(dvo)
 }
-=======
->>>>>>> c327810 (update to match new use-cases)
