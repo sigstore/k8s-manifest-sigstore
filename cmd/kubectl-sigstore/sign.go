@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	log "github.com/sirupsen/logrus"
@@ -32,12 +33,13 @@ func NewCmdSign() *cobra.Command {
 	var keyPath string
 	var output string
 	var updateAnnotation bool
+	var imageAnnotations []string
 	cmd := &cobra.Command{
 		Use:   "sign -f <YAMLFILE> [-i <IMAGE>]",
 		Short: "A command to sign Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := sign(inputDir, imageRef, keyPath, output, updateAnnotation)
+			err := sign(inputDir, imageRef, keyPath, output, updateAnnotation, imageAnnotations)
 			if err != nil {
 				return err
 			}
@@ -49,14 +51,22 @@ func NewCmdSign() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&output, "output", "o", "", "output file name (if empty, use `<input>.signed`)")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
-	cmd.PersistentFlags().BoolVarP(&updateAnnotation, "annotation", "a", true, "whether to update annotation and generate signed yaml file")
+	cmd.PersistentFlags().BoolVarP(&updateAnnotation, "annotation-metadata", "", true, "whether to update annotation and generate signed yaml file")
+	cmd.PersistentFlags().StringArrayVarP(&imageAnnotations, "annotation", "a", []string{}, "extra key=value pairs to sign")
 
 	return cmd
 }
 
-func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool) error {
+func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, annotations []string) error {
 	if output == "" && updateAnnotation {
 		output = inputDir + ".signed"
+	}
+
+	anntns, err := parseAnnotations(annotations)
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return nil
 	}
 
 	so := &k8smanifest.SignOption{
@@ -64,13 +74,28 @@ func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool) err
 		KeyPath:          keyPath,
 		Output:           output,
 		UpdateAnnotation: updateAnnotation,
+		ImageAnnotations: anntns,
 	}
 
-	_, err := k8smanifest.Sign(inputDir, so)
+	_, err = k8smanifest.Sign(inputDir, so)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return nil
 	}
 	log.Info("signed manifest generated at ", output)
 	return nil
+}
+
+func parseAnnotations(annotations []string) (map[string]interface{}, error) {
+	annotationsMap := map[string]interface{}{}
+
+	for _, annotation := range annotations {
+		kvp := strings.SplitN(annotation, "=", 2)
+		if len(kvp) != 2 {
+			return nil, fmt.Errorf("invalid flag: %s, expected key=value", annotation)
+		}
+
+		annotationsMap[kvp[0]] = kvp[1]
+	}
+	return annotationsMap, nil
 }

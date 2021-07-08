@@ -49,7 +49,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath).Sign(inputDir, output)
+	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -58,7 +58,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 }
 
 type Signer interface {
-	Sign(inputDir, output string) ([]byte, error)
+	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
 func NewSigner(imageRef, keyPath string) Signer {
@@ -79,9 +79,9 @@ type ImageSigner struct {
 	prikeyPath *string
 }
 
-func (s *ImageSigner) Sign(inputDir, output string) ([]byte, error) {
+func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
 	var inputDataBuffer bytes.Buffer
-	err := k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer)
+	err := k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to compress an input file/dir")
 	}
@@ -92,13 +92,13 @@ func (s *ImageSigner) Sign(inputDir, output string) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.imageRef, s.prikeyPath)
+	err = k8scosign.SignImage(s.imageRef, s.prikeyPath, imageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
 	if output != "" {
 		// generate a signed YAML file
-		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil)
+		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil, imageAnnotations)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
@@ -139,7 +139,7 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 	return nil
 }
 
-func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte) ([]byte, error) {
+func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte, imageAnnotations map[string]interface{}) ([]byte, error) {
 	if imageRef == "" && len(sigMaps) == 0 {
 		return nil, errors.New("either image ref or signature infos are required for generating a signed YAML")
 	}
@@ -152,6 +152,10 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	annotationMap := map[string]interface{}{}
 	if imageRef != "" {
 		annotationMap[ImageRefAnnotationKey] = imageRef
+	}
+
+	for k, v := range imageAnnotations {
+		annotationMap[k] = v
 	}
 
 	signedYAMLs := [][]byte{}

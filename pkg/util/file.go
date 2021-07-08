@@ -18,6 +18,7 @@ package util
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -26,7 +27,14 @@ import (
 	"strings"
 )
 
-func TarGzCompress(src string, buf io.Writer) error {
+type AnnotationWriter func([]byte, map[string]interface{}) ([]byte, error)
+
+type MutateOptions struct {
+	AW          AnnotationWriter
+	Annotations map[string]interface{}
+}
+
+func TarGzCompress(src string, buf io.Writer, mo MutateOptions) error {
 	// tar > gzip > buf
 	zr := gzip.NewWriter(buf)
 	tw := tar.NewWriter(zr)
@@ -53,11 +61,17 @@ func TarGzCompress(src string, buf io.Writer) error {
 		}
 		// if not a dir, write file content
 		if !fi.IsDir() {
-			data, err := os.Open(file)
+			data, err := os.ReadFile(file)
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(tw, data); err != nil {
+
+			b, err := mo.AW(data, mo.Annotations)
+			if err != nil {
+				return err
+			}
+
+			if _, err := io.Copy(tw, bytes.NewReader(b)); err != nil {
 				return err
 			}
 		}
