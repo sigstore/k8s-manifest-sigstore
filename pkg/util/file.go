@@ -27,6 +27,7 @@ import (
 	"strings"
 )
 
+// AnnotationWriter represents the embedAnnotation function
 type AnnotationWriter func([]byte, map[string]interface{}) ([]byte, error)
 
 type MutateOptions struct {
@@ -61,17 +62,17 @@ func TarGzCompress(src string, buf io.Writer, mo MutateOptions) error {
 		}
 		// if not a dir, write file content
 		if !fi.IsDir() {
-			data, err := os.ReadFile(file)
+			f, err := os.ReadFile(file)
 			if err != nil {
 				return err
 			}
 
-			b, err := mo.AW(data, mo.Annotations)
+			data, err := mo.AW(f, mo.Annotations)
 			if err != nil {
 				return err
 			}
 
-			if _, err := io.Copy(tw, bytes.NewReader(b)); err != nil {
+			if _, err := io.Copy(tw, bytes.NewReader(data)); err != nil {
 				return err
 			}
 		}
