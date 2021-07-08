@@ -35,7 +35,7 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 	var keyPath string
 	var configPath string
 	cmd := &cobra.Command{
-		Use:   "apply-after-verify -f <YAMLFILE> [-i <IMAGE>]",
+		Use:   "apply-after-verify -f FILENAME [-i IMAGE]",
 		Short: "A command to apply Kubernetes YAML manifests only after verifying signature",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fullArgs := getOriginalFullArgs("apply-after-verify") // TODO: find a better way get all args

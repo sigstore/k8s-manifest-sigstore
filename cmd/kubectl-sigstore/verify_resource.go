@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -45,6 +46,8 @@ const (
 	resultKind       = "VerifyResourceResult"         // use this only for output result as json/yaml
 )
 
+const embeddedSigRef = "<embedded>"
+
 // This is common ignore fields for changes by k8s system
 //go:embed resources/default-config.yaml
 var defaultConfigBytes []byte
@@ -60,7 +63,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	cmd := &cobra.Command{
-		Use:   "verify-resource -f <YAMLFILE> [-i <IMAGE>]",
+		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE) [options]",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
@@ -90,9 +93,9 @@ func NewCmdVerifyResource() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename")
+	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename (this can be \"-\", then read a file from stdin)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
-	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
+	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to public key (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 	cmd.PersistentFlags().StringVarP(&kubectlOptions.LabelSelector, "selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
@@ -151,11 +154,11 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 		vo.KeyPath = keyPath
 	}
 
-	results := []SingleResult{}
+	results := []resourceResult{}
 	for _, obj := range objs {
 		log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
 		vResult, err := k8smanifest.VerifyResource(obj, vo)
-		r := SingleResult{
+		r := resourceResult{
 			Object: obj,
 		}
 		if err == nil {
@@ -168,12 +171,13 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	}
 
 	var resultBytes []byte
+	summarizedResult := NewVerifyResourceResult(results)
 	if outputFormat == "" {
-		resultBytes = makeResourceResultTable(results)
+		resultBytes = makeResultTable(summarizedResult)
 	} else if outputFormat == "json" {
-		resultBytes, _ = json.MarshalIndent(VerifyResourceResult(results), "", "    ") // pretty print json as well as kubectl get -o json
+		resultBytes, _ = json.MarshalIndent(summarizedResult, "", "    ") // pretty print json as well as kubectl get -o json
 	} else if outputFormat == "yaml" {
-		resultBytes, _ = yaml.Marshal(VerifyResourceResult(results))
+		resultBytes, _ = yaml.Marshal(summarizedResult)
 	}
 
 	fmt.Println(string(resultBytes))
@@ -262,9 +266,73 @@ func getObjsFromManifests(yamls [][]byte) ([]unstructured.Unstructured, error) {
 }
 
 // generate result bytes in a table which will be shown in output
-func makeResourceResultTable(results []SingleResult) []byte {
-	tableResult := "KIND\tNAME\tVALID\tSIGNER\tSIG_REF\tERROR\tSIGNED\tAGE\t\n"
-	for _, r := range results {
+func makeResultTable(result VerifyResourceResult) []byte {
+	if result.Summary.Total == 0 {
+		return []byte("No resources found")
+	}
+	summaryTable := makeSummaryResultTable(result)
+	imageRefFound := len(result.Images) > 0
+	var imageTable []byte
+	if imageRefFound {
+		imageTable = makeImageResultTable(result)
+	}
+	resourceTable := makeResourceResultTable(result)
+
+	var resultTable string
+	if imageRefFound {
+		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[IMAGES]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(imageTable), string(resourceTable))
+	} else {
+		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(resourceTable))
+	}
+	return []byte(resultTable)
+}
+
+// generate summary of result table which will be shown in output
+func makeSummaryResultTable(result VerifyResourceResult) []byte {
+	var tableResult string
+	tableResult = "TOTAL\tVALID\tINVALID\t\n"
+	tableResult += fmt.Sprintf("%v\t%v\t%v\t\n", result.Summary.Total, result.Summary.Valid, result.Summary.Invalid)
+	writer := new(bytes.Buffer)
+	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
+	_, _ = w.Write([]byte(tableResult))
+	w.Flush()
+	tableBytes := writer.Bytes()
+	return tableBytes
+}
+
+// generate image result table which will be shown in output
+func makeImageResultTable(result VerifyResourceResult) []byte {
+	var tableResult string
+	tableResult = "IMAGE_NAME\tSIGNER\tSIGNED\t\n"
+	for i := range result.Images {
+		imgResult := result.Images[i]
+		sigAge := ""
+		if imgResult.SignedTime != nil {
+			t := imgResult.SignedTime
+			sigAge = getAge(metav1.Time{Time: *t})
+		}
+		tableResult += fmt.Sprintf("%s\t%s\t%s\t\n", imgResult.Name, imgResult.Signer, sigAge)
+	}
+	writer := new(bytes.Buffer)
+	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
+	_, _ = w.Write([]byte(tableResult))
+	w.Flush()
+	tableBytes := writer.Bytes()
+	return tableBytes
+}
+
+// generate resource result table which will be shown in output
+func makeResourceResultTable(result VerifyResourceResult) []byte {
+	mutipleImagesFound := len(result.Images) >= 2
+
+	var resourceTableResult string
+	if mutipleImagesFound {
+		resourceTableResult = "KIND\tNAME\tVALID\tSIG_REF\tERROR\tAGE\t\n"
+	} else {
+		resourceTableResult = "KIND\tNAME\tVALID\tERROR\tAGE\t\n"
+	}
+
+	for _, r := range result.Resources {
 		// if it is out of scope (=skipped by config), skip to show it too
 		inscope := true
 		if r.Result != nil {
@@ -283,17 +351,10 @@ func makeResourceResultTable(results []SingleResult) []byte {
 		// verify result
 		valid := "false"
 
-		signer := ""
 		sigRef := ""
-		sigAge := ""
 		if r.Result != nil {
 			valid = strconv.FormatBool(r.Result.Verified)
-			signer = r.Result.Signer
 			sigRef = r.Result.SigRef
-			if r.Result.SignedTime != nil {
-				t := r.Result.SignedTime
-				sigAge = getAge(metav1.Time{Time: *t})
-			}
 		}
 		// failure reason
 		reason := ""
@@ -304,15 +365,20 @@ func makeResourceResultTable(results []SingleResult) []byte {
 			reason = fmt.Sprintf("diff: %s", r.Result.Diff)
 		}
 		// make a row string
-		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, signer, sigRef, reason, sigAge, resAge)
-		tableResult = fmt.Sprintf("%s%s", tableResult, line)
+		var line string
+		if mutipleImagesFound {
+			line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, sigRef, reason, resAge)
+		} else {
+			line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, reason, resAge)
+		}
+		resourceTableResult = fmt.Sprintf("%s%s", resourceTableResult, line)
 	}
 	writer := new(bytes.Buffer)
 	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
-	_, _ = w.Write([]byte(tableResult))
+	_, _ = w.Write([]byte(resourceTableResult))
 	w.Flush()
-	result := writer.Bytes()
-	return result
+	tableBytes := writer.Bytes()
+	return tableBytes
 }
 
 // convert the timestamp info to human readable string
@@ -320,17 +386,33 @@ func getAge(t metav1.Time) string {
 	return metatable.ConvertToHumanReadableDateType(t)
 }
 
-type SingleResult struct {
+type summary struct {
+	Total   int `json:"total"`
+	Valid   int `json:"valid"`
+	Invalid int `json:"invalid"`
+}
+
+type imageResult struct {
+	Name       string     `json:"name"`
+	Signer     string     `json:"signer"`
+	SignedTime *time.Time `json:"signedTime"`
+}
+
+type resourceResult struct {
 	Object unstructured.Unstructured         `json:"-"`
 	Result *k8smanifest.VerifyResourceResult `json:"result"`
 	Error  error                             `json:"-"`
 }
 
-type VerifyResourceResult []SingleResult
+type VerifyResourceResult struct {
+	Summary   summary          `json:"summary"`
+	Images    []imageResult    `json:"images"`
+	Resources []resourceResult `json:"resources"`
+}
 
 // SingleResult contains a target object itself, but it is too much to show result.
 // So only corev1.ObjectReference will be shown in an output.
-func (r SingleResult) MarshalJSON() ([]byte, error) {
+func (r resourceResult) MarshalJSON() ([]byte, error) {
 	objRef := obj2ref(r.Object)
 	errStr := ""
 	if r.Error != nil {
@@ -349,7 +431,7 @@ func (r SingleResult) MarshalJSON() ([]byte, error) {
 
 // SingleResult contains a target object itself, but it is too much to show result.
 // So only corev1.ObjectReference will be shown in an output.
-func (r SingleResult) MarshalYAML() ([]byte, error) {
+func (r resourceResult) MarshalYAML() ([]byte, error) {
 	objRef := obj2ref(r.Object)
 	errStr := ""
 	if r.Error != nil {
@@ -366,40 +448,44 @@ func (r SingleResult) MarshalYAML() ([]byte, error) {
 	})
 }
 
-// VerifyResourceResult is a wrapper for list of SingleResult,
-// and it will be output as a k8s resource for consistency with kubectl get xxxx -o json
-func (r VerifyResourceResult) MarshalJSON() ([]byte, error) {
-	results := []SingleResult{}
-	for _, sr := range r {
-		results = append(results, sr)
-	}
-	return json.Marshal(&struct {
-		APIVersion string         `json:"apiVersion"`
-		Kind       string         `json:"kind"`
-		Results    []SingleResult `json:"results"`
-	}{
-		APIVersion: resultAPIVersion,
-		Kind:       resultKind,
-		Results:    results,
-	})
-}
+func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
+	summ := summary{}
+	images := []imageResult{}
+	resources := []resourceResult{}
+	totalCount := 0
+	validCount := 0
+	invalidCount := 0
+	imageMap := map[string]bool{}
+	for i := range results {
+		result := results[i]
+		if result.Result != nil && result.Result.Verified {
+			validCount += 1
+		} else {
+			invalidCount += 1
+		}
+		totalCount += 1
 
-// VerifyResourceResult is a wrapper for list of SingleResult,
-// and it will be output as a k8s resource for consistency with kubectl get xxxx -o yaml
-func (r VerifyResourceResult) MarshalYAML() ([]byte, error) {
-	results := []SingleResult{}
-	for _, sr := range r {
-		results = append(results, sr)
+		if result.Result != nil && result.Result.SigRef != "" && result.Result.SigRef != embeddedSigRef {
+			imageRef := result.Result.SigRef
+			if !imageMap[imageRef] {
+				images = append(images, imageResult{
+					Name:       imageRef,
+					Signer:     result.Result.Signer,
+					SignedTime: result.Result.SignedTime,
+				})
+				imageMap[imageRef] = true
+			}
+		}
+		resources = append(resources, result)
 	}
-	return yaml.Marshal(&struct {
-		APIVersion string         `json:"apiVersion"`
-		Kind       string         `json:"kind"`
-		Results    []SingleResult `json:"results"`
-	}{
-		APIVersion: resultAPIVersion,
-		Kind:       resultKind,
-		Results:    results,
-	})
+	summ.Total = totalCount
+	summ.Valid = validCount
+	summ.Invalid = invalidCount
+	return VerifyResourceResult{
+		Summary:   summ,
+		Images:    images,
+		Resources: resources,
+	}
 }
 
 func obj2ref(obj unstructured.Unstructured) corev1.ObjectReference {

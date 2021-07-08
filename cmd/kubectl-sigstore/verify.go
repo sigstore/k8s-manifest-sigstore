@@ -34,7 +34,7 @@ func NewCmdVerify() *cobra.Command {
 	var keyPath string
 	var configPath string
 	cmd := &cobra.Command{
-		Use:   "verify -f <YAMLFILE> [-i <IMAGE>]",
+		Use:   "verify -f FILENAME [-i IMAGE] [options]",
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 

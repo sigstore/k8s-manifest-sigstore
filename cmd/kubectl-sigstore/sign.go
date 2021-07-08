@@ -35,7 +35,7 @@ func NewCmdSign() *cobra.Command {
 	var updateAnnotation bool
 	var imageAnnotations []string
 	cmd := &cobra.Command{
-		Use:   "sign -f <YAMLFILE> [-i <IMAGE>]",
+		Use:   "sign -f FILENAME [-i IMAGE] [options]",
 		Short: "A command to sign Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
