@@ -81,7 +81,11 @@ type ImageSigner struct {
 
 func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
 	var inputDataBuffer bytes.Buffer
-	err := k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations})
+	var mo *k8ssigutil.MutateOptions
+	if len(imageAnnotations) > 0 {
+		mo = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
+	}
+	err := k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to compress an input file/dir")
 	}
