@@ -55,10 +55,10 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 			imageRef = annoImageRef
 		}
 	}
-	
+
 	i.imageRef = imageRef
 
-	if *pubkeyPath != "" {
+	if pubkeyPath != nil && *pubkeyPath != "" {
 		i.pubkeyPath = pubkeyPath
 	}
 
