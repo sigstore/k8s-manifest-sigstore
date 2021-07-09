@@ -20,12 +20,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	cmdapply "k8s.io/kubectl/pkg/cmd/apply"
+	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 )
 
 func NewCmdApplyAfterVerify() *cobra.Command {
@@ -38,18 +40,17 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 		Use:   "apply-after-verify -f FILENAME [-i IMAGE]",
 		Short: "A command to apply Kubernetes YAML manifests only after verifying signature",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fullArgs := getOriginalFullArgs("apply-after-verify") // TODO: find a better way get all args
-			_, kubeApplyArgs := splitApplyArgs(fullArgs)
-			if filename != "" {
-				kubeApplyArgs = append(kubeApplyArgs, []string{"--filename", filename}...)
+			var err error
+			err = kubectlOptions.initApply(cmd, filename)
+			if err != nil {
+				return errors.Wrap(err, "failed to initialize a configuration for kubectl apply command")
 			}
-			err := applyAfterVerify(filename, imageRef, keyPath, configPath, kubeApplyArgs)
+			err = applyAfterVerify(filename, imageRef, keyPath, configPath)
 			if err != nil {
 				return err
 			}
 			return nil
 		},
-		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 	}
 
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "file name which will be signed (if dir, all YAMLs inside it will be signed)")
@@ -57,10 +58,16 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 
+	kubectlOptions.PrintFlags.AddFlags(cmd)
+	cmdutil.AddValidateFlags(cmd)
+	cmdutil.AddDryRunFlag(cmd)
+	cmdutil.AddServerSideApplyFlags(cmd)
+	cmdutil.AddFieldManagerFlagVar(cmd, &kubectlOptions.fieldManagerForApply, cmdapply.FieldManagerClientSideApply)
+
 	return cmd
 }
 
-func applyAfterVerify(filename, imageRef, keyPath, configPath string, kubeApplyArgs []string) error {
+func applyAfterVerify(filename, imageRef, keyPath, configPath string) error {
 	manifest, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -97,65 +104,14 @@ func applyAfterVerify(filename, imageRef, keyPath, configPath string, kubeApplyA
 	}
 	if result.Verified {
 		log.Info("verify result:", result)
-		kArgs := []string{"apply"}
-		kArgs = append(kArgs, kubeApplyArgs...)
-		log.Debug("kube apply args", strings.Join(kArgs, " "))
-		applyResult, err := k8ssigutil.CmdExec("kubectl", kArgs...)
+		err := kubectlOptions.Apply(filename)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return nil
 		}
-		fmt.Println(applyResult)
 	} else {
 		log.Error("verify result:", result)
 	}
 
 	return nil
-}
-
-func getOriginalFullArgs(separator string) []string {
-	afterSeparator := false
-	args := []string{}
-	for _, arg := range os.Args {
-		if afterSeparator {
-			args = append(args, arg)
-		}
-
-		if arg == separator {
-			afterSeparator = true
-		}
-	}
-	return args
-}
-
-func splitApplyArgs(args []string) ([]string, []string) {
-	mainArgs := []string{}
-	kubectlArgs := []string{}
-	mainArgsConditionSingle := map[string]bool{}
-	mainArgsConditionDouble := map[string]bool{
-		"--filename": true,
-		"-f":         true,
-		"--image":    true,
-		"-i":         true,
-		"--key":      true,
-		"-k":         true,
-		"--config":   true,
-		"-c":         true,
-	}
-	skipIndex := map[int]bool{}
-	for i, s := range args {
-		if skipIndex[i] {
-			continue
-		}
-		if mainArgsConditionSingle[s] {
-			mainArgs = append(mainArgs, args[i])
-		} else if mainArgsConditionDouble[s] {
-			mainArgs = append(mainArgs, args[i])
-			mainArgs = append(mainArgs, args[i+1])
-			skipIndex[i+1] = true
-		} else {
-			kubectlArgs = append(kubectlArgs, args[i])
-		}
-	}
-	return mainArgs, kubectlArgs
 }

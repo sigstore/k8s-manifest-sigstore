@@ -75,6 +75,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	if vo != nil && len(vo.SkipObjects) > 0 {
 		if vo.SkipObjects.Match(obj) {
 			inScope = false
+			return &VerifyResourceResult{InScope: false}, nil
 		}
 	}
 
@@ -87,11 +88,13 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	var manifestInRef []byte
+	log.Debug("fetching manifest...")
 	manifestInRef, sigRef, err = NewManifestFetcher(imageRefString).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
 
+	log.Debug("matching object with manifest...")
 	mnfMatched, diff, err := matchResourceWithManifest(obj, manifestInRef, ignoreFields, vo.CheckDryRunForApply)
 	if err != nil {
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
@@ -103,9 +106,10 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	var sigVerified bool
+	log.Debug("verifying signature...")
 	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
 	if err != nil {
-		return nil, errors.Wrap(err, "error occured during signature verification")
+		return nil, errors.Wrap(err, "failed to verify signature")
 	}
 
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
@@ -146,6 +150,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	objBytes, _ := json.Marshal(obj.Object)
 
 	// CASE1: direct match
+	log.Debug("try direct matching")
 	matched, diff, err = directMatch(objBytes, foundBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during diract match")
@@ -162,6 +167,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	}
 
 	// CASE2: dryrun create match
+	log.Debug("try dryrun create matching")
 	matched, diff, err = dryrunCreateMatch(objBytes, foundBytes, clusterScope, isCRD)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
@@ -179,6 +185,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 
 	// CASE3: dryrun apply match
 	if checkDryRunForApply {
+		log.Debug("try dryrun apply matching")
 		matched, diff, err = dryrunApplyMatch(objBytes, foundBytes, clusterScope, isCRD)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during dryrun apply match")

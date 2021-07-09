@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	k8smnfcosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
@@ -60,7 +61,7 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 	i.imageRef = imageRef
 
 	if pubkeyPath != nil && *pubkeyPath != "" {
-		i.pubkeyPath = pubkeyPath
+		i.pubkeyPathString = pubkeyPath
 	}
 
 	if imageRef == "" {
@@ -72,7 +73,7 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 
 type ImageSignatureVerifier struct {
 	imageRef             string
-	pubkeyPath           *string
+	pubkeyPathString     *string
 	onMemoryCacheEnabled bool
 }
 
@@ -82,33 +83,73 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 		return false, "", nil, errors.New("no image reference is found")
 	}
 
-	if v.onMemoryCacheEnabled {
-		// try getting result from on-memory cache
-		cacheFound, verified, signerName, signedTimestamp, err := v.getResultFromMemCache(imageRef)
-		// if found, return it
-		if cacheFound {
-			return verified, signerName, signedTimestamp, err
-		}
-		// otherwise, do normal image verification
-		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(imageRef, v.pubkeyPath)
-		// set the result to on-memory cache
-		v.setResultToMemCache(imageRef, verified, signerName, signedTimestamp, err)
-		return verified, signerName, signedTimestamp, err
+	pubkeyPathString := v.pubkeyPathString
+	pubkeys := []string{}
+	if pubkeyPathString != nil && *pubkeyPathString != "" {
+		pubkeys = splitCommaSeparatedString(*pubkeyPathString)
 	} else {
-		// do normal image verification
-		return k8smnfcosign.VerifyImage(imageRef, v.pubkeyPath)
+		pubkeys = []string{""}
 	}
+
+	verified := false
+	signerName := ""
+	var signedTimestamp *int64
+	var err error
+	if v.onMemoryCacheEnabled {
+		cacheFound := false
+		cacheFoundCount := 0
+		allErrs := []string{}
+		for i := range pubkeys {
+			pubkey := pubkeys[i]
+			// try getting result from on-memory cache
+			cacheFound, verified, signerName, signedTimestamp, err = v.getResultFromMemCache(imageRef, pubkey)
+			// if found and verified true, return it
+			if cacheFound {
+				cacheFoundCount += 1
+				if verified {
+					return verified, signerName, signedTimestamp, err
+				}
+			}
+			if err != nil {
+				allErrs = append(allErrs, err.Error())
+			}
+		}
+		if !verified && cacheFoundCount == len(pubkeys) {
+			return false, "", nil, fmt.Errorf("signature verification failed: %s", strings.Join(allErrs, "; "))
+		}
+	}
+
+	log.Debug("image signature cache not found")
+	allErrs := []string{}
+	for i := range pubkeys {
+		pubkey := pubkeys[i]
+		// do normal image verification
+		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(imageRef, pubkey)
+
+		if v.onMemoryCacheEnabled {
+			// set the result to on-memory cache
+			v.setResultToMemCache(imageRef, pubkey, verified, signerName, signedTimestamp, err)
+		}
+
+		if verified {
+			return verified, signerName, signedTimestamp, err
+		} else if err != nil {
+			allErrs = append(allErrs, err.Error())
+		}
+	}
+	return false, "", nil, fmt.Errorf("signature verification failed: %s", strings.Join(allErrs, "; "))
 }
 
-func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef string) (bool, bool, string, *int64, error) {
-	key := fmt.Sprintf("cache/verify-image/%s", imageRef)
+func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef, pubkey string) (bool, bool, string, *int64, error) {
+	key := fmt.Sprintf("cache/verify-image/%s/%s", imageRef, pubkey)
+	resultNum := 4
 	result, err := onMemoryCacheForVerifyResource.Get(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
 		return false, false, "", nil, nil
 	}
-	if len(result) != 3 {
-		return false, false, "", nil, fmt.Errorf("cache returns inconsistent data: a length of verify image result must be 3, but got %v", len(result))
+	if len(result) != resultNum {
+		return false, false, "", nil, fmt.Errorf("cache returns inconsistent data: a length of verify image result must be %v, but got %v", resultNum, len(result))
 	}
 	verified := false
 	signerName := ""
@@ -128,8 +169,8 @@ func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef string) (bool, b
 	return true, verified, signerName, signedTimestamp, err
 }
 
-func (v *ImageSignatureVerifier) setResultToMemCache(imageRef string, verified bool, signerName string, signedTimestamp *int64, err error) {
-	key := fmt.Sprintf("cache/verify-image/%s", imageRef)
+func (v *ImageSignatureVerifier) setResultToMemCache(imageRef, pubkey string, verified bool, signerName string, signedTimestamp *int64, err error) {
+	key := fmt.Sprintf("cache/verify-image/%s/%s", imageRef, pubkey)
 	_ = onMemoryCacheForVerifyResource.Set(key, verified, signerName, signedTimestamp, err)
 }
 
@@ -173,7 +214,7 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error
 		return nil, "", errors.New("no image reference is found")
 	}
 
-	imageRefList := splitImageRefString(imageRefString)
+	imageRefList := splitCommaSeparatedString(imageRefString)
 	for _, imageRef := range imageRefList {
 		concatYAMLbytes, err := f.fetchManifestInSingleImage(imageRef)
 		if err != nil {
@@ -196,6 +237,7 @@ func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleImageRef string)
 		cacheFound, concatYAMLbytes, err = f.getManifestFromMemCache(singleImageRef)
 		// if cache not found, do fetch and set the result to cache
 		if !cacheFound {
+			log.Debug("image manifest cache not found")
 			// fetch YAML manifests from actual image
 			concatYAMLbytes, err = f.getConcatYAMLFromImageRef(singleImageRef)
 			if err == nil {
@@ -215,7 +257,7 @@ func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleImageRef string)
 
 func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 	imageRefString := f.imageRefString
-	imageRefList := splitImageRefString(imageRefString)
+	imageRefList := splitCommaSeparatedString(imageRefString)
 
 	yamls := [][]byte{}
 	for _, imageRef := range imageRefList {
@@ -229,12 +271,12 @@ func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 	return yamls, nil
 }
 
-func splitImageRefString(imageRefString string) []string {
-	imageRefList := strings.Split(imageRefString, ",")
-	for i := range imageRefList {
-		imageRefList[i] = strings.TrimSpace(imageRefList[i])
+func splitCommaSeparatedString(in string) []string {
+	parts := strings.Split(in, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
 	}
-	return imageRefList
+	return parts
 }
 
 func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byte, error) {
@@ -251,13 +293,14 @@ func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byt
 
 func (f *ImageManifestFetcher) getManifestFromMemCache(imageRef string) (bool, []byte, error) {
 	key := fmt.Sprintf("cache/fetch-manifest/%s", imageRef)
+	resultNum := 2
 	result, err := onMemoryCacheForVerifyResource.Get(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
 		return false, nil, nil
 	}
-	if len(result) != 2 {
-		return false, nil, fmt.Errorf("cache returns inconsistent data: a length of fetch manifest result must be 2, but got %v", len(result))
+	if len(result) != resultNum {
+		return false, nil, fmt.Errorf("cache returns inconsistent data: a length of fetch manifest result must be %v, but got %v", resultNum, len(result))
 	}
 	var concatYAMLbytes []byte
 	if result[0] != nil {

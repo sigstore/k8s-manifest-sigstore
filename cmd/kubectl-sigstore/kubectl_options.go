@@ -21,9 +21,14 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/cli-runtime/pkg/printers"
+	"k8s.io/cli-runtime/pkg/resource"
+	cmdapply "k8s.io/kubectl/pkg/cmd/apply"
+	"k8s.io/kubectl/pkg/cmd/delete"
 	cmdget "k8s.io/kubectl/pkg/cmd/get"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 )
@@ -31,20 +36,27 @@ import (
 const defaultChunkSize = 500
 
 type KubectlOptions struct {
-	cmdget.GetOptions
 	ConfigFlags *genericclioptions.ConfigFlags
+	PrintFlags  *genericclioptions.PrintFlags
+
+	GetOptions   *cmdget.GetOptions
+	ApplyOptions *cmdapply.ApplyOptions
+
+	fieldManagerForApply string
 }
 
-func (o *KubectlOptions) SetNamespaceOptions() error {
-	var err error
+func (o *KubectlOptions) initGet(cmd *cobra.Command) error {
+	ioStreams := genericclioptions.IOStreams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
-	o.Namespace, o.ExplicitNamespace, err = f.ToRawKubeConfigLoader().Namespace()
+	o.GetOptions = cmdget.NewGetOptions("kubectl-sigstore", ioStreams)
+	var err error
+	o.GetOptions.Namespace, o.GetOptions.ExplicitNamespace, err = f.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return errors.Wrap(err, "failed to set namespace options")
 	}
-	if o.AllNamespaces {
-		o.ExplicitNamespace = false
+	if o.GetOptions.AllNamespaces {
+		o.GetOptions.ExplicitNamespace = false
 	}
 	return nil
 }
@@ -54,7 +66,7 @@ func (o *KubectlOptions) Get(args []string, overrideNamespace string) ([]unstruc
 		return nil, errors.New("kubectl client config is nil")
 	}
 
-	namespace := o.Namespace
+	namespace := o.GetOptions.Namespace
 	if overrideNamespace != "" {
 		namespace = overrideNamespace
 	}
@@ -64,10 +76,10 @@ func (o *KubectlOptions) Get(args []string, overrideNamespace string) ([]unstruc
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
 	r := f.NewBuilder().
 		Unstructured().
-		NamespaceParam(namespace).DefaultNamespace().AllNamespaces(o.AllNamespaces).
-		FilenameParam(o.ExplicitNamespace, &o.FilenameOptions).
-		LabelSelectorParam(o.LabelSelector).
-		FieldSelectorParam(o.FieldSelector).
+		NamespaceParam(namespace).DefaultNamespace().AllNamespaces(o.GetOptions.AllNamespaces).
+		FilenameParam(o.GetOptions.ExplicitNamespace, &o.GetOptions.FilenameOptions).
+		LabelSelectorParam(o.GetOptions.LabelSelector).
+		FieldSelectorParam(o.GetOptions.FieldSelector).
 		RequestChunksOf(int64(chunkSize)).
 		ResourceTypeOrNameArgs(true, args...).
 		ContinueOnError().
@@ -95,4 +107,70 @@ func (o *KubectlOptions) Get(args []string, overrideNamespace string) ([]unstruc
 		return nil, fmt.Errorf("error occurred during object conversion: %s", strings.Join(allErrs, "; "))
 	}
 	return objs, nil
+}
+
+func (o *KubectlOptions) initApply(cmd *cobra.Command, filename string) error {
+	ioStreams := genericclioptions.IOStreams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
+	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())
+	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
+
+	o.ApplyOptions = cmdapply.NewApplyOptions(ioStreams)
+
+	var err error
+
+	o.ApplyOptions.ServerSideApply = cmdutil.GetServerSideApplyFlag(cmd)
+	o.ApplyOptions.ForceConflicts = cmdutil.GetForceConflictsFlag(cmd)
+	o.ApplyOptions.DryRunStrategy, err = cmdutil.GetDryRunStrategy(cmd)
+	if err != nil {
+		return err
+	}
+	o.ApplyOptions.DynamicClient, err = f.DynamicClient()
+	if err != nil {
+		return err
+	}
+	o.ApplyOptions.DryRunVerifier = resource.NewDryRunVerifier(o.ApplyOptions.DynamicClient, f.OpenAPIGetter())
+	o.ApplyOptions.FieldManager = cmdapply.GetApplyFieldManagerFlag(cmd, o.ApplyOptions.ServerSideApply)
+
+	if o.ApplyOptions.ForceConflicts && !o.ApplyOptions.ServerSideApply {
+		return fmt.Errorf("--force-conflicts only works with --server-side")
+	}
+
+	if o.ApplyOptions.DryRunStrategy == cmdutil.DryRunClient && o.ApplyOptions.ServerSideApply {
+		return fmt.Errorf("--dry-run=client doesn't work with --server-side (did you mean --dry-run=server instead?)")
+	}
+
+	// allow for a success message operation to be specified at print time
+	o.ApplyOptions.ToPrinter = func(operation string) (printers.ResourcePrinter, error) {
+		o.PrintFlags.NamePrintFlags.Operation = operation
+		cmdutil.PrintFlagsWithDryRunStrategy(o.PrintFlags, o.ApplyOptions.DryRunStrategy)
+		return o.PrintFlags.ToPrinter()
+	}
+
+	// RecordFlags
+	// DeleteFlags
+
+	o.ApplyOptions.DeleteOptions = &delete.DeleteOptions{FilenameOptions: resource.FilenameOptions{Filenames: []string{filename}}}
+
+	o.ApplyOptions.OpenAPISchema, _ = f.OpenAPISchema()
+	o.ApplyOptions.Validator, err = f.Validator(cmdutil.GetFlagBool(cmd, "validate"))
+	if err != nil {
+		return err
+	}
+	o.ApplyOptions.Builder = f.NewBuilder()
+	o.ApplyOptions.Mapper, err = f.ToRESTMapper()
+	if err != nil {
+		return err
+	}
+
+	o.ApplyOptions.Namespace, o.ApplyOptions.EnforceNamespace, err = f.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return err
+	}
+
+	o.ApplyOptions.PostProcessorFn = o.ApplyOptions.PrintAndPrunePostProcessor()
+	return nil
+}
+
+func (o *KubectlOptions) Apply(filename string) error {
+	return o.ApplyOptions.Run()
 }

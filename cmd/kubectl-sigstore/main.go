@@ -21,6 +21,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/kubectl/pkg/scheme"
 )
 
 const logLevelEnvKey = "K8S_MANIFEST_SIGSTORE_LOG_LEVEL"
@@ -39,13 +40,17 @@ var kubectlOptions KubectlOptions
 
 func init() {
 	kubectlOptions = KubectlOptions{
+		// generic options
 		ConfigFlags: genericclioptions.NewConfigFlags(true),
+		PrintFlags:  genericclioptions.NewPrintFlags("created").WithTypeSetter(scheme.Scheme),
 	}
 
 	rootCmd.AddCommand(NewCmdSign())
 	rootCmd.AddCommand(NewCmdVerify())
 	rootCmd.AddCommand(NewCmdVerifyResource())
 	rootCmd.AddCommand(NewCmdApplyAfterVerify())
+
+	kubectlOptions.ConfigFlags.AddFlags(rootCmd.PersistentFlags())
 
 	logLevelStr := os.Getenv(logLevelEnvKey)
 	if logLevelStr == "" {

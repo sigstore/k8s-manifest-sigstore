@@ -68,9 +68,9 @@ func NewCmdVerifyResource() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			kubeGetArgs := args
-			err = kubectlOptions.SetNamespaceOptions()
+			err = kubectlOptions.initGet(cmd)
 			if err != nil {
-				return errors.Wrap(err, "failed to set namespace options with kubeconfig")
+				return errors.Wrap(err, "failed to initialize a configuration for kubectl get command")
 			}
 
 			if filename != "" && filename != "-" {
@@ -95,14 +95,9 @@ func NewCmdVerifyResource() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename (this can be \"-\", then read a file from stdin)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
-	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to public key (if empty, do key-less verification)")
+	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
-	cmd.PersistentFlags().StringVarP(&kubectlOptions.LabelSelector, "selector", "l", "", "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
-	cmd.PersistentFlags().StringVar(&kubectlOptions.FieldSelector, "field-selector", "", "Selector (field query) to filter on, supports '=', '==', and '!='.(e.g. --field-selector key1=value1,key2=value2). The server only supports a limited number of field queries per type.")
-	cmd.PersistentFlags().BoolVarP(&kubectlOptions.AllNamespaces, "all-namespaces", "A", false, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
-
-	kubectlOptions.ConfigFlags.AddFlags(cmd.Flags())
 
 	return cmd
 }
@@ -458,6 +453,9 @@ func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
 	imageMap := map[string]bool{}
 	for i := range results {
 		result := results[i]
+		if result.Result != nil && !result.Result.InScope {
+			continue
+		}
 		if result.Result != nil && result.Result.Verified {
 			validCount += 1
 		} else {

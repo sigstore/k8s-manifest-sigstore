@@ -34,7 +34,7 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-func VerifyImage(imageRef string, pubkeyPath *string) (bool, string, *int64, error) {
+func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", imageRef, err.Error())
@@ -46,8 +46,8 @@ func VerifyImage(imageRef string, pubkeyPath *string) (bool, string, *int64, err
 		Roots:  fulcio.Roots,
 	}
 
-	if pubkeyPath != nil && *pubkeyPath != "" {
-		tmpPubkey, err := cosign.LoadPublicKey(context.Background(), *pubkeyPath)
+	if pubkeyPath != "" {
+		tmpPubkey, err := cosign.LoadPublicKey(context.Background(), pubkeyPath)
 		if err != nil {
 			return false, "", nil, fmt.Errorf("error loading public key; %s", err.Error())
 		}
