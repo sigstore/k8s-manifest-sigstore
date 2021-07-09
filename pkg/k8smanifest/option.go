@@ -31,6 +31,7 @@ type SignOption struct {
 	ImageRef         string `json:"-"`
 	Output           string `json:"-"`
 	UpdateAnnotation bool   `json:"-"`
+	ImageAnnotations map[string]interface{} `json:"-"`
 }
 
 // option for VerifyResource()

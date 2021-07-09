@@ -22,9 +22,8 @@ import (
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 )
 
-func SignImage(imageRef string, keyPath *string) error {
+func SignImage(imageRef string, keyPath *string, imageAnnotations map[string]interface{}) error {
 	// TODO: check usecase for yaml signing
-	imageAnnotation := map[string]interface{}{}
 
 	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
@@ -33,7 +32,7 @@ func SignImage(imageRef string, keyPath *string) error {
 	// TODO: handle the case that COSIGN_EXPERIMENTAL env var is not set
 
 	opt := cosigncli.SignOpts{
-		Annotations: imageAnnotation,
+		Annotations: imageAnnotations,
 		Sk:          sk,
 		IDToken:     idToken,
 	}

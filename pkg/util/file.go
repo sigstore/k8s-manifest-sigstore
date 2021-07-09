@@ -18,22 +18,88 @@ package util
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
-func TarGzCompress(src string, buf io.Writer) error {
+// AnnotationWriter represents the embedAnnotation function
+type AnnotationWriter func([]byte, map[string]interface{}) ([]byte, error)
+
+type MutateOptions struct {
+	AW          AnnotationWriter
+	Annotations map[string]interface{}
+}
+
+func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
+
 	// tar > gzip > buf
 	zr := gzip.NewWriter(buf)
 	tw := tar.NewWriter(zr)
 
 	var errV error
+
+	tarGzSrc := src
+
+	// if mutation option is specified, should mutate files before tar gz compression
+	// in order to avoid file header inconsistency
+	if mo != nil {
+		dir, err := ioutil.TempDir("", "compressing-tar-gz")
+		if err != nil {
+			return errors.Wrap(err, "error occurred during creating temp dir for tar gz compression")
+		}
+
+		basename := filepath.Base(src)
+		defer os.RemoveAll(dir)
+
+		tmpSrc := filepath.Join(dir, basename)
+		err = copyDir(src, tmpSrc)
+		if err != nil {
+			return errors.Wrap(err, "error occurred during copying src dir for tar gz compression")
+		}
+
+		errV = filepath.Walk(tmpSrc, func(file string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// if not a dir, write file content
+			if !fi.IsDir() {
+				f, err := os.ReadFile(file)
+				if err != nil {
+					return err
+				}
+
+				data, err := mo.AW(f, mo.Annotations)
+				if err != nil {
+					return err
+				}
+
+				err = os.WriteFile(file, data, fi.Mode())
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+
+		if errV != nil {
+			return errV
+		}
+		tarGzSrc = tmpSrc
+	}
+
+	// tar gz compression
 	// walk through every file in the folder
-	errV = filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+	errV = filepath.Walk(tarGzSrc, func(file string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -53,11 +119,12 @@ func TarGzCompress(src string, buf io.Writer) error {
 		}
 		// if not a dir, write file content
 		if !fi.IsDir() {
-			data, err := os.Open(file)
+			data, err := os.ReadFile(file)
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(tw, data); err != nil {
+
+			if _, err := io.Copy(tw, bytes.NewReader(data)); err != nil {
 				return err
 			}
 		}
@@ -141,6 +208,66 @@ func TarGzDecompress(src io.Reader, dst string) error {
 			// to wait until all operations have completed.
 			fileToWrite.Close()
 		}
+	}
+	return nil
+}
+
+// copy an entire directory recursively
+func copyDir(src string, dst string) error {
+	var err error
+	var fds []os.FileInfo
+	var srcinfo os.FileInfo
+
+	if srcinfo, err = os.Stat(src); err != nil {
+		return err
+	}
+
+	if srcinfo.IsDir() {
+		if err = os.MkdirAll(dst, srcinfo.Mode()); err != nil {
+			return err
+		}
+
+		if fds, err = ioutil.ReadDir(src); err != nil {
+			return err
+		}
+		for _, fd := range fds {
+			srcfp := path.Join(src, fd.Name())
+			dstfp := path.Join(dst, fd.Name())
+
+			if fd.IsDir() {
+				if err = copyDir(srcfp, dstfp); err != nil {
+					return err
+				}
+			} else {
+				if err = copyFile(srcfp, dstfp); err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		if err = copyFile(src, dst); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// copy a single file
+func copyFile(src string, dst string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	input, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(dst, input, fi.Mode())
+	if err != nil {
+		return err
 	}
 	return nil
 }
