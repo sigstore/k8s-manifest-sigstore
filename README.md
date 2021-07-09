@@ -6,7 +6,7 @@ kubectl plugin for signing Kubernetes manifest YAML files with sigstore
 
 This kubectl subcommand plugin enables developer to sign k8s manifest yaml files and deployment teams to verify the authenticity of configurations.   Not only is this possible for developers to sign and verify, but  the integrity of deployed manifests can be confirmed on a k8s cluster. 
 
-![intro](images/intro.gif)
+![intro](images/intro.gif?)
 
 ## Installation
 
