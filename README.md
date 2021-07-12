@@ -84,7 +84,7 @@ Flags:
 
 ```
 Usage:
-  kubectl-sigstore verify -f FILENAME [-i IMAGE] [options] [flags]
+  kubectl-sigstore verify -f FILENAME [-i IMAGE] [flags]
 
 Flags:
   -c, --config string     path to verification config YAML file (for advanced verification)
@@ -117,7 +117,7 @@ Flags:
 
 ```
 Usage:
-  kubectl-sigstore verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE) [options] [flags]
+  kubectl-sigstore verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE) [flags]
 
 Flags:
   -c, --config string     path to verification config YAML file (for advanced verification)

@@ -63,7 +63,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	cmd := &cobra.Command{
-		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE) [options]",
+		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
