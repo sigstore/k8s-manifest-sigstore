@@ -20,17 +20,23 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 
 	goyaml "gopkg.in/yaml.v2"
 
 	"github.com/ghodss/yaml"
+	"github.com/pkg/errors"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
+
+var defaultSimilarityThreshold = 0.9
 
 type ResourceInfo struct {
 	group     string
@@ -79,7 +85,13 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
 	kind := obj.GetKind()
 	name := obj.GetName()
 	namespace := obj.GetNamespace()
-	return FindSingleYaml(concatYamlBytes, apiVersion, kind, name, namespace)
+	found, foundBytes := FindSingleYaml(concatYamlBytes, apiVersion, kind, name, namespace)
+	if found {
+		return found, foundBytes
+	}
+	// TODO: add some control here
+	found, foundBytes, _ = SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes, nil)
+	return found, foundBytes
 }
 
 func FindSingleYaml(concatYamlBytes []byte, apiVersion, kind, name, namespace string) (bool, []byte) {
@@ -121,6 +133,119 @@ func FindSingleYaml(concatYamlBytes []byte, apiVersion, kind, name, namespace st
 	} else {
 		return true, matchedItems2[0].raw
 	}
+}
+
+func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold *float64) (bool, []byte, float64) {
+	var thresholdNum float64
+	if threshold == nil {
+		thresholdNum = defaultSimilarityThreshold
+	} else {
+		thresholdNum = *threshold
+	}
+	if thresholdNum < 0.0 || thresholdNum > 1.0 {
+		return false, nil, -1.0
+	}
+
+	yamls := SplitConcatYAMLs(concatYamlBytes)
+
+	found := false
+	var foundBytes []byte
+	maxSimilarity := -1.0
+	for _, mnfBytes := range yamls {
+		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes)
+		if err != nil {
+			continue
+		}
+		fmt.Println("[DEBUG] sim: ", sim)
+		fmt.Println("[DEBUG], manifest: ", string(mnfBytes))
+		fmt.Println("[DEBUG], object: ", string(objBytes))
+		if sim > thresholdNum && sim > maxSimilarity {
+			found = true
+			foundBytes = mnfBytes
+			maxSimilarity = sim
+		}
+	}
+
+	return found, foundBytes, maxSimilarity
+}
+
+func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
+	var nodeA, nodeB *mapnode.Node
+	var err error
+	nodeA, err = mapnode.NewFromYamlBytes(a)
+	if err != nil {
+		return -1.0, err
+	}
+	nodeB, err = mapnode.NewFromYamlBytes(b)
+	if err != nil {
+		return -1.0, err
+	}
+	aFieldMap := nodeA.Ravel()
+	bFieldMap := nodeB.Ravel()
+	if len(aFieldMap) <= 10 || len(bFieldMap) <= 10 {
+		return -1.0, errors.New("too few attributes in the objects to calculate cosine similarity")
+	}
+
+	aFields := map[string]bool{}
+	bFields := map[string]bool{}
+
+	for key, val := range aFieldMap {
+		f := fmt.Sprintf("%s:%s", key, reflect.ValueOf(val).String())
+		aFields[f] = true
+	}
+	for key, val := range bFieldMap {
+		f := fmt.Sprintf("%s:%s", key, reflect.ValueOf(val).String())
+		bFields[f] = true
+	}
+	corpus := map[string]bool{}
+	for f := range aFields {
+		corpus[f] = true
+	}
+	for f := range bFields {
+		corpus[f] = true
+	}
+	aVector := []float64{}
+	bVector := []float64{}
+	for f := range corpus {
+		aVal := 0.0
+		if aFields[f] {
+			aVal = 1.0
+		}
+		aVector = append(aVector, aVal)
+
+		bVal := 0.0
+		if bFields[f] {
+			bVal = 1.0
+		}
+		bVector = append(bVector, bVal)
+	}
+
+	// Dot
+	dot := 0.0
+	for i := range aVector {
+		aVal := aVector[i]
+		bVal := bVector[i]
+		dot += aVal * bVal
+	}
+
+	// len A
+	lenA := 0.0
+	for _, aVal := range aVector {
+		v := aVal * aVal
+		lenA += v
+	}
+	lenA = math.Sqrt(lenA)
+
+	// len B
+	lenB := 0.0
+	for _, bVal := range bVector {
+		v := bVal * bVal
+		lenB += v
+	}
+	lenB = math.Sqrt(lenB)
+
+	similarity := dot / (lenA * lenB) // cosine similarity
+	return similarity, nil
 }
 
 func ConcatenateYAMLs(yamls [][]byte) []byte {
