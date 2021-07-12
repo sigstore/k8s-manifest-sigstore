@@ -77,7 +77,7 @@ Flags:
       --annotation-metadata        whether to update annotation and generate signed yaml file (default true)
   -f, --filename string            file name which will be signed (if dir, all YAMLs inside it will be signed)
   -h, --help                       help for sign
-  -i, --image string               signed image name which bundles yaml files
+  -i, --image string               image name which bundles yaml files and be signed
   -k, --key string                 path to your signing key (if empty, do key-less signing)
   -o, --output <filename>.signed   output file name (if empty, use <filename>.signed)
 ```
@@ -88,7 +88,7 @@ Usage:
 
 Flags:
   -c, --config string     path to verification config YAML file (for advanced verification)
-  -f, --filename string   file name which will be signed (if dir, all YAMLs inside it will be signed)
+  -f, --filename string   file name which will be verified
   -h, --help              help for verify
   -i, --image string      signed image name which bundles yaml files
   -k, --key string        path to your signing key (if empty, do key-less signing)
@@ -100,7 +100,7 @@ Usage:
 
 Flags:
   -c, --config string                  path to verification config YAML file (for advanced verification)
-  -f, --filename string                file name which will be checked and applied
+  -f, --filename string                file name which will be verified and applied
   -h, --help                           help for apply-after-verify
   -i, --image string                   signed image name which bundles yaml files
   -k, --key string                     path to your signing key (if empty, do key-less signing)
