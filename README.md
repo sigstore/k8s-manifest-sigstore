@@ -70,7 +70,7 @@ Commands
 
 ```
 Usage:
-  kubectl-sigstore sign -f FILENAME [-i IMAGE] [flags]
+  kubectl sigstore sign -f FILENAME [-i IMAGE] [flags]
 
 Flags:
   -a, --annotation stringArray     extra key=value pairs to sign
@@ -84,7 +84,7 @@ Flags:
 
 ```
 Usage:
-  kubectl-sigstore verify -f FILENAME [-i IMAGE] [flags]
+  kubectl sigstore verify -f FILENAME [-i IMAGE] [flags]
 
 Flags:
   -c, --config string     path to verification config YAML file (for advanced verification)
@@ -96,23 +96,14 @@ Flags:
 
 ```
 Usage:
-  kubectl-sigstore apply-after-verify -f FILENAME [-i IMAGE] [flags]
+  kubectl sigstore apply-after-verify -f FILENAME [-i IMAGE] [flags]
 
 Flags:
-      --allow-missing-template-keys    If true, ignore any errors in templates when a field or map key is missing in the template. Only applies to golang and jsonpath output formats. (default true)
   -c, --config string                  path to verification config YAML file (for advanced verification)
-      --dry-run string[="unchanged"]   Must be "none", "server", or "client". If client strategy, only print the object that would be sent, without sending it. If server strategy, submit server-side request without persisting the resource. (default "none")
-      --field-manager string           Name of the manager used to track field ownership. (default "kubectl-client-side-apply")
-  -f, --filename string                file name which will be signed (if dir, all YAMLs inside it will be signed)
-      --force-conflicts                If true, server-side apply will force the changes against conflicts.
+  -f, --filename string                file name which will be checked and applied
   -h, --help                           help for apply-after-verify
   -i, --image string                   signed image name which bundles yaml files
   -k, --key string                     path to your signing key (if empty, do key-less signing)
-  -o, --output string                  Output format. One of: json|yaml|name|go-template|go-template-file|template|templatefile|jsonpath|jsonpath-as-json|jsonpath-file.
-      --server-side                    If true, apply runs in the server instead of the client.
-      --show-managed-fields            If true, keep the managedFields when printing objects in JSON or YAML format.
-      --template string                Template string or path to template file to use when -o=go-template, -o=go-template-file. The template format is golang templates [http://golang.org/pkg/text/template/#pkg-overview].
-      --validate                       If true, use a schema to validate the input before sending it (default true)
 ```
 
 ```
@@ -120,12 +111,13 @@ Usage:
   kubectl-sigstore verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE) [flags]
 
 Flags:
-  -c, --config string     path to verification config YAML file (for advanced verification)
-  -f, --filename string   manifest filename (this can be "-", then read a file from stdin)
-  -h, --help              help for verify-resource
-  -i, --image string      a comma-separated list of signed image names that contains YAML manifests
-  -k, --key string        a comma-separated list of paths to public keys (if empty, do key-less verification)
-  -o, --output string     output format string, either "json" or "yaml" (if empty, a result is shown as a table)
+  -c, --config string            path to verification config YAML file (for advanced verification)
+      --disable-default-config   if true, disable default ignore fields configuration (default to false)
+  -f, --filename string          manifest filename (this can be "-", then read a file from stdin)
+  -h, --help                     help for verify-resource
+  -i, --image string             a comma-separated list of signed image names that contains YAML manifests
+  -k, --key string               a comma-separated list of paths to public keys (if empty, do key-less verification)
+  -o, --output string            output format string, either "json" or "yaml" (if empty, a result is shown as a table)
 ```
 
 ## Security

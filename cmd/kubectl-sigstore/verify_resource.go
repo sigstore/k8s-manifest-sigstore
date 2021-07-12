@@ -62,6 +62,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var configPath string
 	var outputFormat string
 	var manifestYAMLs [][]byte
+	var disableDefaultConfig bool
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -85,7 +86,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				}
 			}
 
-			err = verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, outputFormat)
+			err = verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, disableDefaultConfig, outputFormat)
 			if err != nil {
 				return errors.Wrap(err, "failed to verify resource")
 			}
@@ -97,12 +98,13 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
+	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, outputFormat string) error {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath string, disableDefaultConfig bool, outputFormat string) error {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -130,15 +132,19 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	if err != nil {
 		return errors.Wrap(err, "failed to get objects in cluster")
 	}
-
 	var vo *k8smanifest.VerifyResourceOption
-	if configPath == "" {
+	if configPath == "" && disableDefaultConfig {
+		vo = &k8smanifest.VerifyResourceOption{}
+	} else if configPath == "" {
 		vo = loadDefaultConfig()
 	} else {
 		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return nil
+		}
+		if !disableDefaultConfig {
+			vo = addDefaultConfig(vo)
 		}
 	}
 
@@ -298,15 +304,15 @@ func makeSummaryResultTable(result VerifyResourceResult) []byte {
 // generate image result table which will be shown in output
 func makeImageResultTable(result VerifyResourceResult) []byte {
 	var tableResult string
-	tableResult = "IMAGE_NAME\tSIGNER\tSIGNED\t\n"
+	tableResult = "IMAGE_NAME\tSIGNER\t\n"
 	for i := range result.Images {
 		imgResult := result.Images[i]
-		sigAge := ""
-		if imgResult.SignedTime != nil {
-			t := imgResult.SignedTime
-			sigAge = getAge(metav1.Time{Time: *t})
-		}
-		tableResult += fmt.Sprintf("%s\t%s\t%s\t\n", imgResult.Name, imgResult.Signer, sigAge)
+		// sigAge := ""
+		// if imgResult.SignedTime != nil {
+		// 	t := imgResult.SignedTime
+		// 	sigAge = getAge(metav1.Time{Time: *t})
+		// }
+		tableResult += fmt.Sprintf("%s\t%s\t\n", imgResult.Name, imgResult.Signer)
 	}
 	writer := new(bytes.Buffer)
 	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
@@ -504,4 +510,9 @@ func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
 		return nil
 	}
 	return defaultConfig
+}
+
+func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyResourceOption {
+	dvo := loadDefaultConfig()
+	return vo.AddDefaultConfig(dvo)
 }

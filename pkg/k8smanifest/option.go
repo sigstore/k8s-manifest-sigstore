@@ -27,10 +27,10 @@ import (
 // option for Sign()
 type SignOption struct {
 	// these options should be input from CLI arguments
-	KeyPath          string `json:"-"`
-	ImageRef         string `json:"-"`
-	Output           string `json:"-"`
-	UpdateAnnotation bool   `json:"-"`
+	KeyPath          string                 `json:"-"`
+	ImageRef         string                 `json:"-"`
+	Output           string                 `json:"-"`
+	UpdateAnnotation bool                   `json:"-"`
 	ImageAnnotations map[string]interface{} `json:"-"`
 }
 
@@ -176,4 +176,14 @@ func LoadVerifyResourceConfig(fpath string) (*VerifyResourceOption, error) {
 		return nil, err
 	}
 	return option, nil
+}
+
+func (vo *VerifyResourceOption) AddDefaultConfig(defaultConfig *VerifyResourceOption) *VerifyResourceOption {
+	if vo == nil {
+		return nil
+	}
+	ignoreFields := []ObjectFieldBinding(vo.verifyOption.IgnoreFields)
+	ignoreFields = append(ignoreFields, []ObjectFieldBinding(defaultConfig.verifyOption.IgnoreFields)...)
+	vo.verifyOption.IgnoreFields = ignoreFields
+	return vo
 }
