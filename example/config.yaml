@@ -3,11 +3,11 @@ skipObjects:
   name: kube-root-ca.crt
 
 ignoreFields:
-- objects:
-  - kind: ConfigMap
-    name: sample-cm
-  fields:
-  - data.key2
+  - objects:
+    - kind: ConfigMap
+      name: sample-cm
+    fields:
+    - data.key2
 
 signers:
 - sample-signer@gmail.com

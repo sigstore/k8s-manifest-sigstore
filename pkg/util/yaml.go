@@ -134,6 +134,11 @@ func ConcatenateYAMLs(yamls [][]byte) []byte {
 	return []byte(concatYamls)
 }
 
+func IsConcatYAMLs(yaml []byte) bool {
+	yamls := SplitConcatYAMLs(yaml)
+	return len(yamls) > 1
+}
+
 func SplitConcatYAMLs(yaml []byte) [][]byte {
 	yamls := [][]byte{}
 	r := bytes.NewReader(yaml)

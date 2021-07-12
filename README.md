@@ -6,7 +6,7 @@ kubectl plugin for signing Kubernetes manifest YAML files with sigstore
 
 This kubectl subcommand plugin enables developer to sign k8s manifest yaml files and deployment teams to verify the authenticity of configurations.   Not only is this possible for developers to sign and verify, but  the integrity of deployed manifests can be confirmed on a k8s cluster. 
 
-![intro](images/intro.gif)
+![intro](images/intro.gif?)
 
 ## Installation
 
@@ -45,9 +45,9 @@ K8s YAML files are bundled as image, and then pushed to OCI registory. Then, it 
 
 `kubectl sigstore sign -f foo.yaml --image bundle-bar:dev`
 
-Inserting annotation can be disabled by adding `--annotation=false` option. (If annotation is not added, `--image` option must be supplied when verifying signature.)
+Inserting annotation can be disabled by adding `--annotation-metadata=false` option. (If annotation is not added, `--image` option must be supplied when verifying signature.)
 
-`kubectl sigstore sign -f foo.yaml --image bundle-bar:dev --annotation=false`
+`kubectl sigstore sign -f foo.yaml --image bundle-bar:dev --annotation-metadata=false`
 
 ### Verify a k8s yaml manifest file
 
@@ -70,23 +70,25 @@ Commands
 
 ```
 Usage:
-  kubectl-sigstore sign -f <YAMLFILE> [-i <IMAGE>] [flags]
+  kubectl sigstore sign -f FILENAME [-i IMAGE] [flags]
 
 Flags:
-  -a, --annotation              whether to update annotation and generate signed yaml file (default true)
-  -f, --filename string         file name which will be signed (if dir, all YAMLs inside it will be signed)
-  -h, --help                    help for sign
-  -i, --image string            signed image name which bundles yaml files
-  -k, --key string              path to your signing key (if empty, do key-less signing)
-  -o, --output <input>.signed   output file name (if empty, use <input>.signed)
+  -a, --annotation stringArray     extra key=value pairs to sign
+      --annotation-metadata        whether to update annotation and generate signed yaml file (default true)
+  -f, --filename string            file name which will be signed (if dir, all YAMLs inside it will be signed)
+  -h, --help                       help for sign
+  -i, --image string               image name which bundles yaml files and be signed
+  -k, --key string                 path to your signing key (if empty, do key-less signing)
+  -o, --output <filename>.signed   output file name (if empty, use <filename>.signed)
 ```
 
 ```
 Usage:
-  kubectl-sigstore verify -f <YAMLFILE> [-i <IMAGE>] [flags]
+  kubectl sigstore verify -f FILENAME [-i IMAGE] [flags]
 
 Flags:
-  -f, --filename string   file name which will be signed (if dir, all YAMLs inside it will be signed)
+  -c, --config string     path to verification config YAML file (for advanced verification)
+  -f, --filename string   file name which will be verified
   -h, --help              help for verify
   -i, --image string      signed image name which bundles yaml files
   -k, --key string        path to your signing key (if empty, do key-less signing)
@@ -94,26 +96,28 @@ Flags:
 
 ```
 Usage:
-  kubectl-sigstore apply-after-verify -f <YAMLFILE> [-i <IMAGE>] [flags]
+  kubectl sigstore apply-after-verify -f FILENAME [-i IMAGE] [flags]
 
 Flags:
-  -f, --filename string   file name which will be signed (if dir, all YAMLs inside it will be signed)
-  -h, --help              help for apply-after-verify
-  -i, --image string      signed image name which bundles yaml files
-  -k, --key string        path to your signing key (if empty, do key-less signing)
+  -c, --config string                  path to verification config YAML file (for advanced verification)
+  -f, --filename string                file name which will be verified and applied
+  -h, --help                           help for apply-after-verify
+  -i, --image string                   signed image name which bundles yaml files
+  -k, --key string                     path to your signing key (if empty, do key-less signing)
 ```
 
 ```
 Usage:
-  kubectl-sigstore verify-resource <options> [-i <IMAGE>] [flags]
-
-opitons are same as "kubectl get"
+  kubectl-sigstore verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE) [flags]
 
 Flags:
-  -h, --help               help for verify-resource
-  -i, --image string       signed image name which bundles yaml files
-  -k, --key string         path to your signing key (if empty, do key-less signing)
-  -n, --namespace string   namespace of specified resource
+  -c, --config string            path to verification config YAML file (for advanced verification)
+      --disable-default-config   if true, disable default ignore fields configuration (default to false)
+  -f, --filename string          manifest filename (this can be "-", then read a file from stdin)
+  -h, --help                     help for verify-resource
+  -i, --image string             a comma-separated list of signed image names that contains YAML manifests
+  -k, --key string               a comma-separated list of paths to public keys (if empty, do key-less verification)
+  -o, --output string            output format string, either "json" or "yaml" (if empty, a result is shown as a table)
 ```
 
 ## Security

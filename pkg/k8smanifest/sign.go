@@ -152,6 +152,17 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	if err != nil {
 		return nil, err
 	}
+	// convert any type of YAMLs into a list of single resource YAMLs
+	tmpYAMLs := [][]byte{}
+	for _, singleYAML := range yamls {
+		if k8ssigutil.IsConcatYAMLs(singleYAML) {
+			yamlsInSingle := k8ssigutil.SplitConcatYAMLs(singleYAML)
+			tmpYAMLs = append(tmpYAMLs, yamlsInSingle...)
+		} else {
+			tmpYAMLs = append(tmpYAMLs, singleYAML)
+		}
+	}
+	yamls = tmpYAMLs
 
 	annotationMap := map[string]interface{}{}
 	if imageRef != "" {

@@ -17,9 +17,8 @@
 package k8smanifest
 
 import (
-	_ "embed"
 	"encoding/json"
-	"fmt"
+	"time"
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
@@ -33,35 +32,13 @@ import (
 
 const defaultDryRunNamespace = "default"
 
-var CommonResourceMaskKeys = []string{
-	fmt.Sprintf("metadata.annotations.\"%s\"", ImageRefAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", SignatureAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", CertificateAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", MessageAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", BundleAnnotationKey),
-	"metadata.annotations.namespace",
-	"metadata.annotations.kubectl.\"kubernetes.io/last-applied-configuration\"",
-	"metadata.managedFields",
-	"metadata.creationTimestamp",
-	"metadata.generation",
-	"metadata.annotations.deprecated.daemonset.template.generation",
-	"metadata.namespace",
-	"metadata.resourceVersion",
-	"metadata.selfLink",
-	"metadata.uid",
-	"status",
-}
-
-// This is common ignore fields for changes by k8s system
-//go:embed resources/known-changes.yaml
-var knownChangesBytes []byte
-
 type VerifyResourceResult struct {
-	Verified bool                `json:"verified"`
-	InScope  bool                `json:"inScope"`
-	Signer   string              `json:"signer"`
-	SigRef   string              `json:"sigRef"`
-	Diff     *mapnode.DiffResult `json:"diff"`
+	Verified   bool                `json:"verified"`
+	InScope    bool                `json:"inScope"`
+	Signer     string              `json:"signer"`
+	SignedTime *time.Time          `json:"signedTime"`
+	SigRef     string              `json:"sigRef"`
+	Diff       *mapnode.DiffResult `json:"diff"`
 }
 
 func (r *VerifyResourceResult) String() string {
@@ -76,25 +53,29 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	verified := false
 	inScope := true // assume that input resource is in scope in verify-resource
 	signerName := ""
+	var signedTimestamp *int64
 	sigRef := ""
 	var err error
 
+	imageRefString := ""
+	if vo != nil {
+		imageRefString = vo.ImageRef
+	}
+
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
-	if vo.ImageRef == "" {
+	if imageRefString == "" {
 		annotations := obj.GetAnnotations()
 		annoImageRef, found := annotations[ImageRefAnnotationKey]
 		if found {
-			vo.ImageRef = annoImageRef
+			imageRefString = annoImageRef
 		}
-	}
-	if vo.ImageRef != "" {
-		sigRef = vo.ImageRef
 	}
 
 	// check if the resource should be skipped or not
 	if vo != nil && len(vo.SkipObjects) > 0 {
 		if vo.SkipObjects.Match(obj) {
 			inScope = false
+			return &VerifyResourceResult{InScope: false}, nil
 		}
 	}
 
@@ -105,17 +86,15 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 			ignoreFields = fields
 		}
 	}
-	// add known k8s ignore fields
-	if ok, fields := loadKnownK8sIgnoreFields().Match(obj); ok {
-		ignoreFields = append(ignoreFields, fields...)
-	}
 
 	var manifestInRef []byte
-	manifestInRef, err = NewManifestFetcher(vo.ImageRef).Fetch(objBytes)
+	log.Debug("fetching manifest...")
+	manifestInRef, sigRef, err = NewManifestFetcher(imageRefString).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
 
+	log.Debug("matching object with manifest...")
 	mnfMatched, diff, err := matchResourceWithManifest(obj, manifestInRef, ignoreFields, vo.CheckDryRunForApply)
 	if err != nil {
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
@@ -126,19 +105,22 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		keyPath = &(vo.KeyPath)
 	}
 
-	sigVerified, signerName, err := NewSignatureVerifier(objBytes, vo.ImageRef, keyPath).Verify()
+	var sigVerified bool
+	log.Debug("verifying signature...")
+	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
 	if err != nil {
-		return nil, errors.Wrap(err, "error occured during signature verification")
+		return nil, errors.Wrap(err, "failed to verify signature")
 	}
 
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
 	return &VerifyResourceResult{
-		Verified: verified,
-		InScope:  inScope,
-		Signer:   signerName,
-		SigRef:   sigRef,
-		Diff:     diff,
+		Verified:   verified,
+		InScope:    inScope,
+		Signer:     signerName,
+		SignedTime: getTime(signedTimestamp),
+		SigRef:     sigRef,
+		Diff:       diff,
 	}, nil
 }
 
@@ -168,18 +150,34 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	objBytes, _ := json.Marshal(obj.Object)
 
 	// CASE1: direct match
-	matched, _, err = directMatch(objBytes, foundBytes)
+	log.Debug("try direct matching")
+	matched, diff, err = directMatch(objBytes, foundBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during diract match")
+	}
+	if diff != nil && len(ignoreFields) > 0 {
+		_, diff, _ = diff.Filter(ignoreFields)
+	}
+	if diff == nil || diff.Size() == 0 {
+		matched = true
+		diff = nil
 	}
 	if matched {
 		return true, nil, nil
 	}
 
 	// CASE2: dryrun create match
+	log.Debug("try dryrun create matching")
 	matched, diff, err = dryrunCreateMatch(objBytes, foundBytes, clusterScope, isCRD)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
+	}
+	if diff != nil && len(ignoreFields) > 0 {
+		_, diff, _ = diff.Filter(ignoreFields)
+	}
+	if diff == nil || diff.Size() == 0 {
+		matched = true
+		diff = nil
 	}
 	if matched {
 		return true, nil, nil
@@ -187,9 +185,17 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 
 	// CASE3: dryrun apply match
 	if checkDryRunForApply {
+		log.Debug("try dryrun apply matching")
 		matched, diff, err = dryrunApplyMatch(objBytes, foundBytes, clusterScope, isCRD)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during dryrun apply match")
+		}
+		if diff != nil && len(ignoreFields) > 0 {
+			_, diff, _ = diff.Filter(ignoreFields)
+		}
+		if diff == nil || diff.Size() == 0 {
+			matched = true
+			diff = nil
 		}
 		if matched {
 			return true, nil, nil
@@ -206,16 +212,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	// 	return true, nil
 	// }
 
-	// filter out ignoreFields
-	if diff != nil && len(ignoreFields) > 0 {
-		_, diff, _ = diff.Filter(ignoreFields)
-	}
-	if diff == nil || diff.Size() == 0 {
-		matched = true
-		diff = nil
-	}
-
-	return matched, diff, nil
+	return false, diff, nil
 }
 
 func directMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, error) {
@@ -227,9 +224,7 @@ func directMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, err
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize manifest node")
 	}
-	maskedObjNode := objNode.Mask(CommonResourceMaskKeys)
-	maskedMnfNode := mnfNode.Mask(CommonResourceMaskKeys)
-	diff := maskedObjNode.Diff(maskedMnfNode)
+	diff := objNode.Diff(mnfNode)
 	if diff == nil || diff.Size() == 0 {
 		return true, nil, nil
 	}
@@ -259,8 +254,11 @@ func dryrunCreateMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize dry-run-generated object node")
 	}
-	mask := CommonResourceMaskKeys
+	mask := []string{}
 	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
+	if !clusterScope {
+		mask = append(mask, "metadata.namespace") // namespace is overwritten for dryrun
+	}
 	if isCRD {
 		mask = append(mask, "spec.names.kind")
 		mask = append(mask, "spec.names.listKind")
@@ -298,8 +296,11 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) 
 		return false, nil, errors.Wrap(err, "error during DryRunCreate for apply")
 	}
 	simNode, _ := mapnode.NewFromYamlBytes(simPatchedObj)
-	mask := CommonResourceMaskKeys
+	mask := []string{}
 	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
+	if !clusterScope {
+		mask = append(mask, "metadata.namespace") // namespace is overwritten for dryrun
+	}
 	if isCRD {
 		mask = append(mask, "spec.names.kind")
 		mask = append(mask, "spec.names.listKind")
@@ -316,12 +317,10 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) 
 
 }
 
-func loadKnownK8sIgnoreFields() ObjectFieldBindingList {
-	var empty ObjectFieldBindingList
-	var knownK8sIgnoreOption *verifyOption
-	err := yaml.Unmarshal(knownChangesBytes, &knownK8sIgnoreOption)
-	if err != nil {
-		return empty
+func getTime(tstamp *int64) *time.Time {
+	if tstamp == nil {
+		return nil
 	}
-	return knownK8sIgnoreOption.IgnoreFields
+	t := time.Unix(*tstamp, 0)
+	return &t
 }

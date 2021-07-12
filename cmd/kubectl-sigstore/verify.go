@@ -34,7 +34,7 @@ func NewCmdVerify() *cobra.Command {
 	var keyPath string
 	var configPath string
 	cmd := &cobra.Command{
-		Use:   "verify -f <YAMLFILE> [-i <IMAGE>]",
+		Use:   "verify -f FILENAME [-i IMAGE]",
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
@@ -46,7 +46,7 @@ func NewCmdVerify() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "file name which will be signed (if dir, all YAMLs inside it will be signed)")
+	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "file name which will be verified")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")

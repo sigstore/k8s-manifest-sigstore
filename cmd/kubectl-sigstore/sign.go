@@ -35,7 +35,7 @@ func NewCmdSign() *cobra.Command {
 	var updateAnnotation bool
 	var imageAnnotations []string
 	cmd := &cobra.Command{
-		Use:   "sign -f <YAMLFILE> [-i <IMAGE>]",
+		Use:   "sign -f FILENAME [-i IMAGE]",
 		Short: "A command to sign Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
@@ -48,10 +48,10 @@ func NewCmdSign() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVarP(&inputDir, "filename", "f", "", "file name which will be signed (if dir, all YAMLs inside it will be signed)")
-	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
-	cmd.PersistentFlags().StringVarP(&output, "output", "o", "", "output file name (if empty, use `<input>.signed`)")
+	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "image name which bundles yaml files and be signed")
+	cmd.PersistentFlags().StringVarP(&output, "output", "o", "", "output file name (if empty, use `<filename>.signed`)")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
-	cmd.PersistentFlags().BoolVarP(&updateAnnotation, "annotation-metadata", "", true, "whether to update annotation and generate signed yaml file")
+	cmd.PersistentFlags().BoolVar(&updateAnnotation, "annotation-metadata", true, "whether to update annotation and generate signed yaml file")
 	cmd.PersistentFlags().StringArrayVarP(&imageAnnotations, "annotation", "a", []string{}, "extra key=value pairs to sign")
 
 	return cmd
@@ -82,7 +82,9 @@ func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, ann
 		fmt.Fprintln(os.Stderr, err.Error())
 		return nil
 	}
-	log.Info("signed manifest generated at ", output)
+	if so.UpdateAnnotation {
+		log.Info("signed manifest generated at ", output)
+	}
 	return nil
 }
 
