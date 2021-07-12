@@ -25,18 +25,29 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	goyaml "gopkg.in/yaml.v2"
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
+	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-var defaultSimilarityThreshold = 0.9
+var defaultSimilarityThreshold = 0.85
+
+// weight values for calculating a similarity value
+// all other fields that are not defined here will be weight 1.0
+// more weight-ed fields contribute to more similarity value
+var similarityWeight map[string]float64 = map[string]float64{
+	"metadata.managedFields": 0.1,
+	"status":                 0.1,
+	"spec":                   1.5,
+}
 
 type ResourceInfo struct {
 	group     string
@@ -89,7 +100,7 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
 	if found {
 		return found, foundBytes
 	}
-	// TODO: add some control here
+	// TODO: add some control here?
 	found, foundBytes, _ = SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes, nil)
 	return found, foundBytes
 }
@@ -154,11 +165,12 @@ func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold
 	for _, mnfBytes := range yamls {
 		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes)
 		if err != nil {
+			log.Debug("similarity calculation error (most of errors are normal cases here): ", err.Error())
 			continue
 		}
-		fmt.Println("[DEBUG] sim: ", sim)
-		fmt.Println("[DEBUG], manifest: ", string(mnfBytes))
-		fmt.Println("[DEBUG], object: ", string(objBytes))
+		log.Debug("sim: ", sim)
+		log.Debug("manifest: ", string(mnfBytes))
+		log.Debug("object: ", string(objBytes))
 		if sim > thresholdNum && sim > maxSimilarity {
 			found = true
 			foundBytes = mnfBytes
@@ -179,6 +191,11 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 	nodeB, err = mapnode.NewFromYamlBytes(b)
 	if err != nil {
 		return -1.0, err
+	}
+	aKind := nodeA.GetString("kind")
+	bKind := nodeB.GetString("kind")
+	if aKind != bKind {
+		return -1.0, errors.New("kinds are different")
 	}
 	aFieldMap := nodeA.Ravel()
 	bFieldMap := nodeB.Ravel()
@@ -209,13 +226,21 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 	for f := range corpus {
 		aVal := 0.0
 		if aFields[f] {
-			aVal = 1.0
+			if wFound, wVal := getSimilarityWeight(f); wFound {
+				aVal = wVal
+			} else {
+				aVal = 1.0
+			}
 		}
 		aVector = append(aVector, aVal)
 
 		bVal := 0.0
 		if bFields[f] {
-			bVal = 1.0
+			if wFound, wVal := getSimilarityWeight(f); wFound {
+				bVal = wVal
+			} else {
+				bVal = 1.0
+			}
 		}
 		bVector = append(bVector, bVal)
 	}
@@ -246,6 +271,15 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 
 	similarity := dot / (lenA * lenB) // cosine similarity
 	return similarity, nil
+}
+
+func getSimilarityWeight(key string) (bool, float64) {
+	for wkey, wval := range similarityWeight {
+		if strings.HasPrefix(key, wkey) {
+			return true, wval
+		}
+	}
+	return false, 1.0
 }
 
 func ConcatenateYAMLs(yamls [][]byte) []byte {

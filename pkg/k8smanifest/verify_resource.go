@@ -25,7 +25,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
@@ -149,10 +148,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	log.Debug("obj: apiVersion", apiVersion, "kind", kind, "name", name)
 	log.Debug("manifest in image:", string(manifestInImage))
 
-	found, foundBytes := k8ssigutil.FindSingleYaml(manifestInImage, apiVersion, kind, name, namespace)
-	if !found {
-		return false, nil, errors.New("failed to find the corresponding manifest YAML file in image")
-	}
+	foundBytes := manifestInImage
 
 	var err error
 	var matched bool
