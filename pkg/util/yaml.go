@@ -159,13 +159,20 @@ func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold
 		return false, nil, -1.0
 	}
 
+	var weightMap map[string]float64
+	if similarityWeight == nil {
+		weightMap = defaultSimilarityWeight
+	} else {
+		weightMap = similarityWeight
+	}
+
 	yamls := SplitConcatYAMLs(concatYamlBytes)
 
 	found := false
 	var foundBytes []byte
 	maxSimilarity := -1.0
 	for _, mnfBytes := range yamls {
-		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes, similarityWeight)
+		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes, weightMap)
 		if err != nil {
 			log.Debug("similarity calculation error (most of errors are normal cases here): ", err.Error())
 			continue
@@ -183,7 +190,7 @@ func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold
 	return found, foundBytes, maxSimilarity
 }
 
-func GetSimilarityOfTwoYamls(a, b []byte, similarityWeight map[string]float64) (float64, error) {
+func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64, error) {
 	var nodeA, nodeB *mapnode.Node
 	var err error
 	nodeA, err = mapnode.NewFromYamlBytes(a)
@@ -205,13 +212,13 @@ func GetSimilarityOfTwoYamls(a, b []byte, similarityWeight map[string]float64) (
 		return -1.0, errors.New("too few attributes in the objects to calculate cosine similarity")
 	}
 
-	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB, similarityWeight)
+	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB, weightMap)
 	similarity := calculateCosineSimilarity(aVector, bVector)
 
 	return similarity, nil
 }
 
-func makeVectorsForTwoNodes(a, b *mapnode.Node, similarityWeight map[string]float64) ([]float64, []float64) {
+func makeVectorsForTwoNodes(a, b *mapnode.Node, weightMap map[string]float64) ([]float64, []float64) {
 	aFieldMap := a.Ravel()
 	bFieldMap := b.Ravel()
 
@@ -237,7 +244,7 @@ func makeVectorsForTwoNodes(a, b *mapnode.Node, similarityWeight map[string]floa
 	for f := range corpus {
 		aVal := 0.0
 		if aFields[f] {
-			if wFound, wVal := getSimilarityWeight(similarityWeight, f); wFound {
+			if wFound, wVal := getSimilarityWeight(weightMap, f); wFound {
 				aVal = wVal
 			} else {
 				aVal = 1.0
@@ -247,7 +254,7 @@ func makeVectorsForTwoNodes(a, b *mapnode.Node, similarityWeight map[string]floa
 
 		bVal := 0.0
 		if bFields[f] {
-			if wFound, wVal := getSimilarityWeight(similarityWeight, f); wFound {
+			if wFound, wVal := getSimilarityWeight(weightMap, f); wFound {
 				bVal = wVal
 			} else {
 				bVal = 1.0
@@ -287,13 +294,7 @@ func calculateCosineSimilarity(aVector, bVector []float64) float64 {
 	return similarity
 }
 
-func getSimilarityWeight(similarityWeight map[string]float64, key string) (bool, float64) {
-	var weightMap map[string]float64
-	if similarityWeight == nil {
-		weightMap = defaultSimilarityWeight
-	} else {
-		weightMap = similarityWeight
-	}
+func getSimilarityWeight(weightMap map[string]float64, key string) (bool, float64) {
 	for wkey, wval := range weightMap {
 		if strings.HasPrefix(key, wkey) {
 			return true, wval
