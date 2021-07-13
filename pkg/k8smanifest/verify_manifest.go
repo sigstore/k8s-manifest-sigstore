@@ -22,7 +22,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
 
@@ -55,13 +54,13 @@ func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, e
 		}
 	}
 
-	var manifestInRef []byte
-	manifestInRef, _, err = NewManifestFetcher(vo.ImageRef).Fetch(manifest)
+	var foundManifestBytes []byte
+	foundManifestBytes, _, err = NewManifestFetcher(vo.ImageRef).Fetch(manifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}
 
-	mnfMatched, diff, err := matchManifest(manifest, manifestInRef, ignoreFields)
+	mnfMatched, diff, err := matchManifest(manifest, foundManifestBytes, ignoreFields)
 	if err != nil {
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
 	}
@@ -85,29 +84,22 @@ func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, e
 	}, nil
 }
 
-func matchManifest(manifest, manifestInRef []byte, ignoreFields []string) (bool, *mapnode.DiffResult, error) {
-	log.Debug("manifest:", string(manifest))
-	log.Debug("manifest in reference:", string(manifestInRef))
-	inputFileNode, err := mapnode.NewFromYamlBytes(manifest)
+func matchManifest(inputManifestBytes, foundManifestBytes []byte, ignoreFields []string) (bool, *mapnode.DiffResult, error) {
+	log.Debug("manifest:", string(inputManifestBytes))
+	log.Debug("manifest in reference:", string(foundManifestBytes))
+	inputFileNode, err := mapnode.NewFromYamlBytes(inputManifestBytes)
 	if err != nil {
 		return false, nil, err
 	}
 	maskedInputNode := inputFileNode.Mask(EmbeddedAnnotationMaskKeys)
 
 	var obj unstructured.Unstructured
-	err = yaml.Unmarshal(manifest, &obj)
+	err = yaml.Unmarshal(inputManifestBytes, &obj)
 	if err != nil {
 		return false, nil, err
 	}
-	apiVersion := obj.GetAPIVersion()
-	kind := obj.GetKind()
-	name := obj.GetName()
-	namespace := obj.GetNamespace()
-	found, foundBytes := k8ssigutil.FindSingleYaml(manifestInRef, apiVersion, kind, name, namespace)
-	if !found {
-		return false, nil, errors.New("failed to find the YAML manifest")
-	}
-	manifestNode, err := mapnode.NewFromYamlBytes(foundBytes)
+
+	manifestNode, err := mapnode.NewFromYamlBytes(foundManifestBytes)
 	if err != nil {
 		return false, nil, err
 	}
