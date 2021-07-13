@@ -28,8 +28,6 @@ require (
 replace (
 	github.com/sigstore/cosign => github.com/sigstore/cosign v0.6.0
 	github.com/sigstore/k8s-manifest-sigstore => ./
-	github.com/sigstore/rekor => github.com/sigstore/rekor v0.2.1-0.20210705133645-dbbbff597bc2
-	github.com/sigstore/sigstore => github.com/sigstore/sigstore v0.0.0-20210709190449-2ab5ec881a5f
 	k8s.io/api => k8s.io/api v0.21.2
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.2
 	k8s.io/apimachinery => k8s.io/apimachinery v0.21.2
