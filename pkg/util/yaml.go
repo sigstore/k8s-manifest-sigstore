@@ -40,9 +40,9 @@ import (
 
 var defaultSimilarityThreshold = 0.85
 
-// weight values for calculating a similarity value
-// all other fields that are not defined here will be weight 1.0
-// more weight-ed fields contribute to more similarity value
+// weight for calculating a similarity value
+// all other fields that are not defined here will have weight 1.0
+// more weight-ed fields contribute more to a similarity value
 var similarityWeight map[string]float64 = map[string]float64{
 	"metadata.managedFields": 0.1,
 	"status":                 0.1,
