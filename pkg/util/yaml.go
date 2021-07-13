@@ -43,7 +43,7 @@ var defaultSimilarityThreshold = 0.85
 // weight for calculating a similarity value
 // all other fields that are not defined here will have weight 1.0
 // more weight-ed fields contribute more to a similarity value
-var similarityWeight map[string]float64 = map[string]float64{
+var defaultSimilarityWeight map[string]float64 = map[string]float64{
 	"metadata.managedFields": 0.1,
 	"status":                 0.1,
 	"spec":                   1.5,
@@ -96,12 +96,14 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
 	kind := obj.GetKind()
 	name := obj.GetName()
 	namespace := obj.GetNamespace()
+	// manifest search by gvk/name/namespace
 	found, foundBytes := FindSingleYaml(concatYamlBytes, apiVersion, kind, name, namespace)
 	if found {
 		return found, foundBytes
 	}
+	// similarity based search
 	// TODO: add some control here?
-	found, foundBytes, _ = SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes, nil)
+	found, foundBytes, _ = SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes, nil, nil)
 	return found, foundBytes
 }
 
@@ -146,7 +148,7 @@ func FindSingleYaml(concatYamlBytes []byte, apiVersion, kind, name, namespace st
 	}
 }
 
-func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold *float64) (bool, []byte, float64) {
+func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold *float64, similarityWeight map[string]float64) (bool, []byte, float64) {
 	var thresholdNum float64
 	if threshold == nil {
 		thresholdNum = defaultSimilarityThreshold
@@ -163,7 +165,7 @@ func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold
 	var foundBytes []byte
 	maxSimilarity := -1.0
 	for _, mnfBytes := range yamls {
-		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes)
+		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes, similarityWeight)
 		if err != nil {
 			log.Debug("similarity calculation error (most of errors are normal cases here): ", err.Error())
 			continue
@@ -181,7 +183,7 @@ func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold
 	return found, foundBytes, maxSimilarity
 }
 
-func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
+func GetSimilarityOfTwoYamls(a, b []byte, similarityWeight map[string]float64) (float64, error) {
 	var nodeA, nodeB *mapnode.Node
 	var err error
 	nodeA, err = mapnode.NewFromYamlBytes(a)
@@ -203,13 +205,13 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 		return -1.0, errors.New("too few attributes in the objects to calculate cosine similarity")
 	}
 
-	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB)
+	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB, similarityWeight)
 	similarity := calculateCosineSimilarity(aVector, bVector)
 
 	return similarity, nil
 }
 
-func makeVectorsForTwoNodes(a, b *mapnode.Node) ([]float64, []float64) {
+func makeVectorsForTwoNodes(a, b *mapnode.Node, similarityWeight map[string]float64) ([]float64, []float64) {
 	aFieldMap := a.Ravel()
 	bFieldMap := b.Ravel()
 
@@ -235,7 +237,7 @@ func makeVectorsForTwoNodes(a, b *mapnode.Node) ([]float64, []float64) {
 	for f := range corpus {
 		aVal := 0.0
 		if aFields[f] {
-			if wFound, wVal := getSimilarityWeight(f); wFound {
+			if wFound, wVal := getSimilarityWeight(similarityWeight, f); wFound {
 				aVal = wVal
 			} else {
 				aVal = 1.0
@@ -245,7 +247,7 @@ func makeVectorsForTwoNodes(a, b *mapnode.Node) ([]float64, []float64) {
 
 		bVal := 0.0
 		if bFields[f] {
-			if wFound, wVal := getSimilarityWeight(f); wFound {
+			if wFound, wVal := getSimilarityWeight(similarityWeight, f); wFound {
 				bVal = wVal
 			} else {
 				bVal = 1.0
@@ -285,8 +287,14 @@ func calculateCosineSimilarity(aVector, bVector []float64) float64 {
 	return similarity
 }
 
-func getSimilarityWeight(key string) (bool, float64) {
-	for wkey, wval := range similarityWeight {
+func getSimilarityWeight(similarityWeight map[string]float64, key string) (bool, float64) {
+	var weightMap map[string]float64
+	if similarityWeight == nil {
+		weightMap = defaultSimilarityWeight
+	} else {
+		weightMap = similarityWeight
+	}
+	for wkey, wval := range weightMap {
 		if strings.HasPrefix(key, wkey) {
 			return true, wval
 		}
