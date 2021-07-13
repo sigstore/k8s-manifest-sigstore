@@ -42,7 +42,7 @@ var defaultSimilarityThreshold = 0.85
 
 // weight for calculating a similarity value
 // all other fields that are not defined here will have weight 1.0
-// more weight-ed fields contribute more to a similarity value
+// more weighted fields contribute more to a similarity value
 var defaultSimilarityWeight map[string]float64 = map[string]float64{
 	"metadata.managedFields": 0.1,
 	"status":                 0.1,
