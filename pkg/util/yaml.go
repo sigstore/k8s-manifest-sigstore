@@ -203,9 +203,18 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 		return -1.0, errors.New("too few attributes in the objects to calculate cosine similarity")
 	}
 
+	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB)
+	similarity := calculateCosineSimilarity(aVector, bVector)
+
+	return similarity, nil
+}
+
+func makeVectorsForTwoNodes(a, b *mapnode.Node) ([]float64, []float64) {
+	aFieldMap := a.Ravel()
+	bFieldMap := b.Ravel()
+
 	aFields := map[string]bool{}
 	bFields := map[string]bool{}
-
 	for key, val := range aFieldMap {
 		f := fmt.Sprintf("%s:%s", key, reflect.ValueOf(val).String())
 		aFields[f] = true
@@ -244,7 +253,10 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 		}
 		bVector = append(bVector, bVal)
 	}
+	return aVector, bVector
+}
 
+func calculateCosineSimilarity(aVector, bVector []float64) float64 {
 	// Dot
 	dot := 0.0
 	for i := range aVector {
@@ -270,7 +282,7 @@ func GetSimilarityOfTwoYamls(a, b []byte) (float64, error) {
 	lenB = math.Sqrt(lenB)
 
 	similarity := dot / (lenA * lenB) // cosine similarity
-	return similarity, nil
+	return similarity
 }
 
 func getSimilarityWeight(key string) (bool, float64) {
