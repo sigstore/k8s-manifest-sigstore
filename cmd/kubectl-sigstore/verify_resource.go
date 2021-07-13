@@ -196,16 +196,6 @@ func readManifestYAMLFile(fpath string) ([][]byte, error) {
 	return yamls, nil
 }
 
-func readManifestYAMLFile(fpath string) ([][]byte, error) {
-	yamls := [][]byte{}
-	content, err := ioutil.ReadFile(fpath)
-	if err != nil {
-		return nil, err
-	}
-	yamls = k8ssigutil.SplitConcatYAMLs(content)
-	return yamls, nil
-}
-
 func readStdinAsYAMLs() ([][]byte, error) {
 	stdinBytes, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {

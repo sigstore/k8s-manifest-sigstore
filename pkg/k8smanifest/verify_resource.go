@@ -99,20 +99,10 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
 	}
 
-	if vo.SkipSignatureVerification {
-		verified = mnfMatched
-	} else {
-		var keyPath *string
-		if vo.KeyPath != "" {
-			keyPath = &(vo.KeyPath)
-		}
-
-		var sigVerified bool
-		log.Debug("verifying signature...")
-		sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to verify signature")
-		}
+	var keyPath *string
+	if vo.KeyPath != "" {
+		keyPath = &(vo.KeyPath)
+	}
 
 	var sigVerified bool
 	log.Debug("verifying signature...")
