@@ -73,7 +73,6 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	// check if the resource should be skipped or not
 	if vo != nil && len(vo.SkipObjects) > 0 {
 		if vo.SkipObjects.Match(obj) {
-			inScope = false
 			return &VerifyResourceResult{InScope: false}, nil
 		}
 	}

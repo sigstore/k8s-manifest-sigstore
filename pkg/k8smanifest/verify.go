@@ -84,7 +84,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	}
 
 	pubkeyPathString := v.pubkeyPathString
-	pubkeys := []string{}
+	var pubkeys []string
 	if pubkeyPathString != nil && *pubkeyPathString != "" {
 		pubkeys = splitCommaSeparatedString(*pubkeyPathString)
 	} else {
