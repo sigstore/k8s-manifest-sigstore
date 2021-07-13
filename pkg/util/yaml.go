@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 
 	goyaml "gopkg.in/yaml.v2"
@@ -44,8 +45,8 @@ var defaultSimilarityThreshold = 0.85
 // all other fields that are not defined here will have weight 1.0
 // more weighted fields contribute more to a similarity value
 var defaultSimilarityWeight map[string]float64 = map[string]float64{
-	"metadata.managedFields": 0.1,
-	"status":                 0.1,
+	"metadata.managedFields": 0.0,
+	"status":                 0.0,
 	"spec":                   1.5,
 }
 
@@ -96,18 +97,24 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
 	kind := obj.GetKind()
 	name := obj.GetName()
 	namespace := obj.GetNamespace()
-	// manifest search by gvk/name/namespace
-	found, foundBytes := FindSingleYaml(concatYamlBytes, apiVersion, kind, name, namespace)
+
+	// extract candidate manifests that have an identical kind with object
+	candidateManifestBytes := extractKindMatchedManifests(concatYamlBytes, kind)
+	if candidateManifestBytes == nil {
+		return false, nil
+	}
+
+	// manifest search based on gvk/name/namespace
+	found, foundBytes := ManifestSearchByGVKNameNamespace(candidateManifestBytes, apiVersion, kind, name, namespace)
 	if found {
 		return found, foundBytes
 	}
-	// similarity based search
-	// TODO: add some control here?
-	found, foundBytes, _ = SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes, nil, nil)
+	// content-based manifest search
+	found, foundBytes, _ = ManifestSearchByContent(candidateManifestBytes, objBytes, nil, nil)
 	return found, foundBytes
 }
 
-func FindSingleYaml(concatYamlBytes []byte, apiVersion, kind, name, namespace string) (bool, []byte) {
+func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, name, namespace string) (bool, []byte) {
 	gv, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {
 		return false, nil
@@ -148,7 +155,7 @@ func FindSingleYaml(concatYamlBytes []byte, apiVersion, kind, name, namespace st
 	}
 }
 
-func SimilarityBasedFindManifestYAML(concatYamlBytes, objBytes []byte, threshold *float64, similarityWeight map[string]float64) (bool, []byte, float64) {
+func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, similarityWeight map[string]float64) (bool, []byte, float64) {
 	var thresholdNum float64
 	if threshold == nil {
 		thresholdNum = defaultSimilarityThreshold
@@ -216,6 +223,29 @@ func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64
 	similarity := calculateCosineSimilarity(aVector, bVector)
 
 	return similarity, nil
+}
+
+func extractKindMatchedManifests(concatYamlBytes []byte, kind string) []byte {
+	yamls := SplitConcatYAMLs(concatYamlBytes)
+	kindMatchedYAMLs := [][]byte{}
+	for _, manifest := range yamls {
+		var mnfObj *unstructured.Unstructured
+		err := yaml.Unmarshal(manifest, &mnfObj)
+		if err != nil {
+			continue
+		}
+		mnfKind := mnfObj.GetKind()
+		if kind == mnfKind {
+			kindMatchedYAMLs = append(kindMatchedYAMLs, manifest)
+		}
+	}
+
+	if len(kindMatchedYAMLs) == 0 {
+		return nil
+	}
+
+	candidateManifestBytes := ConcatenateYAMLs(kindMatchedYAMLs)
+	return candidateManifestBytes
 }
 
 func makeVectorsForTwoNodes(a, b *mapnode.Node, weightMap map[string]float64) ([]float64, []float64) {
@@ -295,7 +325,15 @@ func calculateCosineSimilarity(aVector, bVector []float64) float64 {
 }
 
 func getSimilarityWeight(weightMap map[string]float64, key string) (bool, float64) {
-	for wkey, wval := range weightMap {
+	// sort keys in weightMap first, in order to use prefix match later
+	wkeys := []string{}
+	for wkey := range weightMap {
+		wkeys = append(wkeys, wkey)
+	}
+	sort.Slice(wkeys, func(i, j int) bool { return len(wkeys[i]) > len(wkeys[j]) })
+
+	for _, wkey := range wkeys {
+		wval := weightMap[wkey]
 		if strings.HasPrefix(key, wkey) {
 			return true, wval
 		}
