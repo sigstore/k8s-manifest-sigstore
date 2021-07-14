@@ -37,23 +37,24 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", imageRef, err.Error())
 	}
 
+	rekorSeverURL := cli.TlogServer()
+
 	co := &cosign.CheckOpts{
 		Claims: true,
-		Tlog:   true,
-		Roots:  fulcio.Roots,
 	}
 
-	if pubkeyPath != "" {
-		tmpPubkey, err := cosign.LoadPublicKey(context.Background(), pubkeyPath)
+	if pubkeyPath == "" {
+		co.RekorURL = rekorSeverURL
+		co.RootCerts = fulcio.Roots
+	} else {
+		pubkeyVerifier, err := cosign.LoadPublicKey(context.Background(), pubkeyPath)
 		if err != nil {
 			return false, "", nil, fmt.Errorf("error loading public key; %s", err.Error())
 		}
-		co.PubKey = tmpPubkey
-		co.Tlog = false
+		co.SigVerifier = pubkeyVerifier
 	}
 
-	rekorSever := cli.TlogServer()
-	verified, err := cosign.Verify(context.Background(), ref, co, rekorSever)
+	verified, err := cosign.Verify(context.Background(), ref, co)
 	if err != nil {
 		return false, "", nil, fmt.Errorf("error occured while verifying image `%s`; %s", imageRef, err.Error())
 	}

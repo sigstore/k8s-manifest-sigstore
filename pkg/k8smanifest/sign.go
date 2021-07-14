@@ -18,6 +18,7 @@ package k8smanifest
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -26,12 +27,14 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+
+	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
-
-	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 )
 
 const (
@@ -136,7 +139,10 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 		return err
 	}
 
-	_, err = cremote.UploadFiles(ref, files)
+	mediaTypeGetter := cremote.DefaultMediaTypeGetter
+	remoteAuthOption := remote.WithAuthFromKeychain(authn.DefaultKeychain)
+	remoteContextOption := remote.WithContext(context.Background())
+	_, err = cremote.UploadFiles(ref, files, mediaTypeGetter, remoteAuthOption, remoteContextOption)
 	if err != nil {
 		return err
 	}
