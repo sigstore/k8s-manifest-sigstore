@@ -14,7 +14,7 @@ require (
 	github.com/sigstore/cosign v0.6.0
 	github.com/sigstore/sigstore v0.0.0-20210709190449-2ab5ec881a5f
 	github.com/sirupsen/logrus v1.8.1
-	github.com/spf13/cobra v1.1.3
+	github.com/spf13/cobra v1.2.1
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.21.2
 	k8s.io/apimachinery v0.21.2
@@ -28,8 +28,6 @@ require (
 replace (
 	github.com/sigstore/cosign => github.com/sigstore/cosign v0.6.0
 	github.com/sigstore/k8s-manifest-sigstore => ./
-	github.com/sigstore/rekor => github.com/sigstore/rekor v0.1.2-0.20210519014330-b5480728bde6
-	github.com/sigstore/sigstore => github.com/sigstore/sigstore v0.0.0-20210530211317-99216b8b86a6
 	k8s.io/api => k8s.io/api v0.21.2
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.2
 	k8s.io/apimachinery => k8s.io/apimachinery v0.21.2
