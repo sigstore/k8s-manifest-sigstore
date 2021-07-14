@@ -25,7 +25,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
@@ -74,7 +73,6 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	// check if the resource should be skipped or not
 	if vo != nil && len(vo.SkipObjects) > 0 {
 		if vo.SkipObjects.Match(obj) {
-			inScope = false
 			return &VerifyResourceResult{InScope: false}, nil
 		}
 	}
@@ -87,15 +85,15 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		}
 	}
 
-	var manifestInRef []byte
+	var foundManifestBytes []byte
 	log.Debug("fetching manifest...")
-	manifestInRef, sigRef, err = NewManifestFetcher(imageRefString).Fetch(objBytes)
+	foundManifestBytes, sigRef, err = NewManifestFetcher(imageRefString).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
 
 	log.Debug("matching object with manifest...")
-	mnfMatched, diff, err := matchResourceWithManifest(obj, manifestInRef, ignoreFields, vo.CheckDryRunForApply)
+	mnfMatched, diff, err := matchResourceWithManifest(obj, foundManifestBytes, ignoreFields, vo.CheckDryRunForApply)
 	if err != nil {
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
 	}
@@ -124,7 +122,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}, nil
 }
 
-func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []byte, ignoreFields []string, checkDryRunForApply bool) (bool, *mapnode.DiffResult, error) {
+func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, checkDryRunForApply bool) (bool, *mapnode.DiffResult, error) {
 
 	apiVersion := obj.GetAPIVersion()
 	kind := obj.GetKind()
@@ -137,12 +135,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	isCRD := kind == "CustomResourceDefinition"
 
 	log.Debug("obj: apiVersion", apiVersion, "kind", kind, "name", name)
-	log.Debug("manifest in image:", string(manifestInImage))
-
-	found, foundBytes := k8ssigutil.FindSingleYaml(manifestInImage, apiVersion, kind, name, namespace)
-	if !found {
-		return false, nil, errors.New("failed to find the corresponding manifest YAML file in image")
-	}
+	log.Debug("manifest in image:", string(foundManifestBytes))
 
 	var err error
 	var matched bool
@@ -151,7 +144,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 
 	// CASE1: direct match
 	log.Debug("try direct matching")
-	matched, diff, err = directMatch(objBytes, foundBytes)
+	matched, diff, err = directMatch(objBytes, foundManifestBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during diract match")
 	}
@@ -168,7 +161,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 
 	// CASE2: dryrun create match
 	log.Debug("try dryrun create matching")
-	matched, diff, err = dryrunCreateMatch(objBytes, foundBytes, clusterScope, isCRD)
+	matched, diff, err = dryrunCreateMatch(objBytes, foundManifestBytes, clusterScope, isCRD)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
 	}
@@ -186,7 +179,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, manifestInImage []
 	// CASE3: dryrun apply match
 	if checkDryRunForApply {
 		log.Debug("try dryrun apply matching")
-		matched, diff, err = dryrunApplyMatch(objBytes, foundBytes, clusterScope, isCRD)
+		matched, diff, err = dryrunApplyMatch(objBytes, foundManifestBytes, clusterScope, isCRD)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during dryrun apply match")
 		}
