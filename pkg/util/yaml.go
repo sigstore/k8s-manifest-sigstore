@@ -155,7 +155,7 @@ func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, 
 	}
 }
 
-func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, similarityWeight map[string]float64) (bool, []byte, float64) {
+func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, fieldWeight map[string]float64) (bool, []byte, float64) {
 	var thresholdNum float64
 	if threshold == nil {
 		thresholdNum = defaultSimilarityThreshold
@@ -167,10 +167,10 @@ func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float6
 	}
 
 	var weightMap map[string]float64
-	if similarityWeight == nil {
+	if fieldWeight == nil {
 		weightMap = defaultSimilarityWeight
 	} else {
-		weightMap = similarityWeight
+		weightMap = fieldWeight
 	}
 
 	yamls := SplitConcatYAMLs(concatYamlBytes)
