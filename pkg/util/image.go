@@ -72,8 +72,7 @@ func GenerateConcatYAMLsFromImage(img v1.Image) ([]byte, error) {
 			sumErr = append(sumErr, errors.Wrap(err, "failed to get artifact from image layer").Error())
 			continue
 		}
-		blobStream := bytes.NewBuffer(blob)
-		yamlsInLayer, err := GetYAMLsInArtifact(blobStream)
+		yamlsInLayer, err := GetYAMLsInArtifact(blob)
 		if err != nil {
 			sumErr = append(sumErr, errors.Wrap(err, "failed to decompress tar gz blob").Error())
 			continue
@@ -87,8 +86,15 @@ func GenerateConcatYAMLsFromImage(img v1.Image) ([]byte, error) {
 	return concatYamls, nil
 }
 
-func GetYAMLsInArtifact(gzipStream io.Reader) ([][]byte, error) {
-	uncompressedStream, err := gzip.NewReader(gzipStream)
+func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
+	// first try reading the stream as raw YAML manifest
+	yamls := SplitConcatYAMLs(blob)
+	if len(yamls) > 0 {
+		return yamls, nil
+	}
+	// then try decompressing tar gz file and load yamls inside the decompressed dir
+	byteStream := bytes.NewBuffer(blob)
+	uncompressedStream, err := gzip.NewReader(byteStream)
 	if err != nil {
 		return nil, errors.Wrap(err, "gzip.NewReader() failed while decompressing tar gz")
 	}
