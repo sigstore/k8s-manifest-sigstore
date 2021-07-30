@@ -20,27 +20,36 @@ import (
 	"context"
 
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
+	"github.com/sigstore/cosign/pkg/cosign"
 )
 
-func SignImage(imageRef string, keyPath *string, imageAnnotations map[string]interface{}) error {
+func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
 	// TODO: check usecase for yaml signing
 
 	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
 
-	// TODO: handle the case that COSIGN_EXPERIMENTAL env var is not set
+	rekorSeverURL := getRekorServerURL()
 
-	opt := cosigncli.SignOpts{
-		Annotations: imageAnnotations,
-		Sk:          sk,
-		IDToken:     idToken,
+	opt := cosigncli.KeyOpts{
+		Sk:       sk,
+		IDToken:  idToken,
+		RekorURL: rekorSeverURL,
+	}
+	if pf != nil {
+		opt.PassFunc = pf
+	} else {
+		opt.PassFunc = cosigncli.GetPass
 	}
 
 	if keyPath != nil {
 		opt.KeyRef = *keyPath
-		opt.Pf = cosigncli.GetPass
+	}
+	certPathStr := ""
+	if certPath != nil {
+		certPathStr = *certPath
 	}
 
-	return cosigncli.SignCmd(context.Background(), opt, imageRef, true, "", false, false)
+	return cosigncli.SignCmd(context.Background(), opt, imageAnnotations, imageRef, certPathStr, true, "", false, false)
 }

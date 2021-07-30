@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
+	"github.com/sigstore/cosign/pkg/cosign"
 	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
@@ -52,7 +53,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath).Sign(inputDir, output, so.ImageAnnotations)
+	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -64,22 +65,28 @@ type Signer interface {
 	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
-func NewSigner(imageRef, keyPath string) Signer {
+func NewSigner(imageRef, keyPath, certPath string, pf cosign.PassFunc) Signer {
 	var prikeyPath *string
 	if keyPath != "" {
 		prikeyPath = &keyPath
+	}
+	var certPathP *string
+	if certPath != "" {
+		certPathP = &certPath
 	}
 	if imageRef == "" {
 		// TODO: support annotation signature
 		return nil
 	} else {
-		return &ImageSigner{imageRef: imageRef, prikeyPath: prikeyPath}
+		return &ImageSigner{imageRef: imageRef, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	}
 }
 
 type ImageSigner struct {
 	imageRef   string
 	prikeyPath *string
+	certPath   *string
+	passFunc   cosign.PassFunc
 }
 
 func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
@@ -99,7 +106,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.imageRef, s.prikeyPath, imageAnnotations)
+	err = k8scosign.SignImage(s.imageRef, s.prikeyPath, s.certPath, s.passFunc, imageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
