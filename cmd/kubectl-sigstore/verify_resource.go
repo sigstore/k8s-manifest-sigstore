@@ -71,24 +71,27 @@ func NewCmdVerifyResource() *cobra.Command {
 			kubeGetArgs := args
 			err = kubectlOptions.initGet(cmd)
 			if err != nil {
-				return errors.Wrap(err, "failed to initialize a configuration for kubectl get command")
+				log.Fatalf("error occurred during verify-resource initialization: %s", err.Error())
 			}
 
 			if filename != "" && filename != "-" {
 				manifestYAMLs, err = readManifestYAMLFile(filename)
 				if err != nil {
-					return errors.Wrap(err, "failed to read manifest YAML file")
+					log.Fatalf("error occurred during reading manifest YAML file: %s", err.Error())
 				}
 			} else if filename == "-" {
 				manifestYAMLs, err = readStdinAsYAMLs()
 				if err != nil {
-					return errors.Wrap(err, "failed to read stdin as resource YAMLs")
+					log.Fatalf("error occurred during reading manifest YAML from stdin: %s", err.Error())
 				}
 			}
 
-			err = verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, disableDefaultConfig, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, disableDefaultConfig, outputFormat)
 			if err != nil {
-				return errors.Wrap(err, "failed to verify resource")
+				log.Fatalf("error occurred during verify-resource: %s", err.Error())
+			}
+			if !allVerified {
+				os.Exit(1)
 			}
 			return nil
 		},
@@ -104,16 +107,16 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath string, disableDefaultConfig bool, outputFormat string) error {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath string, disableDefaultConfig bool, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
-			return fmt.Errorf("output format `%s` is not supported", outputFormat)
+			return false, fmt.Errorf("output format `%s` is not supported", outputFormat)
 		}
 	}
 
 	if len(kubeGetArgs) == 0 && yamls == nil && imageRef == "" {
-		return errors.New("at least one of the following is required: `--image` option, resource kind or stdin YAML manifests")
+		return false, errors.New("at least one of the following is required: `--image` option, resource kind or stdin YAML manifests")
 	}
 
 	objs := []unstructured.Unstructured{}
@@ -130,7 +133,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 		}
 	}
 	if err != nil {
-		return errors.Wrap(err, "failed to get objects in cluster")
+		return false, errors.Wrap(err, "failed to get objects in cluster")
 	}
 	var vo *k8smanifest.VerifyResourceOption
 	if configPath == "" && disableDefaultConfig {
@@ -140,8 +143,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	} else {
 		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			return nil
+			return false, errors.Wrapf(err, "failed to load verify-resource config from %s", configPath)
 		}
 		if !disableDefaultConfig {
 			vo = addDefaultConfig(vo)
@@ -183,7 +185,8 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 
 	fmt.Println(string(resultBytes))
 
-	return nil
+	allVerified := summarizedResult.Summary.Total == summarizedResult.Summary.Valid
+	return allVerified, nil
 }
 
 func readManifestYAMLFile(fpath string) ([][]byte, error) {

@@ -44,7 +44,6 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 	rekorSeverURL := getRekorServerURL()
 
 	co := &cosign.CheckOpts{
-		RekorURL:      rekorSeverURL,
 		ClaimVerifier: cosign.SimpleClaimVerifier,
 	}
 

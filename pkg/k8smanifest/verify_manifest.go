@@ -25,13 +25,13 @@ import (
 	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
 
-func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, error) {
-	if manifest == nil {
+func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult, error) {
+	if objManifest == nil {
 		return nil, errors.New("input YAML manifest must be non-empty")
 	}
 
 	var obj unstructured.Unstructured
-	_ = yaml.Unmarshal(manifest, &obj)
+	_ = yaml.Unmarshal(objManifest, &obj)
 
 	verified := false
 	signerName := ""
@@ -55,12 +55,12 @@ func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, e
 	}
 
 	var foundManifestBytes []byte
-	foundManifestBytes, _, err = NewManifestFetcher(vo.ImageRef).Fetch(manifest)
+	foundManifestBytes, _, err = NewManifestFetcher(vo.ImageRef).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}
 
-	mnfMatched, diff, err := matchManifest(manifest, foundManifestBytes, ignoreFields)
+	mnfMatched, diff, err := matchManifest(objManifest, foundManifestBytes, ignoreFields)
 	if err != nil {
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
 	}
@@ -70,7 +70,7 @@ func VerifyManifest(manifest []byte, vo *VerifyManifestOption) (*VerifyResult, e
 		keyPath = &(vo.KeyPath)
 	}
 
-	sigVerified, signerName, _, err := NewSignatureVerifier(manifest, vo.ImageRef, keyPath).Verify()
+	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, vo.ImageRef, keyPath).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "error occured during signature verification")
 	}
