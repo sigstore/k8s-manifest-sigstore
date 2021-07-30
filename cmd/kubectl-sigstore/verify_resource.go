@@ -190,7 +190,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 }
 
 func readManifestYAMLFile(fpath string) ([][]byte, error) {
-	yamls := [][]byte{}
+	var yamls [][]byte
 	content, err := ioutil.ReadFile(fpath)
 	if err != nil {
 		return nil, err
@@ -409,6 +409,7 @@ type resourceResult struct {
 }
 
 type VerifyResourceResult struct {
+	TypeMeta  metav1.TypeMeta  `json:""`
 	Summary   summary          `json:"summary"`
 	Images    []imageResult    `json:"images"`
 	Resources []resourceResult `json:"resources"`
@@ -489,6 +490,10 @@ func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
 	summ.Valid = validCount
 	summ.Invalid = invalidCount
 	return VerifyResourceResult{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: resultAPIVersion,
+			Kind:       resultKind,
+		},
 		Summary:   summ,
 		Images:    images,
 		Resources: resources,
