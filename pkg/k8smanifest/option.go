@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/ghodss/yaml"
+	"github.com/sigstore/cosign/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -29,9 +30,11 @@ type SignOption struct {
 	// these options should be input from CLI arguments
 	KeyPath          string                 `json:"-"`
 	ImageRef         string                 `json:"-"`
+	CertPath         string                 `json:"-"`
 	Output           string                 `json:"-"`
 	UpdateAnnotation bool                   `json:"-"`
 	ImageAnnotations map[string]interface{} `json:"-"`
+	PassFunc         cosign.PassFunc        `json:"-"`
 }
 
 // option for VerifyResource()

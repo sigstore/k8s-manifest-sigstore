@@ -21,15 +21,19 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/sigstore/cosign/cmd/cosign/cli"
+	"github.com/sigstore/cosign/cmd/cosign/cli/fulcio"
 	"github.com/sigstore/cosign/pkg/cosign"
-	"github.com/sigstore/cosign/pkg/cosign/fulcio"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
+
+const rekorServerEnvKey = "REKOR_SERVER"
+const defaultRekorServerURL = "https://rekor.sigstore.dev"
 
 func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(imageRef)
@@ -37,17 +41,17 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", imageRef, err.Error())
 	}
 
-	rekorSeverURL := cli.TlogServer()
+	rekorSeverURL := getRekorServerURL()
 
 	co := &cosign.CheckOpts{
-		Claims: true,
+		ClaimVerifier: cosign.SimpleClaimVerifier,
 	}
 
 	if pubkeyPath == "" {
 		co.RekorURL = rekorSeverURL
 		co.RootCerts = fulcio.Roots
 	} else {
-		pubkeyVerifier, err := cosign.LoadPublicKey(context.Background(), pubkeyPath)
+		pubkeyVerifier, err := cli.LoadPublicKey(context.Background(), pubkeyPath)
 		if err != nil {
 			return false, "", nil, fmt.Errorf("error loading public key; %s", err.Error())
 		}
@@ -120,3 +124,11 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 // 	}
 // 	return nil, errors.New("empty response")
 // }
+
+func getRekorServerURL() string {
+	url := os.Getenv(rekorServerEnvKey)
+	if url == "" {
+		url = defaultRekorServerURL
+	}
+	return url
+}

@@ -18,7 +18,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
@@ -41,7 +40,8 @@ func NewCmdSign() *cobra.Command {
 
 			err := sign(inputDir, imageRef, keyPath, output, updateAnnotation, imageAnnotations)
 			if err != nil {
-				return err
+				log.Fatalf("error occurred during signing: %s", err.Error())
+				return nil
 			}
 			return nil
 		},
@@ -63,10 +63,8 @@ func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, ann
 	}
 
 	anntns, err := parseAnnotations(annotations)
-
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		return nil
+		return err
 	}
 
 	so := &k8smanifest.SignOption{
@@ -79,8 +77,7 @@ func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, ann
 
 	_, err = k8smanifest.Sign(inputDir, so)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		return nil
+		return err
 	}
 	if so.UpdateAnnotation {
 		log.Info("signed manifest generated at ", output)

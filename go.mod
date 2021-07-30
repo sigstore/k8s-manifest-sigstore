@@ -12,21 +12,21 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
 	github.com/sigstore/cosign v0.6.0
-	github.com/sigstore/sigstore v0.0.0-20210709190449-2ab5ec881a5f
+	github.com/sigstore/sigstore v0.0.0-20210726180807-7e34e36ecda1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.21.2
-	k8s.io/apimachinery v0.21.2
+	k8s.io/api v0.21.3
+	k8s.io/apimachinery v0.21.3
 	k8s.io/cli-runtime v0.21.2
-	k8s.io/client-go v0.21.2
+	k8s.io/client-go v0.21.3
 	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 	k8s.io/kubectl v0.19.4
 	sigs.k8s.io/controller-runtime v0.0.0-00010101000000-000000000000
 )
 
 replace (
-	github.com/sigstore/cosign => github.com/sigstore/cosign v0.6.0
+	github.com/sigstore/cosign => github.com/sigstore/cosign v1.0.1
 	github.com/sigstore/k8s-manifest-sigstore => ./
 	k8s.io/api => k8s.io/api v0.21.2
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.2
