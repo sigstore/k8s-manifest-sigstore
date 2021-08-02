@@ -11,7 +11,7 @@ require (
 	github.com/onsi/gomega v1.11.0
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
-	github.com/sigstore/cosign v0.6.0
+	github.com/sigstore/cosign v1.0.1
 	github.com/sigstore/fulcio v0.1.1
 	github.com/sigstore/sigstore v0.0.0-20210726180807-7e34e36ecda1
 	github.com/sirupsen/logrus v1.8.1
@@ -23,7 +23,7 @@ require (
 	k8s.io/client-go v0.21.3
 	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 	k8s.io/kubectl v0.19.4
-	sigs.k8s.io/controller-runtime v0.0.0-00010101000000-000000000000
+	sigs.k8s.io/controller-runtime v0.8.3
 )
 
 replace (
