@@ -21,6 +21,12 @@ import (
 
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/pkg/cosign"
+	fulcioclient "github.com/sigstore/fulcio/pkg/client"
+)
+
+const (
+	defaultOIDCIssuer   = "https://oauth2.sigstore.dev/auth"
+	defaultOIDCClientID = "sigstore"
 )
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
@@ -31,11 +37,15 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	idToken := ""
 
 	rekorSeverURL := getRekorServerURL()
+	fulcioServerURL := fulcioclient.SigstorePublicServerURL
 
 	opt := cosigncli.KeyOpts{
-		Sk:       sk,
-		IDToken:  idToken,
-		RekorURL: rekorSeverURL,
+		Sk:           sk,
+		IDToken:      idToken,
+		RekorURL:     rekorSeverURL,
+		FulcioURL:    fulcioServerURL,
+		OIDCIssuer:   defaultOIDCIssuer,
+		OIDCClientID: defaultOIDCClientID,
 	}
 	if pf != nil {
 		opt.PassFunc = pf
