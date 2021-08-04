@@ -39,7 +39,7 @@ var EmbeddedAnnotationMaskKeys = []string{
 	fmt.Sprintf("metadata.annotations.\"%s\"", BundleAnnotationKey),
 }
 
-const annotationEmbeddedSignature = "__annotation_embedded_signature__"
+const SigRefEmbeddedInAnnotation = "__embedded_in_annotation__"
 
 var onMemoryCacheForVerifyResource *k8smnfutil.OnMemoryCache
 
@@ -64,7 +64,7 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 		pubkeyPathString = pubkeyPath
 	}
 
-	if imageRef == "" || imageRef == annotationEmbeddedSignature {
+	if imageRef == "" || imageRef == SigRefEmbeddedInAnnotation {
 		return &AnnotationSignatureVerifier{annotations: annotations, pubkeyPathString: pubkeyPathString}
 	} else {
 		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString}
@@ -191,8 +191,9 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", SignatureAnnotationKey)
 	}
 	cert := annotations[CertificateAnnotationKey]
+	bundle := annotations[BundleAnnotationKey]
 
-	var msgBytes, sigBytes, certBytes []byte
+	var msgBytes, sigBytes, certBytes, bundleBytes []byte
 	if msg != "" {
 		msgBytes = []byte(msg)
 	}
@@ -202,8 +203,11 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 	if cert != "" {
 		certBytes = []byte(cert)
 	}
+	if bundle != "" {
+		bundleBytes = []byte(bundle)
+	}
 
-	return k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, v.pubkeyPathString)
+	return k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
 }
 
 // This is an interface for fetching YAML manifest
@@ -370,7 +374,7 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, 
 	if !found {
 		return nil, "", errors.New("failed to find a YAML manifest in the gzipped message")
 	}
-	return foundManifest, annotationEmbeddedSignature, nil
+	return foundManifest, SigRefEmbeddedInAnnotation, nil
 }
 
 type VerifyResult struct {

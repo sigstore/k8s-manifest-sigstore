@@ -20,11 +20,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -33,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/pkg/cosign"
+	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekor "github.com/sigstore/rekor/pkg/client"
@@ -160,6 +159,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	uploadTlog := cosigncli.EnableExperimental()
 
 	var rawCert []byte
+	var rawBundle []byte
 	if uploadTlog && certPath == nil && keyPath == nil {
 		logIndex, err := findTlogIndexFromSignBlobOutput(stdoutAndErr)
 		if err != nil {
@@ -170,6 +170,12 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find transparency log entry index %v", logIndex)
 		}
+		bundleObj := bundle(tlogEntry)
+		rawBundle, err = json.Marshal(bundleObj)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create a bundle from a tlog entry index %v", logIndex)
+		}
+
 		var rekord *models.Rekord
 		if b64EntryStr, ok := tlogEntry.Body.(string); ok {
 			log.Debug("found entry: ", b64EntryStr)
@@ -224,6 +230,12 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		m["certificate"] = base64Cert
 	}
 
+	if rawBundle != nil {
+		gzipBundle := k8smnfutil.GzipCompress(rawBundle)
+		base64Bundle := []byte(base64.StdEncoding.EncodeToString(gzipBundle))
+		m["bundle"] = base64Bundle
+	}
+
 	return m, nil
 }
 
@@ -275,25 +287,25 @@ func getTlogEntryByIndex(rekorServerURL, logIndex string) (*models.LogEntryAnon,
 	return nil, errors.New("empty response")
 }
 
+func bundle(entry *models.LogEntryAnon) *cremote.Bundle {
+	if entry.Verification == nil {
+		return nil
+	}
+	return &cremote.Bundle{
+		SignedEntryTimestamp: entry.Verification.SignedEntryTimestamp,
+		Payload: cremote.BundlePayload{
+			Body:           entry.Body,
+			IntegratedTime: *entry.IntegratedTime,
+			LogIndex:       *entry.LogIndex,
+			LogID:          *entry.LogID,
+		},
+	}
+}
+
 func GetRekorServerURL() string {
 	url := os.Getenv(rekorServerEnvKey)
 	if url == "" {
 		url = defaultRekorServerURL
 	}
 	return url
-}
-
-func Sha256Hash(fpath string) (string, error) {
-	f, err := os.Open(fpath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	hash := fmt.Sprintf("%x", h.Sum(nil))
-	return hash, nil
 }
