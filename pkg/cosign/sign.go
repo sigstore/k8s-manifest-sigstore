@@ -152,8 +152,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
 
-	var b64Sig []byte
-	b64Sig = []byte(base64.StdEncoding.EncodeToString(rawSig))
+	b64Sig := []byte(base64.StdEncoding.EncodeToString(rawSig))
 	m["signature"] = b64Sig
 
 	uploadTlog := cosigncli.EnableExperimental()
