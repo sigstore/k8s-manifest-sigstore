@@ -46,6 +46,14 @@ const (
 	BundleAnnotationKey      = "cosign.sigstore.dev/bundle" // bundle is not supported in cosign.SignBlob() yet
 )
 
+var annotationKeyMap = map[string]string{
+	"signature":   SignatureAnnotationKey,
+	"certificate": CertificateAnnotationKey,
+	"message":     MessageAnnotationKey,
+	"bundle":      BundleAnnotationKey,
+	"imageRef":    ImageRefAnnotationKey,
+}
+
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
 
 	output := ""
@@ -227,6 +235,13 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	annotationMap := map[string]interface{}{}
 	if imageRef != "" {
 		annotationMap[ImageRefAnnotationKey] = imageRef
+	} else if len(sigMaps) > 0 {
+		for key, val := range sigMaps {
+			annoKey, ok := annotationKeyMap[key]
+			if ok {
+				annotationMap[annoKey] = string(val)
+			}
+		}
 	}
 
 	for k, v := range imageAnnotations {

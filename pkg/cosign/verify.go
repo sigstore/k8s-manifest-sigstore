@@ -19,21 +19,31 @@ package cosign
 import (
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/cmd/cosign/cli/fulcio"
 	"github.com/sigstore/cosign/pkg/cosign"
+	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-const rekorServerEnvKey = "REKOR_SERVER"
-const defaultRekorServerURL = "https://rekor.sigstore.dev"
+const (
+	tmpMessageFile     = "k8s-manifest-sigstore-message"
+	tmpCertificateFile = "k8s-manifest-sigstore-certificate"
+	tmpSignatureFile   = "k8s-manifest-sigstore-signature"
+)
 
 func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(imageRef)
@@ -84,6 +94,99 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 		signerName = k8smnfutil.GetNameInfoFromCert(cert)
 	}
 	return true, signerName, signedTimestamp, nil
+}
+
+func VerifyBlob(msgBytes, sigBytes, certBytes []byte, pubkeyPath *string) (bool, string, *int64, error) {
+	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
+	if err != nil {
+		return false, "", nil, err
+	}
+	defer os.RemoveAll(dir)
+
+	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
+	sk := false
+	idToken := ""
+
+	rekorSeverURL := GetRekorServerURL()
+	fulcioServerURL := fulcioclient.SigstorePublicServerURL
+
+	opt := cli.KeyOpts{
+		Sk:           sk,
+		IDToken:      idToken,
+		RekorURL:     rekorSeverURL,
+		FulcioURL:    fulcioServerURL,
+		OIDCIssuer:   defaultOIDCIssuer,
+		OIDCClientID: defaultOIDCClientID,
+	}
+
+	if pubkeyPath != nil {
+		opt.KeyRef = *pubkeyPath
+	}
+
+	gzipMsg, _ := base64.StdEncoding.DecodeString(string(msgBytes))
+	rawMsg := k8smnfutil.GzipDecompress(gzipMsg)
+	msgFile := filepath.Join(dir, tmpMessageFile)
+	_ = ioutil.WriteFile(msgFile, rawMsg, 0777)
+
+	rawSig, _ := base64.StdEncoding.DecodeString(string(sigBytes))
+	sigFile := filepath.Join(dir, tmpSignatureFile)
+	_ = ioutil.WriteFile(sigFile, rawSig, 0777)
+
+	var certFile string
+	var rawCert []byte
+	if certBytes != nil {
+		gzipCert, _ := base64.StdEncoding.DecodeString(string(certBytes))
+		rawCert = k8smnfutil.GzipDecompress(gzipCert)
+		certFile = filepath.Join(dir, tmpCertificateFile)
+		_ = ioutil.WriteFile(certFile, rawCert, 0777)
+	}
+
+	returnValNum := 1
+	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cli.VerifyBlobCmd, context.Background(), opt, certFile, sigFile, msgFile)
+
+	log.Info(stdoutAndErr) // show cosign.VerifyBlobCmd() logs
+
+	if len(returnValArray) != returnValNum {
+		return false, "", nil, fmt.Errorf("cosign.VerifyBlobCmd() must return %v values as output, but got %v values", returnValNum, len(returnValArray))
+	}
+	if returnValArray[0] != nil {
+		err = returnValArray[0].(error)
+	}
+	if err != nil {
+		err = fmt.Errorf("error: %s, detail logs during cosign.VerifyBlobCmd(): %s", err.Error(), stdoutAndErr)
+		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
+	}
+	verified := false
+	if err == nil {
+		verified = true
+	}
+
+	var signerName string
+	if rawCert != nil {
+		cert, err := loadCertificate(rawCert)
+		if err != nil {
+			return false, "", nil, errors.Wrap(err, "failed to load certificate")
+		}
+		signerName = getNameInfoFromCert(cert)
+	}
+
+	return verified, signerName, nil, nil
+}
+
+func loadCertificate(pemBytes []byte) (*x509.Certificate, error) {
+	p, _ := pem.Decode(pemBytes)
+	if p == nil {
+		return nil, errors.New("failed to decode PEM bytes")
+	}
+	return x509.ParseCertificate(p.Bytes)
+}
+
+func getNameInfoFromCert(cert *x509.Certificate) string {
+	name := ""
+	if len(cert.EmailAddresses) > 0 {
+		name = cert.EmailAddresses[0]
+	}
+	return name
 }
 
 // func getSignedTimestamp(rekorServerURL string, sp cosign.SignedPayload, co *cosign.CheckOpts) (*int64, error) {

@@ -17,26 +17,39 @@
 package cosign
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
-	"regexp"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/pkg/cosign"
 	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	rekor "github.com/sigstore/rekor/pkg/client"
+	"github.com/sigstore/rekor/pkg/generated/client/entries"
+	"github.com/sigstore/rekor/pkg/generated/models"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
-	defaultOIDCIssuer   = "https://oauth2.sigstore.dev/auth"
-	defaultOIDCClientID = "sigstore"
+	rekorServerEnvKey     = "REKOR_SERVER"
+	defaultRekorServerURL = "https://rekor.sigstore.dev"
+	defaultOIDCIssuer     = "https://oauth2.sigstore.dev/auth"
+	defaultOIDCClientID   = "sigstore"
+	cosignPasswordEnvKey  = "COSIGN_PASSWORD"
 )
 
-const certBeginByte = "-----BEGIN CERTIFICATE-----"
-const certEndByte = "-----END CERTIFICATE-----"
+const signBlobTlogIndexLineIdentifier = "tlog entry created with index:"
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
 	// TODO: check usecase for yaml signing
@@ -100,24 +113,38 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		opt.KeyRef = *keyPath
 	}
 
+	// TODO: find a better way to call cosigncli.SignBlobCmd() with interactive stdin and captured stdout
+	if opt.KeyRef != "" && opt.PassFunc != nil {
+		pw, err := opt.PassFunc(false)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to read a password from input")
+		}
+		err = os.Setenv(cosignPasswordEnvKey, string(pw))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to set a password")
+		}
+	}
+
 	m := map[string][]byte{}
 	rawMsg, err := ioutil.ReadFile(blobPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to load a file to be signed")
 	}
-	base64Msg := []byte(base64.StdEncoding.EncodeToString(rawMsg))
+	gzipMsg := k8smnfutil.GzipCompress(rawMsg)
+	base64Msg := []byte(base64.StdEncoding.EncodeToString(gzipMsg))
 	m["message"] = base64Msg
 
-	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cosigncli.SignBlobCmd, context.Background(), opt, blobPath, true, "")
+	returnValNum := 2
+	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cosigncli.SignBlobCmd, context.Background(), opt, blobPath, false, "")
 
-	fmt.Println(stdoutAndErr) // show cosign.SignBlobCmd() logs
+	log.Info(stdoutAndErr) // show cosign.SignBlobCmd() logs
 
-	if len(returnValArray) != 2 {
-		return nil, fmt.Errorf("cosign.SignBlobCmd() must return 2 values as output, but got %v values", len(returnValArray))
+	if len(returnValArray) != returnValNum {
+		return nil, fmt.Errorf("cosign.SignBlobCmd() must return %v values as output, but got %v values", returnValNum, len(returnValArray))
 	}
-	var b64Sig []byte
+	var rawSig []byte
 	if returnValArray[0] != nil {
-		b64Sig = returnValArray[0].([]byte)
+		rawSig = returnValArray[0].([]byte)
 	}
 	if returnValArray[1] != nil {
 		err = returnValArray[1].(error)
@@ -126,21 +153,147 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
 
+	var b64Sig []byte
+	b64Sig = []byte(base64.StdEncoding.EncodeToString(rawSig))
 	m["signature"] = b64Sig
 
-	rawCert := extractCertFromStdoutAndErr(stdoutAndErr)
-	gzipCert := k8smnfutil.GzipCompress(rawCert)
-	base64Cert := []byte(base64.StdEncoding.EncodeToString(gzipCert))
-	m["certificate"] = base64Cert
+	uploadTlog := cosigncli.EnableExperimental()
+
+	var rawCert []byte
+	if uploadTlog && certPath == nil && keyPath == nil {
+		logIndex, err := findTlogIndexFromSignBlobOutput(stdoutAndErr)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to find transparency log index from cosign.SignBlobCmd() output")
+		}
+
+		tlogEntry, err := getTlogEntryByIndex(rekorSeverURL, logIndex)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to find transparency log entry index %v", logIndex)
+		}
+		var rekord *models.Rekord
+		if b64EntryStr, ok := tlogEntry.Body.(string); ok {
+			log.Debug("found entry: ", b64EntryStr)
+			rawEntryBytes, err := base64.StdEncoding.DecodeString(b64EntryStr)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to base64 decode tlogEntry.Body")
+			}
+			err = json.Unmarshal(rawEntryBytes, &rekord)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to unmarshal tlogEntry.Body into *models.Rekord")
+			}
+		}
+		if rekord == nil {
+			return nil, fmt.Errorf("failed to parse transparency log")
+		}
+
+		rekordBytes, _ := json.Marshal(rekord)
+		log.Debug("rekord object: ", string(rekordBytes))
+		rekordSpecBytes, _ := json.Marshal(rekord.Spec)
+
+		var rekordContent *models.RekordV001Schema
+		err = json.Unmarshal(rekordSpecBytes, &rekordContent)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to unmarshal rekord.Spec into *models.RekordV001Schema")
+		}
+
+		var b64SigInTlog string
+		var b64CertStr string
+		if rekordContent != nil {
+			b64SigInTlog = rekordContent.Signature.Content.String()
+			b64CertStr = rekordContent.Signature.PublicKey.Content.String()
+		}
+		if b64SigInTlog != string(b64Sig) {
+			return nil, fmt.Errorf("signature found in tlog is different from original one; found: %s, original: %s", b64SigInTlog, string(b64Sig))
+		}
+		rawCert, err = base64.StdEncoding.DecodeString(b64CertStr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to decode certificate string %s", b64CertStr)
+		}
+	} else if certPath != nil {
+		certPathStr := *certPath
+		certPem, err := ioutil.ReadFile(certPathStr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to load certificate at %s", certPathStr)
+		}
+		rawCert = certPem
+	}
+
+	if rawCert != nil {
+		gzipCert := k8smnfutil.GzipCompress(rawCert)
+		base64Cert := []byte(base64.StdEncoding.EncodeToString(gzipCert))
+		m["certificate"] = base64Cert
+	}
 
 	return m, nil
 }
 
-func extractCertFromStdoutAndErr(stdoutAndErr string) []byte {
-	re := regexp.MustCompile(fmt.Sprintf(`(?s)%s.*%s`, certBeginByte, certEndByte)) // `(?s)` is necessary for matching multi lines
-	foundBlocks := re.FindAllString(stdoutAndErr, 1)
-	if len(foundBlocks) == 0 {
-		return nil
+func findTlogIndexFromSignBlobOutput(stdoutAndErr string) (string, error) {
+	reader := bytes.NewReader([]byte(stdoutAndErr))
+	scanner := bufio.NewScanner(reader)
+	index := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, signBlobTlogIndexLineIdentifier) {
+			tmp := strings.TrimPrefix(line, signBlobTlogIndexLineIdentifier)
+			index = strings.TrimSpace(tmp)
+		}
 	}
-	return []byte(foundBlocks[0])
+	if index != "" {
+		return index, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	} else {
+		return "", fmt.Errorf("failed to find tlog index info")
+	}
+}
+
+func getTlogEntryByIndex(rekorServerURL, logIndex string) (*models.LogEntryAnon, error) {
+	rekorClient, err := rekor.GetRekorClient(rekorServerURL)
+	if err != nil {
+		return nil, err
+	}
+	params := entries.NewGetLogEntryByIndexParams()
+	logIndexInt, err := strconv.ParseInt(logIndex, 10, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing --log-index: %w", err)
+	}
+	params.LogIndex = logIndexInt
+
+	resp, err := rekorClient.Entries.GetLogEntryByIndex(params)
+	if err != nil {
+		return nil, err
+	}
+	var logEntry *models.LogEntryAnon
+	for uuid := range resp.Payload {
+		tmpEntry := resp.Payload[uuid]
+		logEntry = &tmpEntry
+	}
+	if logEntry != nil {
+		return logEntry, nil
+	}
+	return nil, errors.New("empty response")
+}
+
+func GetRekorServerURL() string {
+	url := os.Getenv(rekorServerEnvKey)
+	if url == "" {
+		url = defaultRekorServerURL
+	}
+	return url
+}
+
+func Sha256Hash(fpath string) (string, error) {
+	f, err := os.Open(fpath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	hash := fmt.Sprintf("%x", h.Sum(nil))
+	return hash, nil
 }
