@@ -20,9 +20,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -47,6 +49,10 @@ const (
 	defaultOIDCClientID   = "sigstore"
 	cosignPasswordEnvKey  = "COSIGN_PASSWORD"
 )
+<<<<<<< HEAD
+=======
+
+>>>>>>> 00afbd6 (add annotation embedded signature verification)
 const signBlobTlogIndexLineIdentifier = "tlog entry created with index:"
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
@@ -306,4 +312,19 @@ func GetRekorServerURL() string {
 		url = defaultRekorServerURL
 	}
 	return url
+}
+
+func Sha256Hash(fpath string) (string, error) {
+	f, err := os.Open(fpath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	hash := fmt.Sprintf("%x", h.Sum(nil))
+	return hash, nil
 }
