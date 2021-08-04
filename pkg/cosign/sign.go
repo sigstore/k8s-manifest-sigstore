@@ -20,11 +20,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -312,19 +310,4 @@ func GetRekorServerURL() string {
 		url = defaultRekorServerURL
 	}
 	return url
-}
-
-func Sha256Hash(fpath string) (string, error) {
-	f, err := os.Open(fpath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	hash := fmt.Sprintf("%x", h.Sum(nil))
-	return hash, nil
 }
