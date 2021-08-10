@@ -43,8 +43,16 @@ const (
 	SignatureAnnotationKey   = "cosign.sigstore.dev/signature"
 	CertificateAnnotationKey = "cosign.sigstore.dev/certificate"
 	MessageAnnotationKey     = "cosign.sigstore.dev/message"
-	BundleAnnotationKey      = "cosign.sigstore.dev/bundle" // bundle is not supported in cosign.SignBlob() yet
+	BundleAnnotationKey      = "cosign.sigstore.dev/bundle"
 )
+
+var annotationKeyMap = map[string]string{
+	"signature":   SignatureAnnotationKey,
+	"certificate": CertificateAnnotationKey,
+	"message":     MessageAnnotationKey,
+	"bundle":      BundleAnnotationKey,
+	"imageRef":    ImageRefAnnotationKey,
+}
 
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
 
@@ -75,8 +83,7 @@ func NewSigner(imageRef, keyPath, certPath string, pf cosign.PassFunc) Signer {
 		certPathP = &certPath
 	}
 	if imageRef == "" {
-		// TODO: support annotation signature
-		return nil
+		return &AnnotationSigner{prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	} else {
 		return &ImageSigner{imageRef: imageRef, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	}
@@ -113,6 +120,54 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 	if output != "" {
 		// generate a signed YAML file
 		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil, imageAnnotations)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate a signed YAML")
+		}
+		err = ioutil.WriteFile(output, signedBytes, 0644)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to write a signed YAML into")
+		}
+	}
+	return signedBytes, nil
+}
+
+type AnnotationSigner struct {
+	prikeyPath *string
+	certPath   *string
+	passFunc   cosign.PassFunc
+}
+
+func (s *AnnotationSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
+	var inputDataBuffer bytes.Buffer
+	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create a temporary directory for signing")
+	}
+	defer os.RemoveAll(dir)
+	tmpBlobFile := filepath.Join(dir, "tmp-blob-file")
+
+	var mo *k8ssigutil.MutateOptions
+	if imageAnnotations != nil {
+		mo = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
+	}
+
+	err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to compress an input file/dir")
+	}
+	var signedBytes []byte
+	var sigMaps map[string][]byte
+	err = ioutil.WriteFile(tmpBlobFile, inputDataBuffer.Bytes(), 0777)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create a temporary blob file")
+	}
+	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.passFunc)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to sign a blob file")
+	}
+	if output != "" {
+		// generate a signed YAML file
+		signedBytes, err = generateSignedYAMLManifest(inputDir, "", sigMaps, imageAnnotations)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
@@ -180,6 +235,13 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	annotationMap := map[string]interface{}{}
 	if imageRef != "" {
 		annotationMap[ImageRefAnnotationKey] = imageRef
+	} else if len(sigMaps) > 0 {
+		for key, val := range sigMaps {
+			annoKey, ok := annotationKeyMap[key]
+			if ok {
+				annotationMap[annoKey] = string(val)
+			}
+		}
 	}
 
 	for k, v := range imageAnnotations {

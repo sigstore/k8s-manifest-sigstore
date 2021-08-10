@@ -19,21 +19,34 @@ package cosign
 import (
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/cmd/cosign/cli/fulcio"
 	"github.com/sigstore/cosign/pkg/cosign"
+	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
+	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-const rekorServerEnvKey = "REKOR_SERVER"
-const defaultRekorServerURL = "https://rekor.sigstore.dev"
+const (
+	tmpMessageFile     = "k8s-manifest-sigstore-message"
+	tmpCertificateFile = "k8s-manifest-sigstore-certificate"
+	tmpSignatureFile   = "k8s-manifest-sigstore-signature"
+)
 
 func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(imageRef)
@@ -41,10 +54,14 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", imageRef, err.Error())
 	}
 
-	rekorSeverURL := getRekorServerURL()
+	rekorSeverURL := GetRekorServerURL()
 
 	co := &cosign.CheckOpts{
 		ClaimVerifier: cosign.SimpleClaimVerifier,
+		RegistryClientOpts: []remote.Option{
+			remote.WithAuthFromKeychain(authn.DefaultKeychain),
+			remote.WithContext(context.Background()),
+		},
 	}
 
 	if pubkeyPath == "" {
@@ -86,6 +103,112 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 	return true, signerName, signedTimestamp, nil
 }
 
+func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *string) (bool, string, *int64, error) {
+	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
+	if err != nil {
+		return false, "", nil, err
+	}
+	defer os.RemoveAll(dir)
+
+	gzipMsg, _ := base64.StdEncoding.DecodeString(string(msgBytes))
+	rawMsg := k8smnfutil.GzipDecompress(gzipMsg)
+	msgFile := filepath.Join(dir, tmpMessageFile)
+	_ = ioutil.WriteFile(msgFile, rawMsg, 0777)
+
+	rawSig, _ := base64.StdEncoding.DecodeString(string(sigBytes))
+	sigFile := filepath.Join(dir, tmpSignatureFile)
+	_ = ioutil.WriteFile(sigFile, rawSig, 0777)
+
+	var certFile string
+	var rawCert []byte
+	if certBytes != nil {
+		gzipCert, _ := base64.StdEncoding.DecodeString(string(certBytes))
+		rawCert = k8smnfutil.GzipDecompress(gzipCert)
+		certFile = filepath.Join(dir, tmpCertificateFile)
+		_ = ioutil.WriteFile(certFile, rawCert, 0777)
+	}
+
+	// if bundle is provided, try verifying it in offline first and return results if verified
+	if bundleBytes != nil {
+		gzipBundle, _ := base64.StdEncoding.DecodeString(string(bundleBytes))
+		rawBundle := k8smnfutil.GzipDecompress(gzipBundle)
+		verified, signerName, signedTimestamp, err := verifyBundle(rawMsg, sigBytes, rawCert, rawBundle)
+		log.Debugf("verifyBundle() results: verified: %v, signerName: %s, err: %s", verified, signerName, err)
+		if verified {
+			log.Debug("Verified by bundle information")
+			return verified, signerName, signedTimestamp, err
+		}
+	}
+	// otherwise, use cosign.VerifyBundleCmd for verification
+
+	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
+	sk := false
+	idToken := ""
+
+	rekorSeverURL := GetRekorServerURL()
+	fulcioServerURL := fulcioclient.SigstorePublicServerURL
+
+	opt := cli.KeyOpts{
+		Sk:           sk,
+		IDToken:      idToken,
+		RekorURL:     rekorSeverURL,
+		FulcioURL:    fulcioServerURL,
+		OIDCIssuer:   defaultOIDCIssuer,
+		OIDCClientID: defaultOIDCClientID,
+	}
+
+	if pubkeyPath != nil {
+		opt.KeyRef = *pubkeyPath
+	}
+
+	returnValNum := 1
+	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cli.VerifyBlobCmd, context.Background(), opt, certFile, sigFile, msgFile)
+
+	log.Debug(stdoutAndErr) // show cosign.VerifyBlobCmd() logs
+
+	if len(returnValArray) != returnValNum {
+		return false, "", nil, fmt.Errorf("cosign.VerifyBlobCmd() must return %v values as output, but got %v values", returnValNum, len(returnValArray))
+	}
+	if returnValArray[0] != nil {
+		err = returnValArray[0].(error)
+	}
+	if err != nil {
+		err = fmt.Errorf("error: %s, detail logs during cosign.VerifyBlobCmd(): %s", err.Error(), stdoutAndErr)
+		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
+	}
+	verified := false
+	if err == nil {
+		verified = true
+	}
+
+	var signerName string
+	if rawCert != nil {
+		cert, err := loadCertificate(rawCert)
+		if err != nil {
+			return false, "", nil, errors.Wrap(err, "failed to load certificate")
+		}
+		signerName = getNameInfoFromCert(cert)
+	}
+
+	return verified, signerName, nil, nil
+}
+
+func loadCertificate(pemBytes []byte) (*x509.Certificate, error) {
+	p, _ := pem.Decode(pemBytes)
+	if p == nil {
+		return nil, errors.New("failed to decode PEM bytes")
+	}
+	return x509.ParseCertificate(p.Bytes)
+}
+
+func getNameInfoFromCert(cert *x509.Certificate) string {
+	name := ""
+	if len(cert.EmailAddresses) > 0 {
+		name = cert.EmailAddresses[0]
+	}
+	return name
+}
+
 // func getSignedTimestamp(rekorServerURL string, sp cosign.SignedPayload, co *cosign.CheckOpts) (*int64, error) {
 // 	if !co.Tlog {
 // 		return nil, nil
@@ -125,10 +248,29 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 // 	return nil, errors.New("empty response")
 // }
 
-func getRekorServerURL() string {
-	url := os.Getenv(rekorServerEnvKey)
-	if url == "" {
-		url = defaultRekorServerURL
+func verifyBundle(rawMsg, b64Sig, rawCert, rawBundle []byte) (bool, string, *int64, error) {
+	cert, err := loadCertificate(rawCert)
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "loading certificate")
 	}
-	return url
+	var bundleObj *cremote.Bundle
+	err = json.Unmarshal(rawBundle, &bundleObj)
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "unmarshaling bundleObj")
+	}
+	sp := &cosign.SignedPayload{
+		Base64Signature: string(b64Sig),
+		Payload:         rawMsg, // not sure if this is correct, but payload is not used in VerifyBundle()
+		Cert:            cert,
+		Bundle:          bundleObj,
+	}
+	verified, err := sp.VerifyBundle()
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "verifying bundle")
+	}
+	var signerName string
+	if verified {
+		signerName = getNameInfoFromCert(cert)
+	}
+	return verified, signerName, nil, nil
 }

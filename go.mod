@@ -13,6 +13,7 @@ require (
 	github.com/r3labs/diff v1.1.0
 	github.com/sigstore/cosign v1.0.1
 	github.com/sigstore/fulcio v0.1.1
+	github.com/sigstore/rekor v0.3.0
 	github.com/sigstore/sigstore v0.0.0-20210726180807-7e34e36ecda1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1

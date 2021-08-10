@@ -1,11 +1,11 @@
 //
-// Copyright 2020 IBM Corporation
+// Copyright 2021 The Sigstore Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-// http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,21 +18,24 @@ package util
 
 import (
 	"bytes"
-	"os/exec"
-
-	"github.com/pkg/errors"
+	"compress/gzip"
+	"io/ioutil"
 )
 
-func CmdExec(baseCmd string, args ...string) (string, error) {
-	cmd := exec.Command(baseCmd, args...)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+func GzipCompress(in []byte) []byte {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	_, _ = writer.Write(in)
+	writer.Close()
+	return buffer.Bytes()
+}
+
+func GzipDecompress(in []byte) []byte {
+	reader := bytes.NewReader(in)
+	gzreader, _ := gzip.NewReader(reader)
+	out, err := ioutil.ReadAll(gzreader)
 	if err != nil {
-		return "", errors.Wrap(err, stderr.String())
+		return in
 	}
-	out := stdout.String()
-	return out, nil
+	return out
 }

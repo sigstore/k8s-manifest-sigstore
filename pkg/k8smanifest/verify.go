@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -38,6 +39,8 @@ var EmbeddedAnnotationMaskKeys = []string{
 	fmt.Sprintf("metadata.annotations.\"%s\"", BundleAnnotationKey),
 }
 
+const SigRefEmbeddedInAnnotation = "__embedded_in_annotation__"
+
 var onMemoryCacheForVerifyResource *k8smnfutil.OnMemoryCache
 
 func init() {
@@ -49,25 +52,22 @@ type SignatureVerifier interface {
 }
 
 func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *string) SignatureVerifier {
-	i := &ImageSignatureVerifier{onMemoryCacheEnabled: true}
-	var annotations map[string]string
+	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 	if imageRef == "" {
-		annotations = k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 		if annoImageRef, ok := annotations[ImageRefAnnotationKey]; ok {
 			imageRef = annoImageRef
 		}
 	}
 
-	i.imageRef = imageRef
-
+	var pubkeyPathString *string
 	if pubkeyPath != nil && *pubkeyPath != "" {
-		i.pubkeyPathString = pubkeyPath
+		pubkeyPathString = pubkeyPath
 	}
 
-	if imageRef == "" {
-		return &AnnotationSignatureVerifier{}
+	if imageRef == "" || imageRef == SigRefEmbeddedInAnnotation {
+		return &AnnotationSignatureVerifier{annotations: annotations, pubkeyPathString: pubkeyPathString}
 	} else {
-		return i
+		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString}
 	}
 }
 
@@ -175,11 +175,39 @@ func (v *ImageSignatureVerifier) setResultToMemCache(imageRef, pubkey string, ve
 }
 
 type AnnotationSignatureVerifier struct {
+	annotations      map[string]string
+	pubkeyPathString *string
 }
 
 func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
-	// TODO: support annotation signature
-	return false, "", nil, errors.New("annotation-embedded signature is not supported yet")
+	annotations := v.annotations
+
+	msg, ok := annotations[MessageAnnotationKey]
+	if !ok {
+		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", MessageAnnotationKey)
+	}
+	sig, ok := annotations[SignatureAnnotationKey]
+	if !ok {
+		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", SignatureAnnotationKey)
+	}
+	cert := annotations[CertificateAnnotationKey]
+	bundle := annotations[BundleAnnotationKey]
+
+	var msgBytes, sigBytes, certBytes, bundleBytes []byte
+	if msg != "" {
+		msgBytes = []byte(msg)
+	}
+	if sig != "" {
+		sigBytes = []byte(sig)
+	}
+	if cert != "" {
+		certBytes = []byte(cert)
+	}
+	if bundle != "" {
+		bundleBytes = []byte(bundle)
+	}
+
+	return k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
 }
 
 // This is an interface for fetching YAML manifest
@@ -321,8 +349,32 @@ type AnnotationManifestFetcher struct {
 }
 
 func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error) {
-	// TODO: support annotation signature
-	return nil, "", errors.New("annotation-embedded signature is not supported yet")
+
+	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
+
+	base64Msg, messageFound := annotations[MessageAnnotationKey]
+	if !messageFound {
+		return nil, "", nil
+	}
+	gzipMsg, err := base64.StdEncoding.DecodeString(base64Msg)
+	if err != nil {
+		return nil, "", errors.Wrap(err, "failed to decode base64 message in the annotation")
+	}
+	// `gzipMsg` is a gzip compressed .tar.gz file, so get a tar ball by decompressing it
+	gzipTarBall := k8smnfutil.GzipDecompress(gzipMsg)
+
+	yamls, err := k8smnfutil.GetYAMLsInArtifact(gzipTarBall)
+	if err != nil {
+		return nil, "", errors.Wrap(err, "failed to read YAMLs in the gzipped message")
+	}
+
+	concatYAMLbytes := k8smnfutil.ConcatenateYAMLs(yamls)
+
+	found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes)
+	if !found {
+		return nil, "", errors.New("failed to find a YAML manifest in the gzipped message")
+	}
+	return foundManifest, SigRefEmbeddedInAnnotation, nil
 }
 
 type VerifyResult struct {

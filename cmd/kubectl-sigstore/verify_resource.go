@@ -46,8 +46,6 @@ const (
 	resultKind       = "VerifyResourceResult"         // use this only for output result as json/yaml
 )
 
-const embeddedSigRef = "<embedded>"
-
 // This is common ignore fields for changes by k8s system
 //go:embed resources/default-config.yaml
 var defaultConfigBytes []byte
@@ -473,7 +471,7 @@ func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
 		}
 		totalCount += 1
 
-		if result.Result != nil && result.Result.SigRef != "" && result.Result.SigRef != embeddedSigRef {
+		if result.Result != nil && result.Result.SigRef != "" && result.Result.SigRef != k8smanifest.SigRefEmbeddedInAnnotation {
 			imageRef := result.Result.SigRef
 			if !imageMap[imageRef] {
 				images = append(images, imageResult{
