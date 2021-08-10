@@ -54,7 +54,7 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", imageRef, err.Error())
 	}
 
-	rekorSeverURL := getRekorServerURL()
+	rekorSeverURL := GetRekorServerURL()
 
 	co := &cosign.CheckOpts{
 		ClaimVerifier: cosign.SimpleClaimVerifier,

@@ -57,7 +57,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	sk := false
 	idToken := ""
 
-	rekorSeverURL := getRekorServerURL()
+	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioclient.SigstorePublicServerURL
 
 	opt := cosigncli.KeyOpts{
