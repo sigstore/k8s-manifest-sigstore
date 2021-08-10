@@ -42,7 +42,8 @@ type VerifyResourceOption struct {
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
-	CheckDryRunForApply bool `json:"-"`
+	CheckDryRunForApply bool   `json:"-"`
+	DryRunNamespace     string `json:"-"`
 }
 
 // option for VerifyManifest()

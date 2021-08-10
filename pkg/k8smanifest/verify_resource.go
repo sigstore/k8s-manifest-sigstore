@@ -93,7 +93,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	log.Debug("matching object with manifest...")
-	mnfMatched, diff, err := matchResourceWithManifest(obj, foundManifestBytes, ignoreFields, vo.CheckDryRunForApply)
+	mnfMatched, diff, err := matchResourceWithManifest(obj, foundManifestBytes, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply)
 	if err != nil {
 		return nil, errors.Wrap(err, "error occurred during matching manifest")
 	}
@@ -122,7 +122,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}, nil
 }
 
-func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, checkDryRunForApply bool) (bool, *mapnode.DiffResult, error) {
+func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, dryRunNamespace string, checkDryRunForApply bool) (bool, *mapnode.DiffResult, error) {
 
 	apiVersion := obj.GetAPIVersion()
 	kind := obj.GetKind()
@@ -161,7 +161,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 
 	// CASE2: dryrun create match
 	log.Debug("try dryrun create matching")
-	matched, diff, err = dryrunCreateMatch(objBytes, foundManifestBytes, clusterScope, isCRD)
+	matched, diff, err = dryrunCreateMatch(objBytes, foundManifestBytes, clusterScope, isCRD, dryRunNamespace)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
 	}
@@ -179,7 +179,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 	// CASE3: dryrun apply match
 	if checkDryRunForApply {
 		log.Debug("try dryrun apply matching")
-		matched, diff, err = dryrunApplyMatch(objBytes, foundManifestBytes, clusterScope, isCRD)
+		matched, diff, err = dryrunApplyMatch(objBytes, foundManifestBytes, clusterScope, isCRD, dryRunNamespace)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during dryrun apply match")
 		}
@@ -224,7 +224,7 @@ func directMatch(objBytes, manifestBytes []byte) (bool, *mapnode.DiffResult, err
 	return false, diff, nil
 }
 
-func dryrunCreateMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) (bool, *mapnode.DiffResult, error) {
+func dryrunCreateMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool, dryRunNamespace string) (bool, *mapnode.DiffResult, error) {
 	objNode, err := mapnode.NewFromBytes(objBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize object node")
@@ -238,7 +238,7 @@ func dryrunCreateMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool)
 	if clusterScope {
 		simBytes, err = kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), "")
 	} else {
-		simBytes, err = kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), defaultDryRunNamespace)
+		simBytes, err = kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), dryRunNamespace)
 	}
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to dryrun with the found YAML in image")
@@ -267,7 +267,7 @@ func dryrunCreateMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool)
 	return false, diff, nil
 }
 
-func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) (bool, *mapnode.DiffResult, error) {
+func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool, dryRunNamespace string) (bool, *mapnode.DiffResult, error) {
 	objNode, err := mapnode.NewFromBytes(objBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize object node")
@@ -283,7 +283,7 @@ func dryrunApplyMatch(objBytes, manifestBytes []byte, clusterScope, isCRD bool) 
 	if clusterScope {
 		simPatchedObj, err = kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), "")
 	} else {
-		simPatchedObj, err = kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), defaultDryRunNamespace)
+		simPatchedObj, err = kubeutil.DryRunCreate([]byte(nsMaskedPatchedNode.ToYaml()), dryRunNamespace)
 	}
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error during DryRunCreate for apply")
