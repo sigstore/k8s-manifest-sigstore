@@ -42,16 +42,13 @@ type VerifyResourceOption struct {
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
-	MaxCandidateNumForManifests int    `json:"-"`
-	CheckDryRunForApply         bool   `json:"-"`
-	DryRunNamespace             string `json:"-"`
+	CheckDryRunForApply bool   `json:"-"`
+	DryRunNamespace     string `json:"-"`
 }
 
 // option for VerifyManifest()
 type VerifyManifestOption struct {
 	verifyOption `json:""`
-
-	MaxCandidateNumForManifests int `json:"-"`
 }
 
 // common options for verify functions
@@ -59,6 +56,8 @@ type VerifyManifestOption struct {
 type verifyOption struct {
 	IgnoreFields ObjectFieldBindingList `json:"ignoreFields,omitempty"`
 	Signers      SignerList             `json:"signers,omitempty"`
+
+	MaxDryRunCandidateNum int `json:"maxDryRunCandidateNum,omitempty"`
 
 	// these options should be input from CLI arguments
 	KeyPath  string `json:"-"`

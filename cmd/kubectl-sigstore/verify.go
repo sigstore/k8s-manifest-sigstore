@@ -36,13 +36,12 @@ func NewCmdVerify() *cobra.Command {
 	var filename string
 	var keyPath string
 	var configPath string
-	var maxMatchingTrialNum int
 	cmd := &cobra.Command{
 		Use:   "verify -f FILENAME [-i IMAGE]",
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := verify(filename, imageRef, keyPath, configPath, maxMatchingTrialNum)
+			err := verify(filename, imageRef, keyPath, configPath)
 			if err != nil {
 				return err
 			}
@@ -54,12 +53,11 @@ func NewCmdVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
-	cmd.PersistentFlags().IntVar(&maxMatchingTrialNum, "matching-trial", 3, "the maximum number of manifest matching trials against single object manifest")
 
 	return cmd
 }
 
-func verify(filename, imageRef, keyPath, configPath string, maxMatchingTrialNum int) error {
+func verify(filename, imageRef, keyPath, configPath string) error {
 	manifest, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -87,9 +85,6 @@ func verify(filename, imageRef, keyPath, configPath string, maxMatchingTrialNum 
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
-	}
-	if maxMatchingTrialNum > 0 {
-		vo.MaxCandidateNumForManifests = maxMatchingTrialNum
 	}
 
 	objManifests := k8ssigutil.SplitConcatYAMLs(manifest)

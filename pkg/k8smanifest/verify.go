@@ -247,13 +247,18 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		return nil, "", errors.New("no image reference is found")
 	}
 
+	var maxCandidateNumPtr *int
+	if f.maxCandidateNum > 0 {
+		maxCandidateNumPtr = &f.maxCandidateNum
+	}
+
 	imageRefList := splitCommaSeparatedString(imageRefString)
 	for _, imageRef := range imageRefList {
 		concatYAMLbytes, err := f.fetchManifestInSingleImage(imageRef)
 		if err != nil {
 			return nil, "", err
 		}
-		found, candidateManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, &f.maxCandidateNum, f.ignoreFields)
+		found, candidateManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxCandidateNumPtr, f.ignoreFields)
 		if found {
 			return candidateManifests, imageRef, nil
 		}

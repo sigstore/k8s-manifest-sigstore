@@ -87,12 +87,11 @@ Usage:
   kubectl sigstore verify -f FILENAME [-i IMAGE] [flags]
 
 Flags:
-  -c, --config string        path to verification config YAML file (for advanced verification)
-  -f, --filename string      file name which will be verified
-  -h, --help                 help for verify
-  -i, --image string         signed image name which bundles yaml files
-  -k, --key string           path to your signing key (if empty, do key-less signing)
-      --matching-trial int   the maximum number of manifest matching trials against single object manifest (default 3)
+  -c, --config string     path to verification config YAML file (for advanced verification)
+  -f, --filename string   file name which will be verified
+  -h, --help              help for verify
+  -i, --image string      signed image name which bundles yaml files
+  -k, --key string        path to your signing key (if empty, do key-less signing)
 ```
 
 ```
@@ -105,7 +104,6 @@ Flags:
   -h, --help                           help for apply-after-verify
   -i, --image string                   signed image name which bundles yaml files
   -k, --key string                     path to your signing key (if empty, do key-less signing)
-      --matching-trial int             the maximum number of manifest matching trials against single object manifest (default 3)
 ```
 
 ```
@@ -119,7 +117,6 @@ Flags:
   -h, --help                     help for verify-resource
   -i, --image string             a comma-separated list of signed image names that contains YAML manifests
   -k, --key string               a comma-separated list of paths to public keys (if empty, do key-less verification)
-      --matching-trial int       the maximum number of manifest matching trials against single resource (default 3)
   -o, --output string            output format string, either "json" or "yaml" (if empty, a result is shown as a table)
 ```
 
