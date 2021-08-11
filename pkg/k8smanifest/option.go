@@ -42,13 +42,16 @@ type VerifyResourceOption struct {
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
-	CheckDryRunForApply bool   `json:"-"`
-	DryRunNamespace     string `json:"-"`
+	MaxCandidateNumForManifests int    `json:"-"`
+	CheckDryRunForApply         bool   `json:"-"`
+	DryRunNamespace             string `json:"-"`
 }
 
 // option for VerifyManifest()
 type VerifyManifestOption struct {
 	verifyOption `json:""`
+
+	MaxCandidateNumForManifests int `json:"-"`
 }
 
 // common options for verify functions

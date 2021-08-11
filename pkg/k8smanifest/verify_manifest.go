@@ -55,7 +55,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	}
 
 	var candidateManifests [][]byte
-	candidateManifests, _, err = NewManifestFetcher(vo.ImageRef, ignoreFields).Fetch(objManifest)
+	candidateManifests, _, err = NewManifestFetcher(vo.ImageRef, ignoreFields, vo.MaxCandidateNumForManifests).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}

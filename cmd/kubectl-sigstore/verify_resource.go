@@ -61,6 +61,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	var disableDefaultConfig bool
+	var maxMatchingTrialNum int
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -84,7 +85,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				}
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, disableDefaultConfig, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, disableDefaultConfig, maxMatchingTrialNum, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -100,12 +101,13 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
+	cmd.PersistentFlags().IntVar(&maxMatchingTrialNum, "matching-trial", 3, "the maximum number of manifest matching trials when multiple candidates are found (default to 3)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath string, disableDefaultConfig bool, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath string, disableDefaultConfig bool, maxMatchingTrialNum int, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -138,7 +140,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
 	} else if imageRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, nil)
+		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, nil, maxMatchingTrialNum)
 		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
 		var yamlsInImage [][]byte
 		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
@@ -154,6 +156,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
+	}
+	if maxMatchingTrialNum > 0 {
+		vo.MaxCandidateNumForManifests = maxMatchingTrialNum
 	}
 
 	results := []resourceResult{}
