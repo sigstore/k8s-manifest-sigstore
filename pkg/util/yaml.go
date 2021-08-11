@@ -257,8 +257,8 @@ func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64
 	}
 
 	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB, weightMap)
-	log.Debug("[DEBUG] aVector: ", aVector)
-	log.Debug("[DEBUG] bVector: ", bVector)
+	log.Trace("aVector: ", aVector)
+	log.Trace("bVector: ", bVector)
 	similarity := calculateCosineSimilarity(aVector, bVector)
 
 	return similarity, nil
@@ -354,7 +354,7 @@ func makeVectorsForTwoNodes(a, b *mapnode.Node, weightMap map[string]float64) ([
 		}
 		bVector = append(bVector, bVal)
 
-		log.Debugf("field[%s], a: %v, b: %v", f, aVal, bVal)
+		log.Tracef("field[%s], a: %v, b: %v", f, aVal, bVal)
 	}
 	return aVector, bVector
 }
