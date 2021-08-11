@@ -41,12 +41,12 @@ import (
 
 const defaultMaxCandidatesNumForContentSearch = 3
 
-var defaultSimilarityThreshold = 0.5
+var defaultThresholdForContentSearch = 0.5
 
 // weight for calculating a similarity value
 // all other fields that are not defined here will have weight 1.0
 // more weighted fields contribute more to a similarity value
-var defaultSimilarityWeight map[string]float64 = map[string]float64{
+var defaultFieldWeightForContentSearch map[string]float64 = map[string]float64{
 	"metadata.managedFields": 0.0,
 	"status":                 0.0,
 	"spec":                   1.5,
@@ -167,7 +167,7 @@ func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, 
 func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, maxCandidates *int, fieldWeight map[string]float64) (bool, [][]byte, float64) {
 	var thresholdNum float64
 	if threshold == nil {
-		thresholdNum = defaultSimilarityThreshold
+		thresholdNum = defaultThresholdForContentSearch
 	} else {
 		thresholdNum = *threshold
 	}
@@ -183,7 +183,7 @@ func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float6
 
 	var weightMap map[string]float64
 	if fieldWeight == nil {
-		weightMap = defaultSimilarityWeight
+		weightMap = defaultFieldWeightForContentSearch
 	} else {
 		weightMap = fieldWeight
 	}
@@ -267,7 +267,7 @@ func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64
 func generateWeightMapWithIgnoreFields(ignoreFields []string) map[string]float64 {
 	weightMap := map[string]float64{}
 	if len(ignoreFields) == 0 {
-		weightMap = defaultSimilarityWeight
+		weightMap = defaultFieldWeightForContentSearch
 	} else {
 		for _, key := range ignoreFields {
 			wkey := key
@@ -276,7 +276,7 @@ func generateWeightMapWithIgnoreFields(ignoreFields []string) map[string]float64
 			}
 			weightMap[wkey] = 0.0
 		}
-		for key, val := range defaultSimilarityWeight {
+		for key, val := range defaultFieldWeightForContentSearch {
 			wkey := key
 			if !strings.HasSuffix(wkey, "*") {
 				wkey = wkey + "*"
