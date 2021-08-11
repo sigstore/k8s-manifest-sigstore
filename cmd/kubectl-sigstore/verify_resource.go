@@ -101,7 +101,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
-	cmd.PersistentFlags().IntVar(&maxMatchingTrialNum, "matching-trial", 3, "the maximum number of manifest matching trials when multiple candidates are found (default to 3)")
+	cmd.PersistentFlags().IntVar(&maxMatchingTrialNum, "matching-trial", 3, "the maximum number of manifest matching trials against single resource")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
 	return cmd

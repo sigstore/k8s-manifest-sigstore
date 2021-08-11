@@ -54,7 +54,7 @@ func NewCmdVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "signed image name which bundles yaml files")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
-	cmd.PersistentFlags().IntVar(&maxMatchingTrialNum, "matching-trial", 3, "the maximum number of manifest matching trials when multiple candidates are found (default to 3)")
+	cmd.PersistentFlags().IntVar(&maxMatchingTrialNum, "matching-trial", 3, "the maximum number of manifest matching trials against single object manifest")
 
 	return cmd
 }
