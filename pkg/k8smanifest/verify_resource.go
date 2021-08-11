@@ -85,17 +85,31 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		}
 	}
 
-	var foundManifestBytes []byte
+	var candidateManifests [][]byte
 	log.Debug("fetching manifest...")
-	foundManifestBytes, sigRef, err = NewManifestFetcher(imageRefString).Fetch(objBytes)
+	candidateManifests, sigRef, err = NewManifestFetcher(imageRefString, ignoreFields).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
 
 	log.Debug("matching object with manifest...")
-	mnfMatched, diff, err := matchResourceWithManifest(obj, foundManifestBytes, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply)
-	if err != nil {
-		return nil, errors.Wrap(err, "error occurred during matching manifest")
+	var mnfMatched bool
+	var diff *mapnode.DiffResult
+	var diffsForAllCandidates []*mapnode.DiffResult
+	for i, candidate := range candidateManifests {
+		log.Debugf("try matching with the candidate %v out of %v", i+1, len(candidateManifests))
+		cndMatched, tmpDiff, err := matchResourceWithManifest(obj, candidate, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply)
+		if err != nil {
+			return nil, errors.Wrap(err, "error occurred during matching manifest")
+		}
+		diffsForAllCandidates = append(diffsForAllCandidates, tmpDiff)
+		if cndMatched {
+			mnfMatched = true
+			break
+		}
+	}
+	if !mnfMatched && len(diffsForAllCandidates) > 0 {
+		diff = diffsForAllCandidates[0]
 	}
 
 	var keyPath *string

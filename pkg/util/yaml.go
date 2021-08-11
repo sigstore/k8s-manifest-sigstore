@@ -39,7 +39,9 @@ import (
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-var defaultSimilarityThreshold = 0.85
+const defaultMaxCandidatesNumForContentSearch = 3
+
+var defaultSimilarityThreshold = 0.5
 
 // weight for calculating a similarity value
 // all other fields that are not defined here will have weight 1.0
@@ -87,10 +89,14 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 	return foundYAMLs, nil
 }
 
-func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
+// Out of `concatYamlBytes`, find YAML manifests that are corresponding to the `objBytes`.
+// `maxCandidateNum` determines how many candidate manifests can be returned. If empty, default to 3.
+// `ignoreFields` is used for content based search, the specified fields are ignored on the comparison.
+func FindManifestYAML(concatYamlBytes, objBytes []byte, maxCandidateNum *int, ignoreFields []string) (bool, [][]byte) {
 	var obj *unstructured.Unstructured
 	err := yaml.Unmarshal(objBytes, &obj)
 	if err != nil {
+		log.Debugf("failed to unmarshal object: %s", err.Error())
 		return false, nil
 	}
 	apiVersion := obj.GetAPIVersion()
@@ -101,17 +107,20 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
 	// extract candidate manifests that have an identical kind with object
 	candidateManifestBytes := extractKindMatchedManifests(concatYamlBytes, kind)
 	if candidateManifestBytes == nil {
+		log.Debugf("failed to find candidates that has kind: %s", kind)
 		return false, nil
 	}
 
 	// manifest search based on gvk/name/namespace
 	found, foundBytes := ManifestSearchByGVKNameNamespace(candidateManifestBytes, apiVersion, kind, name, namespace)
 	if found {
-		return found, foundBytes
+		return found, [][]byte{foundBytes}
 	}
 	// content-based manifest search
-	found, foundBytes, _ = ManifestSearchByContent(candidateManifestBytes, objBytes, nil, nil)
-	return found, foundBytes
+	var foundCandidateBytes [][]byte
+	weightMap := generateWeightMapWithIgnoreFields(ignoreFields)
+	found, foundCandidateBytes, _ = ManifestSearchByContent(candidateManifestBytes, objBytes, nil, maxCandidateNum, weightMap)
+	return found, foundCandidateBytes
 }
 
 func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, name, namespace string) (bool, []byte) {
@@ -155,7 +164,7 @@ func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, 
 	}
 }
 
-func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, fieldWeight map[string]float64) (bool, []byte, float64) {
+func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, maxCandidates *int, fieldWeight map[string]float64) (bool, [][]byte, float64) {
 	var thresholdNum float64
 	if threshold == nil {
 		thresholdNum = defaultSimilarityThreshold
@@ -164,6 +173,12 @@ func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float6
 	}
 	if thresholdNum < 0.0 || thresholdNum > 1.0 {
 		return false, nil, -1.0
+	}
+	var maxCandidatesNum int
+	if maxCandidates == nil {
+		maxCandidatesNum = defaultMaxCandidatesNumForContentSearch
+	} else {
+		maxCandidatesNum = *maxCandidates
 	}
 
 	var weightMap map[string]float64
@@ -176,25 +191,47 @@ func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float6
 	yamls := SplitConcatYAMLs(concatYamlBytes)
 
 	found := false
-	var foundBytes []byte
 	maxSimilarity := -1.0
+	candidates := []struct {
+		sim  float64
+		yaml []byte
+	}{}
 	for _, mnfBytes := range yamls {
 		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes, weightMap)
 		if err != nil {
-			log.Debug("similarity calculation error (most of errors are normal cases here): ", err.Error())
+			log.Debug("similarity calculation error (most of errors here can be ignored): ", err.Error())
 			continue
 		}
 		log.Debug("sim: ", sim)
 		log.Debug("manifest: ", string(mnfBytes))
 		log.Debug("object: ", string(objBytes))
-		if sim > thresholdNum && sim > maxSimilarity {
-			found = true
-			foundBytes = mnfBytes
-			maxSimilarity = sim
+		if sim < thresholdNum {
+			continue
 		}
+		candidates = append(candidates, struct {
+			sim  float64
+			yaml []byte
+		}{
+			sim:  sim,
+			yaml: mnfBytes,
+		})
+	}
+	if len(candidates) > 0 {
+		found = true
 	}
 
-	return found, foundBytes, maxSimilarity
+	// sort candidates by similarity in descending order
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].sim > candidates[j].sim })
+
+	if len(candidates) > maxCandidatesNum {
+		candidates = candidates[:maxCandidatesNum]
+	}
+	candidateBytes := [][]byte{}
+	for _, c := range candidates {
+		candidateBytes = append(candidateBytes, c.yaml)
+	}
+
+	return found, candidateBytes, maxSimilarity
 }
 
 func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64, error) {
@@ -220,9 +257,34 @@ func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64
 	}
 
 	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB, weightMap)
+	log.Debug("[DEBUG] aVector: ", aVector)
+	log.Debug("[DEBUG] bVector: ", bVector)
 	similarity := calculateCosineSimilarity(aVector, bVector)
 
 	return similarity, nil
+}
+
+func generateWeightMapWithIgnoreFields(ignoreFields []string) map[string]float64 {
+	weightMap := map[string]float64{}
+	if len(ignoreFields) == 0 {
+		weightMap = defaultSimilarityWeight
+	} else {
+		for _, key := range ignoreFields {
+			wkey := key
+			if !strings.HasSuffix(wkey, "*") {
+				wkey = wkey + "*"
+			}
+			weightMap[wkey] = 0.0
+		}
+		for key, val := range defaultSimilarityWeight {
+			wkey := key
+			if !strings.HasSuffix(wkey, "*") {
+				wkey = wkey + "*"
+			}
+			weightMap[wkey] = val
+		}
+	}
+	return weightMap
 }
 
 func extractKindMatchedManifests(concatYamlBytes []byte, kind string) []byte {
@@ -272,25 +334,27 @@ func makeVectorsForTwoNodes(a, b *mapnode.Node, weightMap map[string]float64) ([
 	aVector := []float64{}
 	bVector := []float64{}
 	for f := range corpus {
+		wFound, weight := getSimilarityWeight(weightMap, f)
+		if !wFound {
+			weight = 1.0
+		}
+		if weight == 0.0 {
+			continue
+		}
+
 		aVal := 0.0
 		if aFields[f] {
-			if wFound, wVal := getSimilarityWeight(weightMap, f); wFound {
-				aVal = wVal
-			} else {
-				aVal = 1.0
-			}
+			aVal = weight * 1.0
 		}
 		aVector = append(aVector, aVal)
 
 		bVal := 0.0
 		if bFields[f] {
-			if wFound, wVal := getSimilarityWeight(weightMap, f); wFound {
-				bVal = wVal
-			} else {
-				bVal = 1.0
-			}
+			bVal = weight * 1.0
 		}
 		bVector = append(bVector, bVal)
+
+		log.Debugf("field[%s], a: %v, b: %v", f, aVal, bVal)
 	}
 	return aVector, bVector
 }
@@ -334,7 +398,7 @@ func getSimilarityWeight(weightMap map[string]float64, key string) (bool, float6
 
 	for _, wkey := range wkeys {
 		wval := weightMap[wkey]
-		if strings.HasPrefix(key, wkey) {
+		if MatchPattern(wkey, key) {
 			return true, wval
 		}
 	}

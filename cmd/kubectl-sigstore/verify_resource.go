@@ -117,22 +117,6 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 		return false, errors.New("at least one of the following is required: `--image` option, resource kind or stdin YAML manifests")
 	}
 
-	objs := []unstructured.Unstructured{}
-	if len(kubeGetArgs) > 0 {
-		objs, err = kubectlOptions.Get(kubeGetArgs, "")
-	} else if yamls != nil {
-		objs, err = getObjsFromManifests(yamls)
-	} else if imageRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef)
-		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
-		var yamlsInImage [][]byte
-		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
-			objs, err = getObjsFromManifests(yamlsInImage)
-		}
-	}
-	if err != nil {
-		return false, errors.Wrap(err, "failed to get objects in cluster")
-	}
 	var vo *k8smanifest.VerifyResourceOption
 	if configPath == "" && disableDefaultConfig {
 		vo = &k8smanifest.VerifyResourceOption{}
@@ -146,6 +130,23 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 		if !disableDefaultConfig {
 			vo = addDefaultConfig(vo)
 		}
+	}
+
+	objs := []unstructured.Unstructured{}
+	if len(kubeGetArgs) > 0 {
+		objs, err = kubectlOptions.Get(kubeGetArgs, "")
+	} else if yamls != nil {
+		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
+	} else if imageRef != "" {
+		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, nil)
+		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
+		var yamlsInImage [][]byte
+		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
+			objs, err = getObjsFromManifests(yamlsInImage, vo.IgnoreFields)
+		}
+	}
+	if err != nil {
+		return false, errors.Wrap(err, "failed to get objects in cluster")
 	}
 
 	if imageRef != "" {
@@ -230,7 +231,7 @@ func readStdinAsYAMLs() ([][]byte, error) {
 	return yamls, nil
 }
 
-func getObjsFromManifests(yamls [][]byte) ([]unstructured.Unstructured, error) {
+func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFieldBindingList) ([]unstructured.Unstructured, error) {
 	sumErr := []string{}
 	manifestObjs := []unstructured.Unstructured{}
 	for _, objyaml := range yamls {
@@ -247,19 +248,45 @@ func getObjsFromManifests(yamls [][]byte) ([]unstructured.Unstructured, error) {
 
 	objs := []unstructured.Unstructured{}
 	allErrs := []string{}
+	objsInClusterByKindAndNamespace := map[string][]unstructured.Unstructured{}
 	for _, mnfobj := range manifestObjs {
-		args := []string{mnfobj.GetKind(), mnfobj.GetName()}
+		kind := mnfobj.GetKind()
 		namespaceInManifest := mnfobj.GetNamespace()
-		tmpObjs, err := kubectlOptions.Get(args, namespaceInManifest)
-		if err != nil {
-			allErrs = append(allErrs, err.Error())
-			continue
+		key := fmt.Sprintf("%s/%s", namespaceInManifest, kind)
+		objsInCluster, ok := objsInClusterByKindAndNamespace[key]
+		if !ok {
+			args := []string{kind}
+			// if ns is empty, use a namespace of kubeconfig context
+			tmpObjs, err := kubectlOptions.Get(args, namespaceInManifest)
+			if err != nil {
+				allErrs = append(allErrs, err.Error())
+				continue
+			}
+			objsInCluster = tmpObjs
+			objsInClusterByKindAndNamespace[key] = objsInCluster
 		}
-		if len(tmpObjs) == 0 {
+
+		_, ignoreFields := ignoreFieldConfig.Match(mnfobj)
+		concatYAML := objsToConcatYAML(objsInCluster)
+		mnfBytes, _ := yaml.Marshal(mnfobj.Object)
+		// log.Debugf("concatYAML: %s", string(concatYAML))
+		log.Debugf("mnfBytes: %s", string(mnfBytes))
+		found, candidateManifests := k8ssigutil.FindManifestYAML(concatYAML, mnfBytes, nil, ignoreFields)
+		if !found {
 			allErrs = append(allErrs, fmt.Sprintf("failed to find a resource: kind: %s, namespace: %s, name: %s", mnfobj.GetKind(), mnfobj.GetNamespace(), mnfobj.GetName()))
 			continue
 		}
-		objs = append(objs, tmpObjs[0])
+		foundObjBytes := candidateManifests[0]
+		var foundObj unstructured.Unstructured
+		err := yaml.Unmarshal(foundObjBytes, &foundObj)
+		if err != nil {
+			allErrs = append(allErrs, errors.Wrap(err, "failed to Unmarshal a found object").Error())
+			continue
+		}
+		objs = append(objs, foundObj)
+	}
+	if len(allErrs) > 0 {
+		log.Debugf("error in getObjsFromManifests() for manifests: %s", strings.Join(allErrs, "; "))
 	}
 	if len(objs) == 0 && len(allErrs) > 0 {
 		return nil, fmt.Errorf("error occurred during getting resources: %s", strings.Join(allErrs, "; "))
@@ -521,4 +548,14 @@ func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
 func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyResourceOption {
 	dvo := loadDefaultConfig()
 	return vo.AddDefaultConfig(dvo)
+}
+
+func objsToConcatYAML(objs []unstructured.Unstructured) []byte {
+	yamls := [][]byte{}
+	for _, obj := range objs {
+		yml, _ := yaml.Marshal(obj.Object)
+		yamls = append(yamls, yml)
+	}
+	concatYAMl := k8ssigutil.ConcatenateYAMLs(yamls)
+	return concatYAMl
 }

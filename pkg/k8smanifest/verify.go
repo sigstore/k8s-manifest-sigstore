@@ -213,24 +213,28 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 // This is an interface for fetching YAML manifest
 // a function Fetch() fetches a YAML manifest which matches the input object's kind, name and so on
 type ManifestFetcher interface {
-	Fetch(objYAMLBytes []byte) ([]byte, string, error)
+	Fetch(objYAMLBytes []byte) ([][]byte, string, error)
 }
 
-func NewManifestFetcher(imageRef string) ManifestFetcher {
+// return a manifest fetcher.
+// imageRef is used for judging if manifest is inside an image or not.
+// ignoreFields are used inside manifest search logic.
+func NewManifestFetcher(imageRef string, ignoreFields []string) ManifestFetcher {
 	if imageRef == "" {
-		return &AnnotationManifestFetcher{}
+		return &AnnotationManifestFetcher{ignoreFields: ignoreFields}
 	} else {
-		return &ImageManifestFetcher{imageRefString: imageRef, onMemoryCacheEnabled: true}
+		return &ImageManifestFetcher{imageRefString: imageRef, ignoreFields: ignoreFields, onMemoryCacheEnabled: true}
 	}
 }
 
 // ImageManifestFetcher is a fetcher implementation for image reference
 type ImageManifestFetcher struct {
 	imageRefString       string
+	ignoreFields         []string // used by manifestSearchByContent()
 	onMemoryCacheEnabled bool
 }
 
-func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error) {
+func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
 	imageRefString := f.imageRefString
 	if imageRefString == "" {
 		annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
@@ -248,9 +252,9 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error
 		if err != nil {
 			return nil, "", err
 		}
-		found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes)
+		found, candidateManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, nil, f.ignoreFields)
 		if found {
-			return foundManifest, imageRef, nil
+			return candidateManifests, imageRef, nil
 		}
 	}
 	return nil, "", errors.New("failed to find a YAML manifest in the image")
@@ -346,9 +350,10 @@ func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAML
 }
 
 type AnnotationManifestFetcher struct {
+	ignoreFields []string // used by manifestSearchByContent()
 }
 
-func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, error) {
+func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
 
 	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 
@@ -370,11 +375,11 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([]byte, string, 
 
 	concatYAMLbytes := k8smnfutil.ConcatenateYAMLs(yamls)
 
-	found, foundManifest := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes)
+	found, candidateManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, nil, f.ignoreFields)
 	if !found {
 		return nil, "", errors.New("failed to find a YAML manifest in the gzipped message")
 	}
-	return foundManifest, SigRefEmbeddedInAnnotation, nil
+	return candidateManifests, SigRefEmbeddedInAnnotation, nil
 }
 
 type VerifyResult struct {
