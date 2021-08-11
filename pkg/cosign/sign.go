@@ -47,10 +47,7 @@ const (
 	defaultOIDCClientID   = "sigstore"
 	cosignPasswordEnvKey  = "COSIGN_PASSWORD"
 )
-<<<<<<< HEAD
-=======
 
->>>>>>> 00afbd6 (add annotation embedded signature verification)
 const signBlobTlogIndexLineIdentifier = "tlog entry created with index:"
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
