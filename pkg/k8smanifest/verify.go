@@ -382,7 +382,12 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string
 
 	concatYAMLbytes := k8smnfutil.ConcatenateYAMLs(yamls)
 
-	found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, &f.maxResourceManifestNum, f.ignoreFields)
+	var maxResourceManifestNumPtr *int
+	if f.maxResourceManifestNum > 0 {
+		maxResourceManifestNumPtr = &f.maxResourceManifestNum
+	}
+
+	found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxResourceManifestNumPtr, f.ignoreFields)
 	if !found {
 		return nil, "", errors.New("failed to find a YAML manifest in the gzipped message")
 	}
