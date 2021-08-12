@@ -18,6 +18,7 @@ package k8smanifest
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -62,9 +63,15 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
+	var imageRefAnnotationKey string
+	if vo == nil {
+		imageRefAnnotationKey = fmt.Sprintf("%s/%s", DefaultAnnotationKeyDomain, ImageRefAnnotationBaseName)
+	} else {
+		imageRefAnnotationKey = vo.AnnotationConfig.ImageRefAnnotationKey()
+	}
 	if imageRefString == "" {
 		annotations := obj.GetAnnotations()
-		annoImageRef, found := annotations[ImageRefAnnotationKey]
+		annoImageRef, found := annotations[imageRefAnnotationKey]
 		if found {
 			imageRefString = annoImageRef
 		}
@@ -77,6 +84,10 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		}
 	}
 
+	// add signature/message/others annotations to ignore fields
+	if vo != nil && !vo.IsAnnotationKeyAlreadySetToIgnoreFields() {
+		vo.SetAnnotationKeyToIgnoreField(vo.AnnotationConfig)
+	}
 	// get ignore fields configuration for this resource if found
 	ignoreFields := []string{}
 	if vo != nil {
@@ -87,7 +98,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
@@ -119,7 +130,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var sigVerified bool
 	log.Debug("verifying signature...")
-	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath).Verify()
+	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath, vo.AnnotationConfig).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to verify signature")
 	}

@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/ghodss/yaml"
@@ -27,6 +28,8 @@ import (
 
 // option for Sign()
 type SignOption struct {
+	commonOption `json:""`
+
 	// these options should be input from CLI arguments
 	KeyPath          string                 `json:"-"`
 	ImageRef         string                 `json:"-"`
@@ -39,6 +42,7 @@ type SignOption struct {
 
 // option for VerifyResource()
 type VerifyResourceOption struct {
+	commonOption `json:""`
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
@@ -48,6 +52,7 @@ type VerifyResourceOption struct {
 
 // option for VerifyManifest()
 type VerifyManifestOption struct {
+	commonOption `json:""`
 	verifyOption `json:""`
 }
 
@@ -65,6 +70,89 @@ type verifyOption struct {
 	ImageRef string `json:"-"`
 	UseCache bool   `json:"-"`
 	CacheDir string `json:"-"`
+
+	annotationKeyToIgnoreFields bool `json:"-"`
+}
+
+func (o verifyOption) SetAnnotationKeyToIgnoreField(annotationConfig AnnotationConfig) {
+	o.IgnoreFields = append(o.IgnoreFields, annotationConfig.AnnotationKeyIgnoreField()...)
+	o.annotationKeyToIgnoreFields = true
+}
+
+func (o verifyOption) IsAnnotationKeyAlreadySetToIgnoreFields() bool {
+	return o.annotationKeyToIgnoreFields
+}
+
+// common options
+type commonOption struct {
+	AnnotationConfig `json:""`
+}
+
+// annotation config for signing and verification
+type AnnotationConfig struct {
+	// default "cosign.sigstore.dev"
+	AnnotationKeyDomain string `json:"annotationKeyDomain,omitempty"`
+}
+
+func (c AnnotationConfig) ImageRefAnnotationKey() string {
+	return c.annotationKey(ImageRefAnnotationBaseName)
+}
+
+func (c AnnotationConfig) SignatureAnnotationKey() string {
+	return c.annotationKey(SignatureAnnotationBaseName)
+}
+
+func (c AnnotationConfig) CertificateAnnotationKey() string {
+	return c.annotationKey(CertificateAnnotationBaseName)
+}
+
+func (c AnnotationConfig) MessageAnnotationKey() string {
+	return c.annotationKey(MessageAnnotationBaseName)
+}
+
+func (c AnnotationConfig) BundleAnnotationKey() string {
+	return c.annotationKey(BundleAnnotationBaseName)
+}
+
+func (c AnnotationConfig) annotationKey(keyType string) string {
+	d := c.AnnotationKeyDomain
+	if d == "" {
+		d = DefaultAnnotationKeyDomain
+	}
+	return fmt.Sprintf("%s/%s", d, keyType)
+}
+
+func (c AnnotationConfig) AnnotationKeyMap() map[string]string {
+	return map[string]string{
+		ImageRefAnnotationBaseName:    c.ImageRefAnnotationKey(),
+		SignatureAnnotationBaseName:   c.SignatureAnnotationKey(),
+		CertificateAnnotationBaseName: c.CertificateAnnotationKey(),
+		MessageAnnotationBaseName:     c.MessageAnnotationKey(),
+		BundleAnnotationBaseName:      c.BundleAnnotationKey(),
+	}
+}
+
+func (c AnnotationConfig) AnnotationKeyMask() []string {
+	return []string{
+		"metadata.annotations." + c.ImageRefAnnotationKey(),
+		"metadata.annotations." + c.SignatureAnnotationKey(),
+		"metadata.annotations." + c.CertificateAnnotationKey(),
+		"metadata.annotations." + c.MessageAnnotationKey(),
+		"metadata.annotations." + c.BundleAnnotationKey(),
+	}
+}
+
+func (c AnnotationConfig) AnnotationKeyIgnoreField() ObjectFieldBindingList {
+	return ObjectFieldBindingList(
+		[]ObjectFieldBinding{
+			{
+				Fields: c.AnnotationKeyMask(),
+				Objects: ObjectReferenceList([]ObjectReference{
+					{Kind: "*"},
+				}),
+			},
+		},
+	)
 }
 
 type ObjectReference struct {
