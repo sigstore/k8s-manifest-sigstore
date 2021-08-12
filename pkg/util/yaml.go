@@ -35,7 +35,7 @@ import (
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-const defaultMaxCandidatesNumForContentSearch = 3
+const defaultmaxResourceManifestsNum = 3
 
 type ResourceInfo struct {
 	group     string
@@ -75,9 +75,9 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 }
 
 // Out of `concatYamlBytes`, find YAML manifests that are corresponding to the `objBytes`.
-// `maxCandidateNum` determines how many candidate manifests can be returned. If empty, default to 3.
-// `ignoreFields` is used for content based search, the specified fields are ignored on the comparison.
-func FindManifestYAML(concatYamlBytes, objBytes []byte, maxCandidateNum *int, ignoreFields []string) (bool, [][]byte) {
+// `maxResourceManifestNum` determines how many candidate manifests can be returned. If empty, default to 3.
+// `ignoreFields` is used for value based search, the specified fields are ignored on the comparison.
+func FindManifestYAML(concatYamlBytes, objBytes []byte, maxResourceManifestNum *int, ignoreFields []string) (bool, [][]byte) {
 	var obj *unstructured.Unstructured
 	err := yaml.Unmarshal(objBytes, &obj)
 	if err != nil {
@@ -96,14 +96,14 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte, maxCandidateNum *int, ig
 		return false, nil
 	}
 
-	// manifest search based on gvk/name/namespace
+	// gvk/name/namespace-based detection
 	found, foundBytes := ManifestSearchByGVKNameNamespace(candidateManifestBytes, apiVersion, kind, name, namespace)
 	if found {
 		return found, [][]byte{foundBytes}
 	}
-	// content-based manifest search
+	// value-based detection
 	var foundCandidateBytes [][]byte
-	found, foundCandidateBytes = ManifestSearchByContent(candidateManifestBytes, objBytes, maxCandidateNum, ignoreFields)
+	found, foundCandidateBytes = ManifestSearchByValue(candidateManifestBytes, objBytes, maxResourceManifestNum, ignoreFields)
 	return found, foundCandidateBytes
 }
 
@@ -155,12 +155,12 @@ type candidateManifest struct {
 	name  string
 }
 
-func ManifestSearchByContent(concatYamlBytes, objBytes []byte, maxCandidates *int, ignoreFields []string) (bool, [][]byte) {
-	var maxCandidatesNum int
-	if maxCandidates == nil {
-		maxCandidatesNum = defaultMaxCandidatesNumForContentSearch
+func ManifestSearchByValue(concatYamlBytes, objBytes []byte, maxResourceManifests *int, ignoreFields []string) (bool, [][]byte) {
+	var maxResourceManifestsNum int
+	if maxResourceManifests == nil {
+		maxResourceManifestsNum = defaultmaxResourceManifestsNum
 	} else {
-		maxCandidatesNum = *maxCandidates
+		maxResourceManifestsNum = *maxResourceManifests
 	}
 
 	objNode, err := mapnode.NewFromYamlBytes(objBytes)
@@ -219,7 +219,7 @@ func ManifestSearchByContent(concatYamlBytes, objBytes []byte, maxCandidates *in
 		}
 		// loop exit conditions
 		// if these conditions are not satisfied during the loop, just use all key/values in manifests
-		if i > len(objKeyValArray)/10.0 && matchedCandNumForThisKey > 0 && matchedCandNumForThisKey < maxCandidatesNum {
+		if i > len(objKeyValArray)/10.0 && matchedCandNumForThisKey > 0 && matchedCandNumForThisKey < maxResourceManifestsNum {
 			if matchedCandNumForThisKey == matchedCandNumInLastLoop {
 				loopCountWithSameMatchedCandNum += 1
 			} else {
@@ -245,8 +245,8 @@ func ManifestSearchByContent(concatYamlBytes, objBytes []byte, maxCandidates *in
 			narrowedCandidatesBasedOnCount = append(narrowedCandidatesBasedOnCount, candidates[i])
 		}
 	}
-	if len(narrowedCandidatesBasedOnCount) > maxCandidatesNum {
-		narrowedCandidatesBasedOnCount = narrowedCandidatesBasedOnCount[:maxCandidatesNum]
+	if len(narrowedCandidatesBasedOnCount) > maxResourceManifestsNum {
+		narrowedCandidatesBasedOnCount = narrowedCandidatesBasedOnCount[:maxResourceManifestsNum]
 	}
 	for _, cand := range narrowedCandidatesBasedOnCount {
 		log.Debugf("final candidate name %s, count %v", cand.name, cand.count)

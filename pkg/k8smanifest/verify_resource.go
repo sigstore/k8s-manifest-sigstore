@@ -85,9 +85,9 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		}
 	}
 
-	var candidateManifests [][]byte
+	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	candidateManifests, sigRef, err = NewManifestFetcher(imageRefString, ignoreFields, vo.MaxDryRunCandidateNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
@@ -96,8 +96,8 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	var mnfMatched bool
 	var diff *mapnode.DiffResult
 	var diffsForAllCandidates []*mapnode.DiffResult
-	for i, candidate := range candidateManifests {
-		log.Debugf("try matching with the candidate %v out of %v", i+1, len(candidateManifests))
+	for i, candidate := range resourceManifests {
+		log.Debugf("try matching with the candidate %v out of %v", i+1, len(resourceManifests))
 		cndMatched, tmpDiff, err := matchResourceWithManifest(obj, candidate, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply)
 		if err != nil {
 			return nil, errors.Wrap(err, "error occurred during matching manifest")

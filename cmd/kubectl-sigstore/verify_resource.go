@@ -138,7 +138,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
 	} else if imageRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, nil, vo.MaxDryRunCandidateNum)
+		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, nil, vo.MaxResourceManifestNum)
 		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
 		var yamlsInImage [][]byte
 		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
@@ -231,6 +231,8 @@ func readStdinAsYAMLs() ([][]byte, error) {
 	return yamls, nil
 }
 
+// By checking `yamls`, try finding the corresponding resources on a cluster.
+// This returns a list of existing K8s resources that will be verified with VerifyResource().
 func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFieldBindingList) ([]unstructured.Unstructured, error) {
 	sumErr := []string{}
 	manifestObjs := []unstructured.Unstructured{}
@@ -271,12 +273,12 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 		mnfBytes, _ := yaml.Marshal(mnfobj.Object)
 		// log.Debugf("concatYAML: %s", string(concatYAML))
 		log.Debugf("mnfBytes: %s", string(mnfBytes))
-		found, candidateManifests := k8ssigutil.FindManifestYAML(concatYAML, mnfBytes, nil, ignoreFields)
+		found, resourceManifests := k8ssigutil.FindManifestYAML(concatYAML, mnfBytes, nil, ignoreFields)
 		if !found {
 			allErrs = append(allErrs, fmt.Sprintf("failed to find a resource: kind: %s, namespace: %s, name: %s", mnfobj.GetKind(), mnfobj.GetNamespace(), mnfobj.GetName()))
 			continue
 		}
-		foundObjBytes := candidateManifests[0]
+		foundObjBytes := resourceManifests[0]
 		var foundObj unstructured.Unstructured
 		err := yaml.Unmarshal(foundObjBytes, &foundObj)
 		if err != nil {
@@ -550,6 +552,7 @@ func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyR
 	return vo.AddDefaultConfig(dvo)
 }
 
+// convert resources to a concatenated YAML manifest
 func objsToConcatYAML(objs []unstructured.Unstructured) []byte {
 	yamls := [][]byte{}
 	for _, obj := range objs {

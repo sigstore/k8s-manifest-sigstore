@@ -217,22 +217,22 @@ type ManifestFetcher interface {
 }
 
 // return a manifest fetcher.
-// imageRef is used for judging if manifest is inside an image or not.
-// ignoreFields are used inside manifest search logic.
-func NewManifestFetcher(imageRef string, ignoreFields []string, maxCandidateNum int) ManifestFetcher {
+// `imageRef` is used for judging if manifest is inside an image or not.
+// `ignoreFields` and `maxResourceManifestNum` are used inside manifest detection logic.
+func NewManifestFetcher(imageRef string, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
 	if imageRef == "" {
-		return &AnnotationManifestFetcher{ignoreFields: ignoreFields, maxCandidateNum: maxCandidateNum}
+		return &AnnotationManifestFetcher{ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	} else {
-		return &ImageManifestFetcher{imageRefString: imageRef, ignoreFields: ignoreFields, maxCandidateNum: maxCandidateNum, onMemoryCacheEnabled: true}
+		return &ImageManifestFetcher{imageRefString: imageRef, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, onMemoryCacheEnabled: true}
 	}
 }
 
 // ImageManifestFetcher is a fetcher implementation for image reference
 type ImageManifestFetcher struct {
-	imageRefString       string
-	ignoreFields         []string // used by ManifestSearchByContent()
-	maxCandidateNum      int      // used by ManifestSearchByContent()
-	onMemoryCacheEnabled bool
+	imageRefString         string
+	ignoreFields           []string // used by ManifestSearchByValue()
+	maxResourceManifestNum int      // used by ManifestSearchByValue()
+	onMemoryCacheEnabled   bool
 }
 
 func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
@@ -247,9 +247,9 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		return nil, "", errors.New("no image reference is found")
 	}
 
-	var maxCandidateNumPtr *int
-	if f.maxCandidateNum > 0 {
-		maxCandidateNumPtr = &f.maxCandidateNum
+	var maxResourceManifestNumPtr *int
+	if f.maxResourceManifestNum > 0 {
+		maxResourceManifestNumPtr = &f.maxResourceManifestNum
 	}
 
 	imageRefList := splitCommaSeparatedString(imageRefString)
@@ -258,9 +258,9 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		if err != nil {
 			return nil, "", err
 		}
-		found, candidateManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxCandidateNumPtr, f.ignoreFields)
+		found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxResourceManifestNumPtr, f.ignoreFields)
 		if found {
-			return candidateManifests, imageRef, nil
+			return resourceManifests, imageRef, nil
 		}
 	}
 	return nil, "", errors.New("failed to find a YAML manifest in the image")
@@ -356,8 +356,8 @@ func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAML
 }
 
 type AnnotationManifestFetcher struct {
-	ignoreFields    []string // used by ManifestSearchByContent()
-	maxCandidateNum int      // used by ManifestSearchByContent()
+	ignoreFields           []string // used by ManifestSearchByContent()
+	maxResourceManifestNum int      // used by ManifestSearchByContent()
 }
 
 func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
@@ -382,11 +382,11 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string
 
 	concatYAMLbytes := k8smnfutil.ConcatenateYAMLs(yamls)
 
-	found, candidateManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, &f.maxCandidateNum, f.ignoreFields)
+	found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, &f.maxResourceManifestNum, f.ignoreFields)
 	if !found {
 		return nil, "", errors.New("failed to find a YAML manifest in the gzipped message")
 	}
-	return candidateManifests, SigRefEmbeddedInAnnotation, nil
+	return resourceManifests, SigRefEmbeddedInAnnotation, nil
 }
 
 type VerifyResult struct {
