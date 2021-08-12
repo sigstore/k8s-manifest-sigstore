@@ -20,18 +20,14 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"sort"
-	"strings"
 
 	goyaml "gopkg.in/yaml.v2"
 
 	"github.com/ghodss/yaml"
-	"github.com/pkg/errors"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -39,16 +35,7 @@ import (
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-var defaultSimilarityThreshold = 0.85
-
-// weight for calculating a similarity value
-// all other fields that are not defined here will have weight 1.0
-// more weighted fields contribute more to a similarity value
-var defaultSimilarityWeight map[string]float64 = map[string]float64{
-	"metadata.managedFields": 0.0,
-	"status":                 0.0,
-	"spec":                   1.5,
-}
+const defaultmaxResourceManifestsNum = 3
 
 type ResourceInfo struct {
 	group     string
@@ -87,10 +74,14 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 	return foundYAMLs, nil
 }
 
-func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
+// Out of `concatYamlBytes`, find YAML manifests that are corresponding to the `objBytes`.
+// `maxResourceManifestNum` determines how many candidate manifests can be returned. If empty, default to 3.
+// `ignoreFields` is used for value based search, the specified fields are ignored on the comparison.
+func FindManifestYAML(concatYamlBytes, objBytes []byte, maxResourceManifestNum *int, ignoreFields []string) (bool, [][]byte) {
 	var obj *unstructured.Unstructured
 	err := yaml.Unmarshal(objBytes, &obj)
 	if err != nil {
+		log.Debugf("failed to unmarshal object: %s", err.Error())
 		return false, nil
 	}
 	apiVersion := obj.GetAPIVersion()
@@ -101,17 +92,19 @@ func FindManifestYAML(concatYamlBytes, objBytes []byte) (bool, []byte) {
 	// extract candidate manifests that have an identical kind with object
 	candidateManifestBytes := extractKindMatchedManifests(concatYamlBytes, kind)
 	if candidateManifestBytes == nil {
+		log.Debugf("failed to find candidates that has kind: %s", kind)
 		return false, nil
 	}
 
-	// manifest search based on gvk/name/namespace
+	// gvk/name/namespace-based detection
 	found, foundBytes := ManifestSearchByGVKNameNamespace(candidateManifestBytes, apiVersion, kind, name, namespace)
 	if found {
-		return found, foundBytes
+		return found, [][]byte{foundBytes}
 	}
-	// content-based manifest search
-	found, foundBytes, _ = ManifestSearchByContent(candidateManifestBytes, objBytes, nil, nil)
-	return found, foundBytes
+	// value-based detection
+	var foundCandidateBytes [][]byte
+	found, foundCandidateBytes = ManifestSearchByValue(candidateManifestBytes, objBytes, maxResourceManifestNum, ignoreFields)
+	return found, foundCandidateBytes
 }
 
 func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, name, namespace string) (bool, []byte) {
@@ -155,74 +148,117 @@ func ManifestSearchByGVKNameNamespace(concatYamlBytes []byte, apiVersion, kind, 
 	}
 }
 
-func ManifestSearchByContent(concatYamlBytes, objBytes []byte, threshold *float64, fieldWeight map[string]float64) (bool, []byte, float64) {
-	var thresholdNum float64
-	if threshold == nil {
-		thresholdNum = defaultSimilarityThreshold
-	} else {
-		thresholdNum = *threshold
-	}
-	if thresholdNum < 0.0 || thresholdNum > 1.0 {
-		return false, nil, -1.0
-	}
-
-	var weightMap map[string]float64
-	if fieldWeight == nil {
-		weightMap = defaultSimilarityWeight
-	} else {
-		weightMap = fieldWeight
-	}
-
-	yamls := SplitConcatYAMLs(concatYamlBytes)
-
-	found := false
-	var foundBytes []byte
-	maxSimilarity := -1.0
-	for _, mnfBytes := range yamls {
-		sim, err := GetSimilarityOfTwoYamls(mnfBytes, objBytes, weightMap)
-		if err != nil {
-			log.Debug("similarity calculation error (most of errors are normal cases here): ", err.Error())
-			continue
-		}
-		log.Debug("sim: ", sim)
-		log.Debug("manifest: ", string(mnfBytes))
-		log.Debug("object: ", string(objBytes))
-		if sim > thresholdNum && sim > maxSimilarity {
-			found = true
-			foundBytes = mnfBytes
-			maxSimilarity = sim
-		}
-	}
-
-	return found, foundBytes, maxSimilarity
+type candidateManifest struct {
+	yaml  []byte
+	table map[string]interface{}
+	count int
+	name  string
 }
 
-func GetSimilarityOfTwoYamls(a, b []byte, weightMap map[string]float64) (float64, error) {
-	var nodeA, nodeB *mapnode.Node
-	var err error
-	nodeA, err = mapnode.NewFromYamlBytes(a)
-	if err != nil {
-		return -1.0, err
-	}
-	nodeB, err = mapnode.NewFromYamlBytes(b)
-	if err != nil {
-		return -1.0, err
-	}
-	aKind := nodeA.GetString("kind")
-	bKind := nodeB.GetString("kind")
-	if aKind != bKind {
-		return -1.0, errors.New("kinds are different")
-	}
-	aFieldMap := nodeA.Ravel()
-	bFieldMap := nodeB.Ravel()
-	if len(aFieldMap) <= 10 || len(bFieldMap) <= 10 {
-		return -1.0, errors.New("too few attributes in the objects to calculate cosine similarity")
+func ManifestSearchByValue(concatYamlBytes, objBytes []byte, maxResourceManifests *int, ignoreFields []string) (bool, [][]byte) {
+	var maxResourceManifestsNum int
+	if maxResourceManifests == nil {
+		maxResourceManifestsNum = defaultmaxResourceManifestsNum
+	} else {
+		maxResourceManifestsNum = *maxResourceManifests
 	}
 
-	aVector, bVector := makeVectorsForTwoNodes(nodeA, nodeB, weightMap)
-	similarity := calculateCosineSimilarity(aVector, bVector)
+	objNode, err := mapnode.NewFromYamlBytes(objBytes)
+	if err != nil {
+		log.Debug("failed to create a new node from objBytes:", err.Error())
+		return false, nil
+	}
+	maskedObjNode := objNode.Mask(ignoreFields)
+	objTableMap := maskedObjNode.Ravel()
 
-	return similarity, nil
+	objKeyValArray := [][2]string{}
+	for key, val := range objTableMap {
+		keyVal := [2]string{key, fmt.Sprintf("%v", val)}
+		objKeyValArray = append(objKeyValArray, keyVal)
+	}
+	// sort keys by length of value string in descending order
+	// because a field which has longer value could be more important field to identify manifest
+	// e.g.) `spec.templates.spec.containers[].image: sample-registry/smaple-image-name:sample-image-tag` is more unique than `spec.replicas: 1`
+	sort.Slice(objKeyValArray, func(i, j int) bool { return len(objKeyValArray[i][1]) > len(objKeyValArray[j][1]) })
+
+	yamls := SplitConcatYAMLs(concatYamlBytes)
+	candidates := []candidateManifest{}
+	for _, mnfBytes := range yamls {
+		mnfNode, err := mapnode.NewFromYamlBytes(mnfBytes)
+		if err != nil {
+			log.Debug("failed to create a new node from mnfBytes:", err.Error())
+			return false, nil
+		}
+		mnfName := mnfNode.GetString("metadata.name")
+		maskedMnfNode := mnfNode.Mask(ignoreFields)
+		mnfTableMap := maskedMnfNode.Ravel()
+		candidates = append(candidates, candidateManifest{
+			yaml:  mnfBytes,
+			table: mnfTableMap,
+			count: 0,
+			name:  mnfName,
+		})
+	}
+
+	matchedCandNumInLastLoop := -1
+	loopCountWithSameMatchedCandNum := 0
+	for i, keyVal := range objKeyValArray {
+		keyInObj := keyVal[0]
+		valInObj := keyVal[1]
+		matchedCandNumForThisKey := 0
+		for j := range candidates {
+			valIf, keyFound := candidates[j].table[keyInObj]
+			var valInMnf string
+			if keyFound {
+				valInMnf = fmt.Sprintf("%v", valIf)
+			}
+			if keyFound && valInObj == valInMnf {
+				candidates[j].count += 1
+				matchedCandNumForThisKey += 1
+			}
+		}
+		// loop exit conditions
+		// if these conditions are not satisfied during the loop, just use all key/values in manifests
+		if i > len(objKeyValArray)/10.0 && matchedCandNumForThisKey > 0 && matchedCandNumForThisKey < maxResourceManifestsNum {
+			if matchedCandNumForThisKey == matchedCandNumInLastLoop {
+				loopCountWithSameMatchedCandNum += 1
+			} else {
+				loopCountWithSameMatchedCandNum = 0
+			}
+		}
+		if loopCountWithSameMatchedCandNum > len(objKeyValArray)/10.0 {
+			break
+		}
+		matchedCandNumInLastLoop = matchedCandNumForThisKey
+	}
+
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].count > candidates[j].count })
+
+	for _, cand := range candidates {
+		log.Debugf("candidate name %s, count %v", cand.name, cand.count)
+	}
+
+	narrowedCandidatesBasedOnCount := []candidateManifest{}
+	maxCount := candidates[0].count
+	for i := range candidates {
+		if candidates[i].count == maxCount {
+			narrowedCandidatesBasedOnCount = append(narrowedCandidatesBasedOnCount, candidates[i])
+		}
+	}
+	if len(narrowedCandidatesBasedOnCount) > maxResourceManifestsNum {
+		narrowedCandidatesBasedOnCount = narrowedCandidatesBasedOnCount[:maxResourceManifestsNum]
+	}
+	for _, cand := range narrowedCandidatesBasedOnCount {
+		log.Debugf("final candidate name %s, count %v", cand.name, cand.count)
+	}
+
+	candidateBytes := [][]byte{}
+	for _, c := range narrowedCandidatesBasedOnCount {
+		candidateBytes = append(candidateBytes, c.yaml)
+	}
+	found := len(candidateBytes) > 0
+
+	return found, candidateBytes
 }
 
 func extractKindMatchedManifests(concatYamlBytes []byte, kind string) []byte {
@@ -246,99 +282,6 @@ func extractKindMatchedManifests(concatYamlBytes []byte, kind string) []byte {
 
 	candidateManifestBytes := ConcatenateYAMLs(kindMatchedYAMLs)
 	return candidateManifestBytes
-}
-
-func makeVectorsForTwoNodes(a, b *mapnode.Node, weightMap map[string]float64) ([]float64, []float64) {
-	aFieldMap := a.Ravel()
-	bFieldMap := b.Ravel()
-
-	aFields := map[string]bool{}
-	bFields := map[string]bool{}
-	for key, val := range aFieldMap {
-		f := fmt.Sprintf("%s:%s", key, reflect.ValueOf(val).String())
-		aFields[f] = true
-	}
-	for key, val := range bFieldMap {
-		f := fmt.Sprintf("%s:%s", key, reflect.ValueOf(val).String())
-		bFields[f] = true
-	}
-	corpus := map[string]bool{}
-	for f := range aFields {
-		corpus[f] = true
-	}
-	for f := range bFields {
-		corpus[f] = true
-	}
-	aVector := []float64{}
-	bVector := []float64{}
-	for f := range corpus {
-		aVal := 0.0
-		if aFields[f] {
-			if wFound, wVal := getSimilarityWeight(weightMap, f); wFound {
-				aVal = wVal
-			} else {
-				aVal = 1.0
-			}
-		}
-		aVector = append(aVector, aVal)
-
-		bVal := 0.0
-		if bFields[f] {
-			if wFound, wVal := getSimilarityWeight(weightMap, f); wFound {
-				bVal = wVal
-			} else {
-				bVal = 1.0
-			}
-		}
-		bVector = append(bVector, bVal)
-	}
-	return aVector, bVector
-}
-
-func calculateCosineSimilarity(aVector, bVector []float64) float64 {
-	// Dot
-	dot := 0.0
-	for i := range aVector {
-		aVal := aVector[i]
-		bVal := bVector[i]
-		dot += aVal * bVal
-	}
-
-	// len A
-	lenA := 0.0
-	for _, aVal := range aVector {
-		v := aVal * aVal
-		lenA += v
-	}
-	lenA = math.Sqrt(lenA)
-
-	// len B
-	lenB := 0.0
-	for _, bVal := range bVector {
-		v := bVal * bVal
-		lenB += v
-	}
-	lenB = math.Sqrt(lenB)
-
-	similarity := dot / (lenA * lenB) // cosine similarity
-	return similarity
-}
-
-func getSimilarityWeight(weightMap map[string]float64, key string) (bool, float64) {
-	// sort keys in weightMap first, in order to use prefix match later
-	wkeys := []string{}
-	for wkey := range weightMap {
-		wkeys = append(wkeys, wkey)
-	}
-	sort.Slice(wkeys, func(i, j int) bool { return len(wkeys[i]) > len(wkeys[j]) })
-
-	for _, wkey := range wkeys {
-		wval := weightMap[wkey]
-		if strings.HasPrefix(key, wkey) {
-			return true, wval
-		}
-	}
-	return false, 1.0
 }
 
 func ConcatenateYAMLs(yamls [][]byte) []byte {

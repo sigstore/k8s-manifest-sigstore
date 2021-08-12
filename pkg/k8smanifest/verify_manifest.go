@@ -54,15 +54,29 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 		}
 	}
 
-	var foundManifestBytes []byte
-	foundManifestBytes, _, err = NewManifestFetcher(vo.ImageRef).Fetch(objManifest)
+	var resourceManifests [][]byte
+	resourceManifests, _, err = NewManifestFetcher(vo.ImageRef, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}
 
-	mnfMatched, diff, err := matchManifest(objManifest, foundManifestBytes, ignoreFields)
-	if err != nil {
-		return nil, errors.Wrap(err, "error occurred during matching manifest")
+	var mnfMatched bool
+	var diff *mapnode.DiffResult
+	var diffsForAllCandidates []*mapnode.DiffResult
+	for i, candidate := range resourceManifests {
+		log.Debugf("try matching with the candidate %v out of %v", i+1, len(resourceManifests))
+		cndMatched, tmpDiff, err := matchManifest(objManifest, candidate, ignoreFields)
+		if err != nil {
+			return nil, errors.Wrap(err, "error occurred during matching manifest")
+		}
+		diffsForAllCandidates = append(diffsForAllCandidates, tmpDiff)
+		if cndMatched {
+			mnfMatched = true
+			break
+		}
+	}
+	if !mnfMatched && len(diffsForAllCandidates) > 0 {
+		diff = diffsForAllCandidates[0]
 	}
 
 	var keyPath *string

@@ -26,6 +26,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -107,6 +108,9 @@ func DryRunCreate(objBytes []byte, namespace string) ([]byte, error) {
 	gvr, _ := meta.UnsafeGuessKindToResource(gvk)
 	gvClient := dyClient.Resource(gvr)
 
+	dryrunObjBytes, _ := yaml.Marshal(obj.Object)
+	log.Debugf("try dryrun with this object: %s", string(dryrunObjBytes))
+
 	var simObj *unstructured.Unstructured
 	if namespace == "" {
 		simObj, err = gvClient.Create(context.Background(), obj, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
@@ -114,11 +118,11 @@ func DryRunCreate(objBytes []byte, namespace string) ([]byte, error) {
 		simObj, err = gvClient.Namespace(namespace).Create(context.Background(), obj, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Error in creating resource; %s, gvk: %s", err.Error(), gvk)
+		return nil, errors.Wrapf(err, "Error in creating resource %s", gvk.String())
 	}
 	simObjBytes, err := yaml.Marshal(simObj)
 	if err != nil {
-		return nil, fmt.Errorf("Error in converting ojb to yaml; %s", err.Error())
+		return nil, errors.Wrap(err, "Error in converting ojb to yaml")
 	}
 	return simObjBytes, nil
 }

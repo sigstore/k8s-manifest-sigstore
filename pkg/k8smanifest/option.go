@@ -57,6 +57,9 @@ type verifyOption struct {
 	IgnoreFields ObjectFieldBindingList `json:"ignoreFields,omitempty"`
 	Signers      SignerList             `json:"signers,omitempty"`
 
+	// the maximum number of resource manifests to be checked against single resource. If empty, use 3 as default.
+	MaxResourceManifestNum int `json:"maxResourceManifestNum,omitempty"`
+
 	// these options should be input from CLI arguments
 	KeyPath  string `json:"-"`
 	ImageRef string `json:"-"`
