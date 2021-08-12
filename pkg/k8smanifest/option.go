@@ -50,10 +50,24 @@ type VerifyResourceOption struct {
 	DryRunNamespace     string `json:"-"`
 }
 
+func (o *VerifyResourceOption) SetAnnotationIgnoreFields() {
+	if o.verifyOption.isAnnotationKeyAlreadySetToIgnoreFields() {
+		return
+	}
+	o.verifyOption = o.verifyOption.setAnnotationKeyToIgnoreField(o.AnnotationConfig)
+}
+
 // option for VerifyManifest()
 type VerifyManifestOption struct {
 	commonOption `json:""`
 	verifyOption `json:""`
+}
+
+func (o *VerifyManifestOption) SetAnnotationIgnoreFields() {
+	if o.verifyOption.isAnnotationKeyAlreadySetToIgnoreFields() {
+		return
+	}
+	o.verifyOption = o.verifyOption.setAnnotationKeyToIgnoreField(o.AnnotationConfig)
 }
 
 // common options for verify functions
@@ -74,12 +88,13 @@ type verifyOption struct {
 	annotationKeyToIgnoreFields bool `json:"-"`
 }
 
-func (o verifyOption) SetAnnotationKeyToIgnoreField(annotationConfig AnnotationConfig) {
+func (o verifyOption) setAnnotationKeyToIgnoreField(annotationConfig AnnotationConfig) verifyOption {
 	o.IgnoreFields = append(o.IgnoreFields, annotationConfig.AnnotationKeyIgnoreField()...)
 	o.annotationKeyToIgnoreFields = true
+	return o
 }
 
-func (o verifyOption) IsAnnotationKeyAlreadySetToIgnoreFields() bool {
+func (o verifyOption) isAnnotationKeyAlreadySetToIgnoreFields() bool {
 	return o.annotationKeyToIgnoreFields
 }
 

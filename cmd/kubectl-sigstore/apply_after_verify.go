@@ -86,9 +86,7 @@ func applyAfterVerify(filename, imageRef, keyPath, configPath string) error {
 		}
 	}
 	// add signature/message/others annotations to ignore fields
-	if !vo.IsAnnotationKeyAlreadySetToIgnoreFields() {
-		vo.SetAnnotationKeyToIgnoreField(vo.AnnotationConfig)
-	}
+	vo.SetAnnotationIgnoreFields()
 
 	annotations := k8ssigutil.GetAnnotationsInYAML(manifest)
 	imageRefAnnotationKey := vo.AnnotationConfig.ImageRefAnnotationKey()

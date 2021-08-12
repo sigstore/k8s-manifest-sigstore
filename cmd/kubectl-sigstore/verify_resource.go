@@ -132,9 +132,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 		}
 	}
 	// add signature/message/others annotations to ignore fields
-	if !disableDefaultConfig && !vo.IsAnnotationKeyAlreadySetToIgnoreFields() {
-		vo.SetAnnotationKeyToIgnoreField(vo.AnnotationConfig)
-	}
+	vo.SetAnnotationIgnoreFields()
 
 	objs := []unstructured.Unstructured{}
 	if len(kubeGetArgs) > 0 {

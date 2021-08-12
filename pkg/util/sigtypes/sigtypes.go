@@ -21,6 +21,7 @@ import (
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/pgp"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -31,12 +32,6 @@ const (
 	SigTypeCosign  = "cosign"
 	SigTypePGP     = "pgp"
 	SigTypeX509    = "x509"
-)
-
-const (
-	CosignPublicKeyBlock = "-----BEGIN PUBLIC KEY----"
-	PGPPublicKeyBlock    = "-----BEGIN PGP PUBLIC KEY BLOCK-----"
-	X509CertificateBlock = "-----BEGIN CERTIFICATE-----"
 )
 
 func GetSignatureTypeFromPublicKey(keyPathPtr *string) SigType {
@@ -65,8 +60,11 @@ func GetSignatureTypeFromPublicKey(keyPathPtr *string) SigType {
 		return SigTypePGP
 	}
 
-	// x509 public key
-	// TODO: implement this
+	// x509 ca cert
+	_, err = x509.LoadCertificate(keyPath)
+	if err == nil {
+		return SigTypeX509
+	}
 
 	return SigTypeUnknown
 }

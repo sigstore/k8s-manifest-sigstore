@@ -85,8 +85,8 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	// add signature/message/others annotations to ignore fields
-	if vo != nil && !vo.IsAnnotationKeyAlreadySetToIgnoreFields() {
-		vo.SetAnnotationKeyToIgnoreField(vo.AnnotationConfig)
+	if vo != nil {
+		vo.SetAnnotationIgnoreFields()
 	}
 	// get ignore fields configuration for this resource if found
 	ignoreFields := []string{}

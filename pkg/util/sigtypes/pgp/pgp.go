@@ -29,6 +29,7 @@ import (
 	"golang.org/x/crypto/openpgp"
 )
 
+// Verify `sigBytes` and `msgBytes` with public key at `pubkeyPathString`.
 func VerifyBlob(msgBytes, sigBytes []byte, pubkeyPathString *string) (bool, string, *int64, error) {
 	keyPath := *(pubkeyPathString)
 	keyRing, err := LoadPublicKey(keyPath)
