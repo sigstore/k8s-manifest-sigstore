@@ -356,8 +356,8 @@ func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAML
 }
 
 type AnnotationManifestFetcher struct {
-	ignoreFields           []string // used by ManifestSearchByContent()
-	maxResourceManifestNum int      // used by ManifestSearchByContent()
+	ignoreFields           []string // used by ManifestSearchByValue()
+	maxResourceManifestNum int      // used by ManifestSearchByValue()
 }
 
 func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
