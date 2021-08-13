@@ -18,12 +18,16 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
+	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
+
+const filenameIfInputIsDir = "manifest.yaml"
 
 func NewCmdSign() *cobra.Command {
 
@@ -59,7 +63,14 @@ func NewCmdSign() *cobra.Command {
 
 func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, annotations []string) error {
 	if output == "" && updateAnnotation {
-		output = inputDir + ".signed"
+		if isDir, _ := k8smnfutil.IsDir(inputDir); isDir {
+			// e.g.) "./yamls/" --> "./yamls/manifest.yaml.signed"
+			output = filepath.Join(inputDir, filenameIfInputIsDir+".signed")
+		} else {
+			// e.g.) "configmap.yaml" --> "configmap.yaml.signed"
+			output = inputDir + ".signed"
+		}
+
 	}
 
 	anntns, err := parseAnnotations(annotations)
