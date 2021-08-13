@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 // AnnotationWriter represents the embedAnnotation function
@@ -47,25 +48,32 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 
 	var errV error
 
-	tarGzSrc := src
+	dir, err := ioutil.TempDir("", "compressing-tar-gz")
+	if err != nil {
+		return errors.Wrap(err, "error occurred during creating temp dir for tar gz compression")
+	}
+	defer os.RemoveAll(dir)
+	log.Debugf("use temp dir %s for signing working directory", dir)
+
+	// create tmpSrc dir and copy src files into this
+	// in order to avoid relative path error on decompression like `tar xzf: Path contains '..'`
+	basename := filepath.Base(src)
+	// filepath.Base() returns ".." for an input like "../"
+	// replace it with empty string to avoid the case of filepath.Join(tmpDir, "..") which could cause some permission errors
+	if basename == ".." {
+		basename = ""
+	}
+	tmpSrc := filepath.Join(dir, basename)
+	err = copyDir(src, tmpSrc)
+	if err != nil {
+		return errors.Wrap(err, "error occurred during copying src dir for tar gz compression")
+	}
+	tarGzSrc := tmpSrc
+	log.Debugf("finished to copy from %s to %s", src, tmpSrc)
 
 	// if mutation option is specified, should mutate files before tar gz compression
 	// in order to avoid file header inconsistency
 	if mo != nil {
-		dir, err := ioutil.TempDir("", "compressing-tar-gz")
-		if err != nil {
-			return errors.Wrap(err, "error occurred during creating temp dir for tar gz compression")
-		}
-
-		basename := filepath.Base(src)
-		defer os.RemoveAll(dir)
-
-		tmpSrc := filepath.Join(dir, basename)
-		err = copyDir(src, tmpSrc)
-		if err != nil {
-			return errors.Wrap(err, "error occurred during copying src dir for tar gz compression")
-		}
-
 		errV = filepath.Walk(tmpSrc, func(file string, fi os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -94,7 +102,6 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 		if errV != nil {
 			return errV
 		}
-		tarGzSrc = tmpSrc
 	}
 
 	// tar gz compression
@@ -143,7 +150,6 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 	if errV = zr.Close(); errV != nil {
 		return errV
 	}
-	//
 	return nil
 }
 
@@ -270,4 +276,12 @@ func copyFile(src string, dst string) error {
 		return err
 	}
 	return nil
+}
+
+func IsDir(path string) (bool, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return fi.IsDir(), nil
 }
