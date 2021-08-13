@@ -58,6 +58,7 @@ func VerifyBlob(msgBytes, sigBytes []byte, pubkeyPathString *string) (bool, stri
 	} else {
 		identity := GetFirstIdentity(signer)
 		signerName := identity.UserId.Email
+		log.Debugf("signature is verified successfully. signerName is %s", signerName)
 		return true, signerName, nil, nil
 	}
 }

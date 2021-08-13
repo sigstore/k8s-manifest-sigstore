@@ -21,6 +21,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
@@ -38,6 +39,8 @@ const (
 	PEMTypePublicKey   string = "PUBLIC KEY"
 	PEMTypeCertificate string = "CERTIFICATE"
 )
+
+var asn1EmailAddressObjectIdentifier = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 1}
 
 // Verify certificate with CA cert, then verify signature
 func VerifyBlob(msgBytes, sigBytes, certBytes []byte, caCertPathString *string) (bool, string, *int64, error) {
@@ -93,10 +96,8 @@ func VerifyBlob(msgBytes, sigBytes, certBytes []byte, caCertPathString *string) 
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "failed to verify signature")
 	}
-	signerName := ""
-	if len(cert.EmailAddresses) > 0 {
-		signerName = cert.EmailAddresses[0]
-	}
+	signerName := GetNameInfoFromX509Cert(cert)
+	log.Debugf("signature is verified successfully. signerName is %s", signerName)
 	return true, signerName, nil, nil
 }
 
@@ -139,6 +140,26 @@ func GetPublicKeyFromCertificate(certPemBytes []byte) ([]byte, error) {
 		return nil, err
 	}
 	return pubKeyBytes, nil
+}
+
+// get signer name info from cert
+// try finding it in the following order
+// cert.EmailAddress > cert.Subject.Names[] > cert.Subject.CommonName
+func GetNameInfoFromX509Cert(cert *x509.Certificate) string {
+	signerName := ""
+	if len(cert.EmailAddresses) > 0 {
+		signerName = cert.EmailAddresses[0]
+	} else if len(cert.Subject.Names) > 0 {
+		for _, pkixName := range cert.Subject.Names {
+			if pkixName.Type.Equal(asn1EmailAddressObjectIdentifier) {
+				signerName = pkixName.Value.(string)
+				break
+			}
+		}
+	} else {
+		signerName = cert.Subject.CommonName
+	}
+	return signerName
 }
 
 // whether the certificate is self signed or not
