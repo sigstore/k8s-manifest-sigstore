@@ -73,6 +73,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 	var filename string
 	var imageRef string
+	var sigCMRef string
 	var keyPath string
 	var configPath string
 	var configType string
@@ -109,7 +110,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 			configPath, configField = getConfigPathFromConfigFlags(configPath, configType, configKind, configName, configNamespace, configField)
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, configField, disableDefaultConfig, provenance, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigCMRef, keyPath, configPath, configField, disableDefaultConfig, provenance, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -122,6 +123,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename (this can be \"-\", then read a file from stdin)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
+	cmd.PersistentFlags().StringVar(&sigCMRef, "signature-configmap", "", "a comma-separated list of configmaps that contains message, signature and some others")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file or k8s object identifier like k8s://[KIND]/[NAMESPACE]/[NAME]")
 	cmd.PersistentFlags().StringVar(&configType, "config-type", "file", "a type of config, one of the following: \"file\", \"constraint\" or \"configmap\"")
@@ -136,7 +138,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigCMRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -175,7 +177,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
 	} else if imageRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, vo.AnnotationConfig, nil, vo.MaxResourceManifestNum)
+		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, "", vo.AnnotationConfig, nil, vo.MaxResourceManifestNum)
 		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
 		var yamlsInImage [][]byte
 		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
@@ -188,6 +190,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 
 	if imageRef != "" {
 		vo.ImageRef = imageRef
+	}
+	if sigCMRef != "" {
+		vo.SignatureConfigMapRef = sigCMRef
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath

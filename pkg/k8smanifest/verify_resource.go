@@ -60,8 +60,10 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	var err error
 
 	imageRefString := ""
+	sigCMRefString := ""
 	if vo != nil {
 		imageRefString = vo.ImageRef
+		sigCMRefString = vo.SignatureConfigMapRef
 	}
 
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
@@ -100,7 +102,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, sigCMRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
