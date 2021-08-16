@@ -32,7 +32,10 @@ func GzipCompress(in []byte) []byte {
 
 func GzipDecompress(in []byte) []byte {
 	reader := bytes.NewReader(in)
-	gzreader, _ := gzip.NewReader(reader)
+	gzreader, err := gzip.NewReader(reader)
+	if err != nil {
+		return in
+	}
 	out, err := ioutil.ReadAll(gzreader)
 	if err != nil {
 		return in

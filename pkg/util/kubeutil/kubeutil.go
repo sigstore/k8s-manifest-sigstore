@@ -135,10 +135,19 @@ func GetAPIResources() ([]metav1.APIResource, error) {
 }
 
 func GetResource(apiVersion, kind, namespace, name string) (*unstructured.Unstructured, error) {
-	gv, err := schema.ParseGroupVersion(apiVersion)
-	if err != nil {
-		return nil, fmt.Errorf("Error in parsing apiVersion; %s", err.Error())
+	var gv schema.GroupVersion
+	var err error
+	skipGV := false
+	if apiVersion == "" {
+		// if apiVersion is not specified, just use kind to identify resource kind
+		skipGV = true
+	} else {
+		gv, err = schema.ParseGroupVersion(apiVersion)
+		if err != nil {
+			return nil, fmt.Errorf("Error in parsing apiVersion; %s", err.Error())
+		}
 	}
+
 	apiResources, err := GetAPIResources()
 	if err != nil {
 		return nil, fmt.Errorf("Error in getting API Resources; %s", err.Error())
@@ -146,9 +155,9 @@ func GetResource(apiVersion, kind, namespace, name string) (*unstructured.Unstru
 	namespaced := true
 	gvr := schema.GroupVersionResource{}
 	for _, r := range apiResources {
-		gOk := (r.Group == gv.Group)
-		vOk := (r.Version == gv.Version)
-		kOk := (r.Kind == kind)
+		gOk := (r.Group == gv.Group) || skipGV
+		vOk := (r.Version == gv.Version) || skipGV
+		kOk := (r.Kind == kind) || (r.Name == kind) || (r.SingularName == kind) || contains(r.ShortNames, kind)
 		if gOk && vOk && kOk {
 			gvr = schema.GroupVersionResource{
 				Group:    r.Group,
@@ -237,4 +246,13 @@ func ListResources(apiVersion, kind, namespace string) ([]*unstructured.Unstruct
 		resources = append(resources, &res)
 	}
 	return resources, nil
+}
+
+func contains(all []string, one string) bool {
+	for _, sub := range all {
+		if sub == one {
+			return true
+		}
+	}
+	return false
 }

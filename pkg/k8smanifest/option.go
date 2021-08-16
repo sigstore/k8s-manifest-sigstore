@@ -18,12 +18,20 @@ package k8smanifest
 
 import (
 	"os"
+	"strings"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/ghodss/yaml"
+	"github.com/pkg/errors"
 	"github.com/sigstore/cosign/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+const InClusterObjectPrefix = "k8s://"
 
 // option for Sign()
 type SignOption struct {
@@ -179,6 +187,69 @@ func LoadVerifyResourceConfig(fpath string) (*VerifyResourceOption, error) {
 	}
 	var option *VerifyResourceOption
 	err = yaml.Unmarshal(cfgBytes, &option)
+	if err != nil {
+		return nil, err
+	}
+	return option, nil
+}
+
+func LoadVerifyResourceConfigFromResource(configPath, configField string) (*VerifyResourceOption, error) {
+	kind, ns, name, err := parseObjectInCluster(configPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse config in cluster `%s`", configPath)
+	}
+	log.Debugf("trying to find config resource kind: %s, name: %s, namespace: %s", kind, name, ns)
+	configObj, err := kubeutil.GetResource("", kind, ns, name)
+	if err != nil {
+		nsDetail := ""
+		if ns != "" {
+			nsDetail = fmt.Sprintf("in %s namespace", ns)
+		}
+		return nil, errors.Wrapf(err, "failed to get config resource %s %s %s", kind, name, nsDetail)
+	}
+	log.Debug("found config resource: ", configObj.GetName())
+	return parseConfigObj(configObj, configField)
+}
+
+func parseObjectInCluster(configPath string) (string, string, string, error) {
+	parts := strings.Split(strings.TrimPrefix(configPath, InClusterObjectPrefix), "/")
+	if len(parts) != 2 && len(parts) != 3 {
+		return "", "", "", fmt.Errorf("object in cluster must be in format like %s[KIND]/[NAMESPACE]/[NAME] or %s[KIND]/[NAME]", InClusterObjectPrefix, InClusterObjectPrefix)
+	}
+
+	var kind, ns, name string
+	if len(parts) == 2 {
+		kind = parts[0]
+		name = parts[1]
+	} else if len(parts) == 3 {
+		kind = parts[0]
+		ns = parts[1]
+		name = parts[2]
+	}
+	return kind, ns, name, nil
+}
+
+func parseConfigObj(configObj *unstructured.Unstructured, configField string) (*VerifyResourceOption, error) {
+	objNode, err := mapnode.NewFromMap(configObj.Object)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to load config object as mapnode")
+	}
+	cfgData, ok := objNode.Get(configField)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse config field `%s` in `%s`", configField, configObj.GetName())
+	}
+	var configBytes []byte
+	switch cfg := cfgData.(type) {
+	case string:
+		configBytes = []byte(cfg)
+	case *mapnode.Node:
+		configBytes = []byte(cfg.ToYaml())
+	default:
+		return nil, fmt.Errorf("cannot handle this type for config object: %T", cfg)
+	}
+	log.Debug("found config bytes: ", string(configBytes))
+	var option *VerifyResourceOption
+	err = yaml.Unmarshal(configBytes, &option)
 	if err != nil {
 		return nil, err
 	}
