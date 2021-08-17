@@ -829,6 +829,7 @@ func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field stri
 	if ctype == configTypeFile {
 		return path, field
 	}
+<<<<<<< HEAD
 	if kind == "" {
 		if ctype == configTypeConstraint {
 			kind = defaultConfigKindForConstraint
@@ -836,6 +837,8 @@ func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field stri
 			kind = defaultConfigKindForConfigMap
 		}
 	}
+=======
+>>>>>>> 551a90f (resolve conflict)
 	newPath := ""
 	if namespace == "" {
 		newPath = fmt.Sprintf("%s%s/%s", k8smanifest.InClusterObjectPrefix, kind, name)
