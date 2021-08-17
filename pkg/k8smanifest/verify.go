@@ -48,9 +48,9 @@ type SignatureVerifier interface {
 }
 
 func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
-	var imageRef, sigCMRef string
+	var imageRef, resourceRef string
 	if strings.HasPrefix(sigRef, InClusterObjectPrefix) {
-		sigCMRef = sigRef
+		resourceRef = sigRef
 	} else if sigRef != "" {
 		imageRef = sigRef
 	}
@@ -70,8 +70,8 @@ func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string
 
 	if imageRef != "" && imageRef != SigRefEmbeddedInAnnotation {
 		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
-	} else if sigCMRef != "" {
-		return &SigCMSignatureVerifier{cmRef: sigCMRef, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
+	} else if resourceRef != "" {
+		return &ResourceSignatureVerifier{resourceRef: resourceRef, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
 	} else {
 		return &AnnotationSignatureVerifier{annotations: annotations, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
 	}
@@ -233,14 +233,14 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 	return false, "", nil, errors.New("unknown error")
 }
 
-type SigCMSignatureVerifier struct {
-	cmRef            string
+type ResourceSignatureVerifier struct {
+	resourceRef      string
 	pubkeyPathString *string
 	annotationConfig AnnotationConfig
 }
 
-func (v *SigCMSignatureVerifier) Verify() (bool, string, *int64, error) {
-	cmRef := v.cmRef
+func (v *ResourceSignatureVerifier) Verify() (bool, string, *int64, error) {
+	cmRef := v.resourceRef
 	cm, err := GetConfigMapFromK8sObjectRef(cmRef)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "failed to get a configmap")
@@ -294,11 +294,11 @@ type ManifestFetcher interface {
 // `imageRef` is used for judging if manifest is inside an image or not.
 // `annotationConfig` is used for annotation domain config like "cosign.sigstore.dev".
 // `ignoreFields` and `maxResourceManifestNum` are used inside manifest detection logic.
-func NewManifestFetcher(imageRef, sigCMRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
+func NewManifestFetcher(imageRef, resourceRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
 	if imageRef != "" {
 		return &ImageManifestFetcher{imageRefString: imageRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, onMemoryCacheEnabled: true}
-	} else if sigCMRef != "" {
-		return &SigCMManifestFetcher{cmRefString: sigCMRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
+	} else if resourceRef != "" {
+		return &ResourceManifestFetcher{resourceRefString: resourceRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	} else {
 		return &AnnotationManifestFetcher{AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	}
@@ -475,17 +475,17 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string
 	return resourceManifests, SigRefEmbeddedInAnnotation, nil
 }
 
-type SigCMManifestFetcher struct {
-	cmRefString            string
+type ResourceManifestFetcher struct {
+	resourceRefString      string
 	AnnotationConfig       AnnotationConfig
 	ignoreFields           []string // used by ManifestSearchByValue()
 	maxResourceManifestNum int      // used by ManifestSearchByValue()
 }
 
-func (f *SigCMManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
-	cmRefString := f.cmRefString
-	if cmRefString == "" {
-		return nil, "", errors.New("no signature configmap reference is specified")
+func (f *ResourceManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
+	resourceRefString := f.resourceRefString
+	if resourceRefString == "" {
+		return nil, "", errors.New("no signature resource reference is specified")
 	}
 
 	var maxResourceManifestNumPtr *int
@@ -493,21 +493,21 @@ func (f *SigCMManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		maxResourceManifestNumPtr = &f.maxResourceManifestNum
 	}
 
-	cmRefList := splitCommaSeparatedString(cmRefString)
-	for _, cmRef := range cmRefList {
-		concatYAMLbytes, err := f.fetchManifestInSingleConfigMap(cmRef)
+	resourceRefList := splitCommaSeparatedString(resourceRefString)
+	for _, resourceRef := range resourceRefList {
+		concatYAMLbytes, err := f.fetchManifestInSingleConfigMap(resourceRef)
 		if err != nil {
 			return nil, "", err
 		}
 		found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxResourceManifestNumPtr, f.ignoreFields)
 		if found {
-			return resourceManifests, cmRef, nil
+			return resourceManifests, resourceRef, nil
 		}
 	}
 	return nil, "", errors.New("failed to find a YAML manifest in the specified signature configmaps")
 }
 
-func (f *SigCMManifestFetcher) fetchManifestInSingleConfigMap(singleCMRef string) ([]byte, error) {
+func (f *ResourceManifestFetcher) fetchManifestInSingleConfigMap(singleCMRef string) ([]byte, error) {
 	cm, err := GetConfigMapFromK8sObjectRef(singleCMRef)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get a configmap")

@@ -89,11 +89,11 @@ type verifyOption struct {
 	MaxResourceManifestNum int `json:"maxResourceManifestNum,omitempty"`
 
 	// these options should be input from CLI arguments
-	KeyPath               string `json:"-"`
-	ImageRef              string `json:"-"`
-	SignatureConfigMapRef string `json:"-"`
-	UseCache              bool   `json:"-"`
-	CacheDir              string `json:"-"`
+	KeyPath              string `json:"-"`
+	ImageRef             string `json:"-"`
+	SignatureResourceRef string `json:"-"`
+	UseCache             bool   `json:"-"`
+	CacheDir             string `json:"-"`
 
 	annotationKeyToIgnoreFields bool `json:"-"`
 }
