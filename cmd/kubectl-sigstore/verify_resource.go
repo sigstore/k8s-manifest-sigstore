@@ -46,6 +46,22 @@ const (
 	resultKind       = "VerifyResourceResult"         // use this only for output result as json/yaml
 )
 
+const (
+	configTypeFile       = "file"
+	configTypeConstraint = "constraint"
+	configTypeConfigMap  = "configmap"
+)
+
+const (
+	defaultConfigKindForConfigMap  = "ConfigMap"
+	defaultConfigKindForConstraint = "ManifestIntegrityConstraint"
+)
+
+const (
+	defaultConfigFieldPathConstraint = "spec.parameters"
+	defaultConfigFieldPathConfigMap  = "data.\"config.yaml\""
+)
+
 // This is common ignore fields for changes by k8s system
 //go:embed resources/default-config.yaml
 var defaultConfigBytes []byte
@@ -58,6 +74,11 @@ func NewCmdVerifyResource() *cobra.Command {
 	var imageRef string
 	var keyPath string
 	var configPath string
+	var configType string
+	var configKind string
+	var configName string
+	var configNamespace string
+	var configField string
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	var disableDefaultConfig bool
@@ -84,7 +105,9 @@ func NewCmdVerifyResource() *cobra.Command {
 				}
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, disableDefaultConfig, outputFormat)
+			configPath, configField = getConfigPathFromConfigFlags(configPath, configType, configKind, configName, configNamespace, configField)
+
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, configField, disableDefaultConfig, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -98,14 +121,19 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename (this can be \"-\", then read a file from stdin)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
-	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
+	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file or k8s object identifier like k8s://[KIND]/[NAMESPACE]/[NAME]")
+	cmd.PersistentFlags().StringVar(&configType, "config-type", "file", "a type of config, one of the following: \"file\", \"constraint\" or \"configmap\"")
+	cmd.PersistentFlags().StringVar(&configKind, "config-kind", "", "a kind of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
+	cmd.PersistentFlags().StringVar(&configName, "config-name", "", "a name of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
+	cmd.PersistentFlags().StringVar(&configNamespace, "config-namespace", "", "a namespace of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
+	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath string, disableDefaultConfig bool, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, configField string, disableDefaultConfig bool, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -113,15 +141,19 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 		}
 	}
 
-	if len(kubeGetArgs) == 0 && yamls == nil && imageRef == "" {
-		return false, errors.New("at least one of the following is required: `--image` option, resource kind or stdin YAML manifests")
-	}
-
 	var vo *k8smanifest.VerifyResourceOption
 	if configPath == "" && disableDefaultConfig {
 		vo = &k8smanifest.VerifyResourceOption{}
 	} else if configPath == "" {
 		vo = loadDefaultConfig()
+	} else if strings.HasPrefix(configPath, k8smanifest.InClusterObjectPrefix) {
+		vo, err = k8smanifest.LoadVerifyResourceConfigFromResource(configPath, configField)
+		if err != nil {
+			return false, errors.Wrapf(err, "failed to load verify-resource config from resource %s", configPath)
+		}
+		if !disableDefaultConfig {
+			vo = addDefaultConfig(vo)
+		}
 	} else {
 		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
 		if err != nil {
@@ -550,6 +582,37 @@ func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
 func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyResourceOption {
 	dvo := loadDefaultConfig()
 	return vo.AddDefaultConfig(dvo)
+}
+
+func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field string) (string, string) {
+	if path != "" {
+		return path, field
+	}
+
+	if ctype == configTypeFile {
+		return path, field
+	}
+	if kind == "" {
+		if ctype == configTypeConstraint {
+			kind = defaultConfigKindForConstraint
+		} else if ctype == configTypeConfigMap {
+			kind = defaultConfigKindForConfigMap
+		}
+	}
+	newPath := ""
+	if namespace == "" {
+		newPath = fmt.Sprintf("%s%s/%s", k8smanifest.InClusterObjectPrefix, kind, name)
+	} else {
+		newPath = fmt.Sprintf("%s%s/%s/%s", k8smanifest.InClusterObjectPrefix, kind, namespace, name)
+	}
+	if field == "" {
+		if ctype == configTypeConstraint {
+			field = defaultConfigFieldPathConstraint
+		} else if ctype == configTypeConfigMap {
+			field = defaultConfigFieldPathConfigMap
+		}
+	}
+	return newPath, field
 }
 
 // convert resources to a concatenated YAML manifest
