@@ -33,12 +33,14 @@ import (
 const defaultDryRunNamespace = "default"
 
 type VerifyResourceResult struct {
-	Verified   bool                `json:"verified"`
-	InScope    bool                `json:"inScope"`
-	Signer     string              `json:"signer"`
-	SignedTime *time.Time          `json:"signedTime"`
-	SigRef     string              `json:"sigRef"`
-	Diff       *mapnode.DiffResult `json:"diff"`
+	Verified        bool                   `json:"verified"`
+	InScope         bool                   `json:"inScope"`
+	Signer          string                 `json:"signer"`
+	SignedTime      *time.Time             `json:"signedTime"`
+	SigRef          string                 `json:"sigRef"`
+	Diff            *mapnode.DiffResult    `json:"diff"`
+	ContainerImages []kubeutil.ImageObject `json:"containerImages"`
+	Provenances     []*Provenance          `json:"provenances,omitempty"`
 }
 
 func (r *VerifyResourceResult) String() string {
@@ -137,13 +139,28 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
+	containerImages, err := kubeutil.GetAllImagesFromObject(&obj)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get container images")
+	}
+
+	provenances := []*Provenance{}
+	if vo.Provenance {
+		provenances, err = NewProvenanceGetter(&obj, sigRef, "").Get()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get provenance")
+		}
+	}
+
 	return &VerifyResourceResult{
-		Verified:   verified,
-		InScope:    inScope,
-		Signer:     signerName,
-		SignedTime: getTime(signedTimestamp),
-		SigRef:     sigRef,
-		Diff:       diff,
+		Verified:        verified,
+		InScope:         inScope,
+		Signer:          signerName,
+		SignedTime:      getTime(signedTimestamp),
+		SigRef:          sigRef,
+		Diff:            diff,
+		ContainerImages: containerImages,
+		Provenances:     provenances,
 	}, nil
 }
 

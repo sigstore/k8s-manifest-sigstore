@@ -3,8 +3,11 @@ module github.com/sigstore/k8s-manifest-sigstore
 go 1.16
 
 require (
+	github.com/cyberphone/json-canonicalization v0.0.0-20210303052042-6bc126869bf4
 	github.com/ghodss/yaml v1.0.0
+	github.com/go-openapi/runtime v0.19.29
 	github.com/google/go-containerregistry v0.5.1
+	github.com/in-toto/in-toto-golang v0.2.1-0.20210627200632-886210ae2ab9
 	github.com/jinzhu/copier v0.3.2
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/onsi/ginkgo v1.15.0
@@ -17,6 +20,7 @@ require (
 	github.com/sigstore/sigstore v0.0.0-20210726180807-7e34e36ecda1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
+	github.com/tektoncd/chains v0.3.0
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.21.3
