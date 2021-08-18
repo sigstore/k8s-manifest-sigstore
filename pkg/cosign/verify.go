@@ -39,6 +39,7 @@ import (
 	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	k8ssigx509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
@@ -187,7 +188,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		if err != nil {
 			return false, "", nil, errors.Wrap(err, "failed to load certificate")
 		}
-		signerName = getNameInfoFromCert(cert)
+		signerName = k8ssigx509.GetNameInfoFromX509Cert(cert)
 	}
 
 	return verified, signerName, nil, nil
@@ -199,14 +200,6 @@ func loadCertificate(pemBytes []byte) (*x509.Certificate, error) {
 		return nil, errors.New("failed to decode PEM bytes")
 	}
 	return x509.ParseCertificate(p.Bytes)
-}
-
-func getNameInfoFromCert(cert *x509.Certificate) string {
-	name := ""
-	if len(cert.EmailAddresses) > 0 {
-		name = cert.EmailAddresses[0]
-	}
-	return name
 }
 
 // func getSignedTimestamp(rekorServerURL string, sp cosign.SignedPayload, co *cosign.CheckOpts) (*int64, error) {
@@ -270,7 +263,7 @@ func verifyBundle(rawMsg, b64Sig, rawCert, rawBundle []byte) (bool, string, *int
 	}
 	var signerName string
 	if verified {
-		signerName = getNameInfoFromCert(cert)
+		signerName = k8ssigx509.GetNameInfoFromX509Cert(cert)
 	}
 	return verified, signerName, nil, nil
 }

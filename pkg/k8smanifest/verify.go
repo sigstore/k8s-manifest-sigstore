@@ -29,15 +29,10 @@ import (
 	k8smnfcosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
+	sigtypes "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes"
+	pgp "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/pgp"
+	x509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
 )
-
-var EmbeddedAnnotationMaskKeys = []string{
-	fmt.Sprintf("metadata.annotations.\"%s\"", ImageRefAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", SignatureAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", CertificateAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", MessageAnnotationKey),
-	fmt.Sprintf("metadata.annotations.\"%s\"", BundleAnnotationKey),
-}
 
 const SigRefEmbeddedInAnnotation = "__embedded_in_annotation__"
 
@@ -51,10 +46,11 @@ type SignatureVerifier interface {
 	Verify() (bool, string, *int64, error)
 }
 
-func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *string) SignatureVerifier {
+func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
+	imageRefAnnotationKey := annotationConfig.ImageRefAnnotationKey()
 	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 	if imageRef == "" {
-		if annoImageRef, ok := annotations[ImageRefAnnotationKey]; ok {
+		if annoImageRef, ok := annotations[imageRefAnnotationKey]; ok {
 			imageRef = annoImageRef
 		}
 	}
@@ -65,9 +61,9 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 	}
 
 	if imageRef == "" || imageRef == SigRefEmbeddedInAnnotation {
-		return &AnnotationSignatureVerifier{annotations: annotations, pubkeyPathString: pubkeyPathString}
+		return &AnnotationSignatureVerifier{annotations: annotations, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
 	} else {
-		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString}
+		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
 	}
 }
 
@@ -75,6 +71,7 @@ type ImageSignatureVerifier struct {
 	imageRef             string
 	pubkeyPathString     *string
 	onMemoryCacheEnabled bool
+	annotationConfig     AnnotationConfig
 }
 
 func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
@@ -177,21 +174,26 @@ func (v *ImageSignatureVerifier) setResultToMemCache(imageRef, pubkey string, ve
 type AnnotationSignatureVerifier struct {
 	annotations      map[string]string
 	pubkeyPathString *string
+	annotationConfig AnnotationConfig
 }
 
 func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 	annotations := v.annotations
 
-	msg, ok := annotations[MessageAnnotationKey]
+	messageAnnotationKey := v.annotationConfig.MessageAnnotationKey()
+	msg, ok := annotations[messageAnnotationKey]
 	if !ok {
-		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", MessageAnnotationKey)
+		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", messageAnnotationKey)
 	}
-	sig, ok := annotations[SignatureAnnotationKey]
+	signatureAnnotationKey := v.annotationConfig.SignatureAnnotationKey()
+	sig, ok := annotations[signatureAnnotationKey]
 	if !ok {
-		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", SignatureAnnotationKey)
+		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", signatureAnnotationKey)
 	}
-	cert := annotations[CertificateAnnotationKey]
-	bundle := annotations[BundleAnnotationKey]
+	certificateAnnotationKey := v.annotationConfig.CertificateAnnotationKey()
+	budnleAnnotationKey := v.annotationConfig.BundleAnnotationKey()
+	cert := annotations[certificateAnnotationKey]
+	bundle := annotations[budnleAnnotationKey]
 
 	var msgBytes, sigBytes, certBytes, bundleBytes []byte
 	if msg != "" {
@@ -207,7 +209,18 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 		bundleBytes = []byte(bundle)
 	}
 
-	return k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
+	sigType := sigtypes.GetSignatureTypeFromPublicKey(v.pubkeyPathString)
+	if sigType == sigtypes.SigTypeUnknown {
+		return false, "", nil, errors.New("failed to judge signature type from public key configuration")
+	} else if sigType == sigtypes.SigTypeCosign {
+		return k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
+	} else if sigType == sigtypes.SigTypePGP {
+		return pgp.VerifyBlob(msgBytes, sigBytes, v.pubkeyPathString)
+	} else if sigType == sigtypes.SigTypeX509 {
+		return x509.VerifyBlob(msgBytes, sigBytes, certBytes, v.pubkeyPathString)
+	}
+
+	return false, "", nil, errors.New("unknown error")
 }
 
 // This is an interface for fetching YAML manifest
@@ -218,18 +231,20 @@ type ManifestFetcher interface {
 
 // return a manifest fetcher.
 // `imageRef` is used for judging if manifest is inside an image or not.
+// `annotationConfig` is used for annotation domain config like "cosign.sigstore.dev".
 // `ignoreFields` and `maxResourceManifestNum` are used inside manifest detection logic.
-func NewManifestFetcher(imageRef string, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
+func NewManifestFetcher(imageRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
 	if imageRef == "" {
-		return &AnnotationManifestFetcher{ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
+		return &AnnotationManifestFetcher{AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	} else {
-		return &ImageManifestFetcher{imageRefString: imageRef, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, onMemoryCacheEnabled: true}
+		return &ImageManifestFetcher{imageRefString: imageRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, onMemoryCacheEnabled: true}
 	}
 }
 
 // ImageManifestFetcher is a fetcher implementation for image reference
 type ImageManifestFetcher struct {
 	imageRefString         string
+	AnnotationConfig       AnnotationConfig
 	ignoreFields           []string // used by ManifestSearchByValue()
 	maxResourceManifestNum int      // used by ManifestSearchByValue()
 	onMemoryCacheEnabled   bool
@@ -237,9 +252,10 @@ type ImageManifestFetcher struct {
 
 func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
 	imageRefString := f.imageRefString
+	imageRefAnnotationKey := f.AnnotationConfig.ImageRefAnnotationKey()
 	if imageRefString == "" {
 		annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
-		if annoImageRef, ok := annotations[ImageRefAnnotationKey]; ok {
+		if annoImageRef, ok := annotations[imageRefAnnotationKey]; ok {
 			imageRefString = annoImageRef
 		}
 	}
@@ -356,6 +372,7 @@ func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAML
 }
 
 type AnnotationManifestFetcher struct {
+	AnnotationConfig       AnnotationConfig
 	ignoreFields           []string // used by ManifestSearchByValue()
 	maxResourceManifestNum int      // used by ManifestSearchByValue()
 }
@@ -364,7 +381,8 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string
 
 	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 
-	base64Msg, messageFound := annotations[MessageAnnotationKey]
+	messageAnnotationKey := f.AnnotationConfig.MessageAnnotationKey()
+	base64Msg, messageFound := annotations[messageAnnotationKey]
 	if !messageFound {
 		return nil, "", nil
 	}

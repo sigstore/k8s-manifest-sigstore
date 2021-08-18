@@ -163,6 +163,8 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 			vo = addDefaultConfig(vo)
 		}
 	}
+	// add signature/message/others annotations to ignore fields
+	vo.SetAnnotationIgnoreFields()
 
 	objs := []unstructured.Unstructured{}
 	if len(kubeGetArgs) > 0 {
@@ -170,7 +172,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
 	} else if imageRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, nil, vo.MaxResourceManifestNum)
+		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, vo.AnnotationConfig, nil, vo.MaxResourceManifestNum)
 		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
 		var yamlsInImage [][]byte
 		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {

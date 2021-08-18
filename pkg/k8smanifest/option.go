@@ -36,6 +36,8 @@ const InClusterObjectPrefix = "k8s://"
 
 // option for Sign()
 type SignOption struct {
+	commonOption `json:""`
+
 	// these options should be input from CLI arguments
 	KeyPath          string                 `json:"-"`
 	ImageRef         string                 `json:"-"`
@@ -48,6 +50,7 @@ type SignOption struct {
 
 // option for VerifyResource()
 type VerifyResourceOption struct {
+	commonOption `json:""`
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
@@ -55,9 +58,24 @@ type VerifyResourceOption struct {
 	DryRunNamespace     string `json:"-"`
 }
 
+func (o *VerifyResourceOption) SetAnnotationIgnoreFields() {
+	if o.verifyOption.isAnnotationKeyAlreadySetToIgnoreFields() {
+		return
+	}
+	o.verifyOption = o.verifyOption.setAnnotationKeyToIgnoreField(o.AnnotationConfig)
+}
+
 // option for VerifyManifest()
 type VerifyManifestOption struct {
+	commonOption `json:""`
 	verifyOption `json:""`
+}
+
+func (o *VerifyManifestOption) SetAnnotationIgnoreFields() {
+	if o.verifyOption.isAnnotationKeyAlreadySetToIgnoreFields() {
+		return
+	}
+	o.verifyOption = o.verifyOption.setAnnotationKeyToIgnoreField(o.AnnotationConfig)
 }
 
 // common options for verify functions
@@ -74,6 +92,90 @@ type verifyOption struct {
 	ImageRef string `json:"-"`
 	UseCache bool   `json:"-"`
 	CacheDir string `json:"-"`
+
+	annotationKeyToIgnoreFields bool `json:"-"`
+}
+
+func (o verifyOption) setAnnotationKeyToIgnoreField(annotationConfig AnnotationConfig) verifyOption {
+	o.IgnoreFields = append(o.IgnoreFields, annotationConfig.AnnotationKeyIgnoreField()...)
+	o.annotationKeyToIgnoreFields = true
+	return o
+}
+
+func (o verifyOption) isAnnotationKeyAlreadySetToIgnoreFields() bool {
+	return o.annotationKeyToIgnoreFields
+}
+
+// common options
+type commonOption struct {
+	AnnotationConfig `json:""`
+}
+
+// annotation config for signing and verification
+type AnnotationConfig struct {
+	// default "cosign.sigstore.dev"
+	AnnotationKeyDomain string `json:"annotationKeyDomain,omitempty"`
+}
+
+func (c AnnotationConfig) ImageRefAnnotationKey() string {
+	return c.annotationKey(ImageRefAnnotationBaseName)
+}
+
+func (c AnnotationConfig) SignatureAnnotationKey() string {
+	return c.annotationKey(SignatureAnnotationBaseName)
+}
+
+func (c AnnotationConfig) CertificateAnnotationKey() string {
+	return c.annotationKey(CertificateAnnotationBaseName)
+}
+
+func (c AnnotationConfig) MessageAnnotationKey() string {
+	return c.annotationKey(MessageAnnotationBaseName)
+}
+
+func (c AnnotationConfig) BundleAnnotationKey() string {
+	return c.annotationKey(BundleAnnotationBaseName)
+}
+
+func (c AnnotationConfig) annotationKey(keyType string) string {
+	d := c.AnnotationKeyDomain
+	if d == "" {
+		d = DefaultAnnotationKeyDomain
+	}
+	return fmt.Sprintf("%s/%s", d, keyType)
+}
+
+func (c AnnotationConfig) AnnotationKeyMap() map[string]string {
+	return map[string]string{
+		ImageRefAnnotationBaseName:    c.ImageRefAnnotationKey(),
+		SignatureAnnotationBaseName:   c.SignatureAnnotationKey(),
+		CertificateAnnotationBaseName: c.CertificateAnnotationKey(),
+		MessageAnnotationBaseName:     c.MessageAnnotationKey(),
+		BundleAnnotationBaseName:      c.BundleAnnotationKey(),
+	}
+}
+
+func (c AnnotationConfig) AnnotationKeyMask() []string {
+	return []string{
+		"metadata.annotations." + c.ImageRefAnnotationKey(),
+		"metadata.annotations." + c.SignatureAnnotationKey(),
+		"metadata.annotations." + c.CertificateAnnotationKey(),
+		"metadata.annotations." + c.MessageAnnotationKey(),
+		"metadata.annotations." + c.BundleAnnotationKey(),
+	}
+}
+
+func (c AnnotationConfig) AnnotationKeyIgnoreField() ObjectFieldBindingList {
+	return ObjectFieldBindingList(
+		[]ObjectFieldBinding{
+			{
+				Fields: c.AnnotationKeyMask(),
+				Objects: ObjectReferenceList([]ObjectReference{
+					{Kind: "*"},
+				}),
+			},
+		},
+	)
 }
 
 type ObjectReference struct {

@@ -38,21 +38,15 @@ import (
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
 
-const (
-	ImageRefAnnotationKey    = "cosign.sigstore.dev/imageRef"
-	SignatureAnnotationKey   = "cosign.sigstore.dev/signature"
-	CertificateAnnotationKey = "cosign.sigstore.dev/certificate"
-	MessageAnnotationKey     = "cosign.sigstore.dev/message"
-	BundleAnnotationKey      = "cosign.sigstore.dev/bundle"
-)
+const DefaultAnnotationKeyDomain = "cosign.sigstore.dev"
 
-var annotationKeyMap = map[string]string{
-	"signature":   SignatureAnnotationKey,
-	"certificate": CertificateAnnotationKey,
-	"message":     MessageAnnotationKey,
-	"bundle":      BundleAnnotationKey,
-	"imageRef":    ImageRefAnnotationKey,
-}
+const (
+	ImageRefAnnotationBaseName    = "imageRef"
+	SignatureAnnotationBaseName   = "signature"
+	CertificateAnnotationBaseName = "certificate"
+	MessageAnnotationBaseName     = "message"
+	BundleAnnotationBaseName      = "bundle"
+)
 
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
 
@@ -61,7 +55,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
+	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -73,7 +67,7 @@ type Signer interface {
 	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
-func NewSigner(imageRef, keyPath, certPath string, pf cosign.PassFunc) Signer {
+func NewSigner(imageRef, keyPath, certPath string, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
 	var prikeyPath *string
 	if keyPath != "" {
 		prikeyPath = &keyPath
@@ -83,17 +77,18 @@ func NewSigner(imageRef, keyPath, certPath string, pf cosign.PassFunc) Signer {
 		certPathP = &certPath
 	}
 	if imageRef == "" {
-		return &AnnotationSigner{prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &AnnotationSigner{AnnotationConfig: AnnotationConfig, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	} else {
-		return &ImageSigner{imageRef: imageRef, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &ImageSigner{AnnotationConfig: AnnotationConfig, imageRef: imageRef, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	}
 }
 
 type ImageSigner struct {
-	imageRef   string
-	prikeyPath *string
-	certPath   *string
-	passFunc   cosign.PassFunc
+	AnnotationConfig AnnotationConfig
+	imageRef         string
+	prikeyPath       *string
+	certPath         *string
+	passFunc         cosign.PassFunc
 }
 
 func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
@@ -119,7 +114,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 	}
 	if output != "" {
 		// generate a signed YAML file
-		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil, imageAnnotations)
+		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil, imageAnnotations, s.AnnotationConfig)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
@@ -132,9 +127,10 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 }
 
 type AnnotationSigner struct {
-	prikeyPath *string
-	certPath   *string
-	passFunc   cosign.PassFunc
+	AnnotationConfig AnnotationConfig
+	prikeyPath       *string
+	certPath         *string
+	passFunc         cosign.PassFunc
 }
 
 func (s *AnnotationSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
@@ -167,7 +163,7 @@ func (s *AnnotationSigner) Sign(inputDir, output string, imageAnnotations map[st
 	}
 	if output != "" {
 		// generate a signed YAML file
-		signedBytes, err = generateSignedYAMLManifest(inputDir, "", sigMaps, imageAnnotations)
+		signedBytes, err = generateSignedYAMLManifest(inputDir, "", sigMaps, imageAnnotations, s.AnnotationConfig)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
@@ -211,7 +207,7 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 	return nil
 }
 
-func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte, imageAnnotations map[string]interface{}) ([]byte, error) {
+func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte, imageAnnotations map[string]interface{}, AnnotationConfig AnnotationConfig) ([]byte, error) {
 	if imageRef == "" && len(sigMaps) == 0 {
 		return nil, errors.New("either image ref or signature infos are required for generating a signed YAML")
 	}
@@ -232,9 +228,11 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	}
 	yamls = tmpYAMLs
 
+	imageRefAnnotationKey := AnnotationConfig.ImageRefAnnotationKey()
+	annotationKeyMap := AnnotationConfig.AnnotationKeyMap()
 	annotationMap := map[string]interface{}{}
 	if imageRef != "" {
-		annotationMap[ImageRefAnnotationKey] = imageRef
+		annotationMap[imageRefAnnotationKey] = imageRef
 	} else if len(sigMaps) > 0 {
 		for key, val := range sigMaps {
 			annoKey, ok := annotationKeyMap[key]

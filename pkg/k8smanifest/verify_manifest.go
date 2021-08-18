@@ -17,6 +17,8 @@
 package k8smanifest
 
 import (
+	"fmt"
+
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -38,14 +40,24 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	var err error
 
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
+	var imageRefAnnotationKey string
+	if vo == nil {
+		imageRefAnnotationKey = fmt.Sprintf("%s/%s", DefaultAnnotationKeyDomain, ImageRefAnnotationBaseName)
+	} else {
+		imageRefAnnotationKey = vo.AnnotationConfig.ImageRefAnnotationKey()
+	}
 	if vo.ImageRef == "" {
 		annotations := obj.GetAnnotations()
-		annoImageRef, found := annotations[ImageRefAnnotationKey]
+		annoImageRef, found := annotations[imageRefAnnotationKey]
 		if found {
 			vo.ImageRef = annoImageRef
 		}
 	}
 
+	// add signature/message/others annotations to ignore fields
+	if vo != nil {
+		vo.SetAnnotationIgnoreFields()
+	}
 	// get ignore fields configuration for this resource if found
 	ignoreFields := []string{}
 	if vo != nil {
@@ -55,7 +67,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	}
 
 	var resourceManifests [][]byte
-	resourceManifests, _, err = NewManifestFetcher(vo.ImageRef, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
+	resourceManifests, _, err = NewManifestFetcher(vo.ImageRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}
@@ -65,7 +77,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	var diffsForAllCandidates []*mapnode.DiffResult
 	for i, candidate := range resourceManifests {
 		log.Debugf("try matching with the candidate %v out of %v", i+1, len(resourceManifests))
-		cndMatched, tmpDiff, err := matchManifest(objManifest, candidate, ignoreFields)
+		cndMatched, tmpDiff, err := matchManifest(objManifest, candidate, ignoreFields, vo.AnnotationConfig)
 		if err != nil {
 			return nil, errors.Wrap(err, "error occurred during matching manifest")
 		}
@@ -84,7 +96,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 		keyPath = &(vo.KeyPath)
 	}
 
-	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, vo.ImageRef, keyPath).Verify()
+	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, vo.ImageRef, keyPath, vo.AnnotationConfig).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "error occured during signature verification")
 	}
@@ -98,14 +110,15 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	}, nil
 }
 
-func matchManifest(inputManifestBytes, foundManifestBytes []byte, ignoreFields []string) (bool, *mapnode.DiffResult, error) {
+func matchManifest(inputManifestBytes, foundManifestBytes []byte, ignoreFields []string, AnnotationConfig AnnotationConfig) (bool, *mapnode.DiffResult, error) {
 	log.Debug("manifest:", string(inputManifestBytes))
 	log.Debug("manifest in reference:", string(foundManifestBytes))
 	inputFileNode, err := mapnode.NewFromYamlBytes(inputManifestBytes)
 	if err != nil {
 		return false, nil, err
 	}
-	maskedInputNode := inputFileNode.Mask(EmbeddedAnnotationMaskKeys)
+	annotationMask := AnnotationConfig.AnnotationKeyMask()
+	maskedInputNode := inputFileNode.Mask(annotationMask)
 
 	var obj unstructured.Unstructured
 	err = yaml.Unmarshal(inputManifestBytes, &obj)
@@ -117,7 +130,7 @@ func matchManifest(inputManifestBytes, foundManifestBytes []byte, ignoreFields [
 	if err != nil {
 		return false, nil, err
 	}
-	maskedManifestNode := manifestNode.Mask(EmbeddedAnnotationMaskKeys)
+	maskedManifestNode := manifestNode.Mask(annotationMask)
 	var matched bool
 	diff := maskedInputNode.Diff(maskedManifestNode)
 

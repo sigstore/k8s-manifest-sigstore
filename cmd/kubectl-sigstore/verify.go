@@ -64,14 +64,6 @@ func verify(filename, imageRef, keyPath, configPath string) error {
 		return nil
 	}
 
-	annotations := k8ssigutil.GetAnnotationsInYAML(manifest)
-	annoImageRef, annoImageRefFound := annotations[k8smanifest.ImageRefAnnotationKey]
-	if imageRef == "" && annoImageRefFound {
-		imageRef = annoImageRef
-	}
-	log.Debug("annotations", annotations)
-	log.Debug("imageRef", imageRef)
-
 	vo := &k8smanifest.VerifyManifestOption{}
 	if configPath != "" {
 		vo, err = k8smanifest.LoadVerifyManifestConfig(configPath)
@@ -80,6 +72,18 @@ func verify(filename, imageRef, keyPath, configPath string) error {
 			return nil
 		}
 	}
+	// add signature/message/others annotations to ignore fields
+	vo.SetAnnotationIgnoreFields()
+
+	annotations := k8ssigutil.GetAnnotationsInYAML(manifest)
+	imageRefAnnotationKey := vo.AnnotationConfig.ImageRefAnnotationKey()
+	annoImageRef, annoImageRefFound := annotations[imageRefAnnotationKey]
+	if imageRef == "" && annoImageRefFound {
+		imageRef = annoImageRef
+	}
+	log.Debug("annotations", annotations)
+	log.Debug("imageRef", imageRef)
+
 	if imageRef != "" {
 		vo.ImageRef = imageRef
 	}
