@@ -82,6 +82,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	var disableDefaultConfig bool
+	var provenance bool
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -107,7 +108,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 			configPath, configField = getConfigPathFromConfigFlags(configPath, configType, configKind, configName, configNamespace, configField)
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, configField, disableDefaultConfig, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, configField, disableDefaultConfig, provenance, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -129,11 +130,12 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
+	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, configField string, disableDefaultConfig bool, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -188,6 +190,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
+	}
+	if provenance {
+		vo.Provenance = true
 	}
 
 	results := []resourceResult{}
