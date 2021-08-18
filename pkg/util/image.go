@@ -47,6 +47,22 @@ func PullImage(imageRef string) (v1.Image, error) {
 	return img, nil
 }
 
+func GetImageDigest(imageRef string) (string, error) {
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", err
+	}
+	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	if err != nil {
+		return "", err
+	}
+	hash, err := img.Digest()
+	if err != nil {
+		return "", err
+	}
+	return hash.String(), nil
+}
+
 func GetBlob(layer v1.Layer) ([]byte, error) {
 	rc, err := layer.Compressed()
 	if err != nil {
