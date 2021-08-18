@@ -53,6 +53,11 @@ const (
 )
 
 const (
+	defaultConfigKindForConfigMap  = "ConfigMap"
+	defaultConfigKindForConstraint = "ManifestIntegrityConstraint"
+)
+
+const (
 	defaultConfigFieldPathConstraint = "spec.parameters"
 	defaultConfigFieldPathConfigMap  = "data.\"config.yaml\""
 )
@@ -586,6 +591,13 @@ func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field stri
 
 	if ctype == configTypeFile {
 		return path, field
+	}
+	if kind == "" {
+		if ctype == configTypeConstraint {
+			kind = defaultConfigKindForConstraint
+		} else if ctype == configTypeConfigMap {
+			kind = defaultConfigKindForConfigMap
+		}
 	}
 	newPath := ""
 	if namespace == "" {

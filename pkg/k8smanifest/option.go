@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
