@@ -85,6 +85,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var manifestYAMLs [][]byte
 	var disableDefaultConfig bool
 	var provenance bool
+	var provResRef string
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -110,7 +111,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 			configPath, configField = getConfigPathFromConfigFlags(configPath, configType, configKind, configName, configNamespace, configField)
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, disableDefaultConfig, provenance, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, disableDefaultConfig, provenance, provResRef, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -132,13 +133,13 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configNamespace, "config-namespace", "", "a namespace of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
 	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
-	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
-
+	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
+	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, provResRef, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -199,6 +200,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	}
 	if provenance {
 		vo.Provenance = true
+	}
+	if provResRef != "" {
+		vo.ProvenanceResourceRef = provResRef
 	}
 
 	results := []resourceResult{}
@@ -829,7 +833,6 @@ func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field stri
 	if ctype == configTypeFile {
 		return path, field
 	}
-<<<<<<< HEAD
 	if kind == "" {
 		if ctype == configTypeConstraint {
 			kind = defaultConfigKindForConstraint
@@ -837,8 +840,6 @@ func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field stri
 			kind = defaultConfigKindForConfigMap
 		}
 	}
-=======
->>>>>>> 551a90f (resolve conflict)
 	newPath := ""
 	if namespace == "" {
 		newPath = fmt.Sprintf("%s%s/%s", k8smanifest.InClusterObjectPrefix, kind, name)

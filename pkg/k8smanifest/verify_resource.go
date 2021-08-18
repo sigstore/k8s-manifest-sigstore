@@ -148,7 +148,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	provenances := []*Provenance{}
 	if vo.Provenance {
-		provenances, err = NewProvenanceGetter(&obj, sigRef, "").Get()
+		provenances, err = NewProvenanceGetter(&obj, sigRef, "", vo.ProvenanceResourceRef).Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get provenance")
 		}

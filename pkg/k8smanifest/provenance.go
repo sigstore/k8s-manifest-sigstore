@@ -91,23 +91,31 @@ type ProvenanceGetter interface {
 	Get() ([]*Provenance, error)
 }
 
-func NewProvenanceGetter(obj *unstructured.Unstructured, imageRef, imageHash string) ProvenanceGetter {
+func NewProvenanceGetter(obj *unstructured.Unstructured, sigRef, imageHash, provResRef string) ProvenanceGetter {
+	var imageRef string
+	if !strings.HasPrefix(sigRef, InClusterObjectPrefix) {
+		imageRef = sigRef
+	}
+
 	if obj != nil {
-		return &RecursiveImageProvenanceGetter{object: obj, manifestImageRef: imageRef, cacheEnabled: true}
+		return &RecursiveImageProvenanceGetter{object: obj, manifestImageRef: imageRef, manifestProvenanceResourceRef: provResRef, cacheEnabled: true}
 	} else if imageRef != "" && imageRef != SigRefEmbeddedInAnnotation {
 		if imageHash == "" {
 			// TODO: get digest if empty
 		}
 		return &ImageProvenanceGetter{imageRef: imageRef, imageHash: imageHash, cacheEnabled: true}
+	} else if provResRef != "" {
+		return &ResourceProvenanceGetter{resourceRefString: provResRef}
 	} else {
 		return &NotImplementedProvenanceGetter{}
 	}
 }
 
 type RecursiveImageProvenanceGetter struct {
-	object           *unstructured.Unstructured
-	manifestImageRef string
-	cacheEnabled     bool
+	object                        *unstructured.Unstructured
+	manifestImageRef              string
+	manifestProvenanceResourceRef string
+	cacheEnabled                  bool
 }
 
 func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
@@ -122,13 +130,25 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 			return nil, errors.Wrap(err, "failed to get manifest image digest")
 		}
 		log.Trace("manifest image provenance getter")
-		imgGetter := NewProvenanceGetter(nil, g.manifestImageRef, digest)
+		imgGetter := NewProvenanceGetter(nil, g.manifestImageRef, digest, "")
 		prov, err := imgGetter.Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get manifest image provenance")
 		}
 		for _, p := range prov {
 			p.ArtifactType = ArtifactManifestImage
+			provs = append(provs, p)
+		}
+	} else if g.manifestProvenanceResourceRef != "" {
+		// manifest prov from resource
+		log.Trace("manifest resource provenance getter")
+		resGetter := NewProvenanceGetter(nil, "", "", g.manifestProvenanceResourceRef)
+		prov, err := resGetter.Get()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get manifest resource provenance")
+		}
+		for _, p := range prov {
+			p.ArtifactType = ArtifactManifestResource
 			provs = append(provs, p)
 		}
 	}
@@ -145,7 +165,7 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 		sumErr := []string{}
 		for _, img := range images {
 			log.Trace("object provenance getter for image:", img.ImageRef)
-			imgGetter := NewProvenanceGetter(nil, img.ImageRef, img.Digest)
+			imgGetter := NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
 			prov, err := imgGetter.Get()
 			if err != nil {
 				sumErr = append(sumErr, err.Error())
@@ -348,6 +368,59 @@ func (g *ImageProvenanceGetter) getSBOMRef(imageRef string) (string, error) {
 		return "", err
 	}
 	return dstRef.String(), nil
+}
+
+type ResourceProvenanceGetter struct {
+	resourceRefString string
+}
+
+func (g *ResourceProvenanceGetter) Get() ([]*Provenance, error) {
+	resourceRefString := g.resourceRefString
+	if resourceRefString == "" {
+		return nil, errors.New("no signature resource reference is specified")
+	}
+
+	provList := []*Provenance{}
+	resourceRefList := splitCommaSeparatedString(resourceRefString)
+	for _, resourceRef := range resourceRefList {
+		prov, err := g.getProvenanceInSingleConfigMap(resourceRef)
+		if err != nil {
+			return nil, err
+		}
+		provList = append(provList, prov)
+	}
+	return provList, nil
+}
+
+func (g *ResourceProvenanceGetter) getProvenanceInSingleConfigMap(singleCMRef string) (*Provenance, error) {
+	cm, err := GetConfigMapFromK8sObjectRef(singleCMRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get a configmap")
+	}
+	base64atst, atstFound := cm.Data[AttestationDataKeyName]
+	base64sbom, sbomFound := cm.Data[SBOMDataKeyName]
+	if !atstFound && !sbomFound {
+		return nil, fmt.Errorf("no fields named `%s` and `%s`", AttestationDataKeyName, SBOMDataKeyName)
+	}
+	var atstBytes, sbomBytes []byte
+	if atstFound {
+		atstBytes, err = base64.StdEncoding.DecodeString(base64atst)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to base64 decode the found attestation")
+		}
+	}
+	if sbomFound {
+		sbomBytes, err = base64.StdEncoding.DecodeString(base64sbom)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to base64 decode the found sbom")
+		}
+	}
+	// TODO: add details
+	prov := &Provenance{
+		Attestation: string(atstBytes),
+		SBOM:        string(sbomBytes),
+	}
+	return prov, nil
 }
 
 type NotImplementedProvenanceGetter struct {
