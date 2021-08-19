@@ -70,7 +70,6 @@ func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, ann
 			// e.g.) "configmap.yaml" --> "configmap.yaml.signed"
 			output = inputDir + ".signed"
 		}
-
 	}
 
 	anntns, err := parseAnnotations(annotations)

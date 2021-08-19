@@ -34,6 +34,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metatable "k8s.io/apimachinery/pkg/api/meta/table"
@@ -82,6 +83,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	var disableDefaultConfig bool
+	var provenance bool
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -107,7 +109,7 @@ func NewCmdVerifyResource() *cobra.Command {
 
 			configPath, configField = getConfigPathFromConfigFlags(configPath, configType, configKind, configName, configNamespace, configField)
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, configField, disableDefaultConfig, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, keyPath, configPath, configField, disableDefaultConfig, provenance, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -129,11 +131,12 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
+	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, configField string, disableDefaultConfig bool, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -189,6 +192,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	if keyPath != "" {
 		vo.KeyPath = keyPath
 	}
+	if provenance {
+		vo.Provenance = true
+	}
 
 	results := []resourceResult{}
 	for _, obj := range objs {
@@ -207,9 +213,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, keyPath, con
 	}
 
 	var resultBytes []byte
-	summarizedResult := NewVerifyResourceResult(results)
+	summarizedResult := NewVerifyResourceResult(results, vo.Provenance)
 	if outputFormat == "" {
-		resultBytes = makeResultTable(summarizedResult)
+		resultBytes = makeResultTable(summarizedResult, vo.Provenance)
 	} else if outputFormat == "json" {
 		resultBytes, _ = json.MarshalIndent(summarizedResult, "", "    ") // pretty print json as well as kubectl get -o json
 	} else if outputFormat == "yaml" {
@@ -331,7 +337,7 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 }
 
 // generate result bytes in a table which will be shown in output
-func makeResultTable(result VerifyResourceResult) []byte {
+func makeResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
 	if result.Summary.Total == 0 {
 		return []byte("No resources found")
 	}
@@ -339,15 +345,23 @@ func makeResultTable(result VerifyResourceResult) []byte {
 	imageRefFound := len(result.Images) > 0
 	var imageTable []byte
 	if imageRefFound {
-		imageTable = makeImageResultTable(result)
+		imageTable = makeImageResultTable(result, provenanceEnabled)
 	}
-	resourceTable := makeResourceResultTable(result)
+	resourceTable := makeResourceResultTable(result, provenanceEnabled)
+
+	var provenanceTable []byte
+	if provenanceEnabled {
+		provenanceTable = makeProvenanceResultTable(result)
+	}
 
 	var resultTable string
 	if imageRefFound {
-		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[IMAGES]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(imageTable), string(resourceTable))
+		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[MANIFESTS]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(imageTable), string(resourceTable))
 	} else {
 		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(resourceTable))
+	}
+	if provenanceEnabled {
+		resultTable = fmt.Sprintf("%s\n%s", resultTable, string(provenanceTable))
 	}
 	return []byte(resultTable)
 }
@@ -366,9 +380,13 @@ func makeSummaryResultTable(result VerifyResourceResult) []byte {
 }
 
 // generate image result table which will be shown in output
-func makeImageResultTable(result VerifyResourceResult) []byte {
+func makeImageResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
 	var tableResult string
-	tableResult = "IMAGE_NAME\tSIGNER\t\n"
+	if provenanceEnabled {
+		tableResult = "NAME\tSIGNED\tSIGNER\tATTESTATION\tSBOM\t\n"
+	} else {
+		tableResult = "NAME\tSIGNED\tSIGNER\t\n"
+	}
 	for i := range result.Images {
 		imgResult := result.Images[i]
 		// sigAge := ""
@@ -376,7 +394,41 @@ func makeImageResultTable(result VerifyResourceResult) []byte {
 		// 	t := imgResult.SignedTime
 		// 	sigAge = getAge(metav1.Time{Time: *t})
 		// }
-		tableResult += fmt.Sprintf("%s\t%s\t\n", imgResult.Name, imgResult.Signer)
+
+		// currently image table is showing only signed images, so `signed` is always true
+		// TODO: update this to show all related images even if the one is not signed
+		signed := true
+		signedStr := strconv.FormatBool(signed)
+
+		signer := ""
+		if signed {
+			if imgResult.Signer == "" {
+				signer = "N/A"
+			} else {
+				signer = imgResult.Signer
+			}
+		}
+
+		if provenanceEnabled {
+			attestationFoundStr := "-"
+			sbomFoundStr := "-"
+			for _, prov := range result.Provenance.Items {
+				if prov.Artifact != imgResult.Name {
+					continue
+				}
+				if prov.Attestation != "" {
+					attestationFoundStr = "found"
+				}
+				if prov.SBOM != "" {
+					sbomFoundStr = "found"
+				}
+				break
+			}
+			tableResult += fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", imgResult.Name, signedStr, signer, attestationFoundStr, sbomFoundStr)
+		} else {
+			tableResult += fmt.Sprintf("%s\t%s\t%s\t\n", imgResult.Name, signedStr, signer)
+		}
+
 	}
 	writer := new(bytes.Buffer)
 	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
@@ -387,7 +439,7 @@ func makeImageResultTable(result VerifyResourceResult) []byte {
 }
 
 // generate resource result table which will be shown in output
-func makeResourceResultTable(result VerifyResourceResult) []byte {
+func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
 	mutipleImagesFound := len(result.Images) >= 2
 
 	var resourceTableResult string
@@ -397,6 +449,7 @@ func makeResourceResultTable(result VerifyResourceResult) []byte {
 		resourceTableResult = "KIND\tNAME\tVALID\tERROR\tAGE\t\n"
 	}
 
+	containerImages := []kubeutil.ImageObject{}
 	for _, r := range result.Resources {
 		// if it is out of scope (=skipped by config), skip to show it too
 		inscope := true
@@ -437,12 +490,144 @@ func makeResourceResultTable(result VerifyResourceResult) []byte {
 			line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, reason, resAge)
 		}
 		resourceTableResult = fmt.Sprintf("%s%s", resourceTableResult, line)
+
+		if r.Result != nil {
+			containerImages = append(containerImages, r.Result.ContainerImages...)
+		}
 	}
 	writer := new(bytes.Buffer)
 	w := tabwriter.NewWriter(writer, 0, 3, 3, ' ', 0)
 	_, _ = w.Write([]byte(resourceTableResult))
 	w.Flush()
 	tableBytes := writer.Bytes()
+
+	if len(containerImages) > 0 {
+		var podTableResult string
+		if provenanceEnabled {
+			podTableResult = "POD\tCONTAINER\tIMAGE ID\tATTESTATION\tSBOM\t\n"
+		} else {
+			podTableResult = "POD\tCONTAINER\tIMAGE ID\t\n"
+		}
+
+		for _, ci := range containerImages {
+			var line string
+			if provenanceEnabled {
+				attestationFoundStr := "-"
+				sbomFoundStr := "-"
+				for _, prov := range result.Provenance.Items {
+					if prov.Artifact != ci.ImageRef {
+						continue
+					}
+					if prov.Attestation != "" {
+						attestationFoundStr = "found"
+					}
+					if prov.SBOM != "" {
+						sbomFoundStr = "found"
+					}
+					break
+				}
+				line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", ci.PodName, ci.ContainerName, ci.ImageID, attestationFoundStr, sbomFoundStr)
+			} else {
+				line = fmt.Sprintf("%s\t%s\t%s\t\n", ci.PodName, ci.ContainerName, ci.ImageID)
+			}
+			podTableResult = fmt.Sprintf("%s%s", podTableResult, line)
+		}
+		writer2 := new(bytes.Buffer)
+		w2 := tabwriter.NewWriter(writer2, 0, 3, 3, ' ', 0)
+		_, _ = w2.Write([]byte(podTableResult))
+		w2.Flush()
+		podTableBytes := writer2.Bytes()
+		tmpTableStr := fmt.Sprintf("%s\n[RESOURCES - PODS/CONTAINERS]\n%s", string(tableBytes), string(podTableBytes))
+		tableBytes = []byte(tmpTableStr)
+	}
+
+	return tableBytes
+}
+
+// generate provenance result table which will be shown in output
+func makeProvenanceResultTable(result VerifyResourceResult) []byte {
+	provResult := result.Provenance
+	// provTableResult := "ARTIFACT\tTYPE\tATTESTATION FOUND\tSBOM FOUND\t\n"
+	attestationExists := false
+	sbomExists := false
+	for _, p := range provResult.Items {
+		// artifact := p.Artifact
+		// aType := p.ArtifactType
+		// atteFound := strconv.FormatBool(p.Attestation != "")
+		if p.Attestation != "" {
+			attestationExists = true
+		}
+		// sbomFound := strconv.FormatBool(p.SBOM != "")
+		if p.SBOM != "" {
+			sbomExists = true
+		}
+		// line := fmt.Sprintf("%s\t%s\t%s\t%s\t\n", artifact, aType, atteFound, sbomFound)
+		// provTableResult = fmt.Sprintf("%s%s", provTableResult, line)
+	}
+	// writer1 := new(bytes.Buffer)
+	// w1 := tabwriter.NewWriter(writer1, 0, 3, 3, ' ', 0)
+	// _, _ = w1.Write([]byte(provTableResult))
+	// w1.Flush()
+	// tableBytes := writer1.Bytes()
+	tableBytes := []byte{}
+
+	if attestationExists {
+		attestationTableResult := ""
+		for _, p := range provResult.Items {
+			if p.Attestation == "" {
+				continue
+			}
+			attestationSingleTableResult := ""
+			artifact := p.Artifact
+			line1 := fmt.Sprintf("ARTIFACT\t\t%s\t\n", artifact)
+			line2 := ""
+			for i, m := range p.AttestationMaterials {
+				materialLabel := fmt.Sprintf("MATERIALS %v", i+1)
+				line2 = fmt.Sprintf("%s%s\tURI\t%s\t\n", line2, materialLabel, m.URI)
+				for k, v := range m.Digest {
+					digestLabel := strings.ToUpper(k)
+					line2 = fmt.Sprintf("%s\t%s\t%s\t\n", line2, digestLabel, v)
+				}
+			}
+
+			attestationSingleTableResult = fmt.Sprintf("%s%s%s", attestationSingleTableResult, line1, line2)
+			writer2 := new(bytes.Buffer)
+			w2 := tabwriter.NewWriter(writer2, 0, 3, 3, ' ', 0)
+			_, _ = w2.Write([]byte(attestationSingleTableResult))
+			w2.Flush()
+			singleAttestationTableStr := string(writer2.Bytes())
+
+			curlCmd := k8smanifest.GenerateIntotoAttestationCurlCommand(p.AttestationLogIndex)
+			singleAttestationTableStr = fmt.Sprintf("%sTo get this attestation: %s\n\n", singleAttestationTableStr, curlCmd)
+			attestationTableResult = fmt.Sprintf("%s%s", attestationTableResult, singleAttestationTableStr)
+		}
+		tmpTableStr := fmt.Sprintf("[PROVENANCES - ATTESTATIONS]\n%s", attestationTableResult)
+		tableBytes = []byte(tmpTableStr)
+	}
+
+	if sbomExists {
+		sbomTableResult := ""
+		for _, p := range provResult.Items {
+			if p.SBOM == "" {
+				continue
+			}
+			artifact := p.Artifact
+			line1 := fmt.Sprintf("ARTIFACT\t%s\t\n", artifact)
+			line2 := fmt.Sprintf("SBOM NAME\t%s\t\n", p.SBOM)
+			tmpSBOMTableStr := fmt.Sprintf("%s%s", line1, line2)
+			writer3 := new(bytes.Buffer)
+			w3 := tabwriter.NewWriter(writer3, 0, 3, 3, ' ', 0)
+			_, _ = w3.Write([]byte(tmpSBOMTableStr))
+			w3.Flush()
+			tmpTableStr := string(writer3.Bytes())
+			sbomCmd := k8smanifest.GenerateSBOMDownloadCommand(artifact)
+			tmpTableResult := fmt.Sprintf("%sTo download SBOM: %s\n\n", tmpTableStr, sbomCmd)
+			sbomTableResult = fmt.Sprintf("%s%s", sbomTableResult, tmpTableResult)
+		}
+		tmpTableStr := fmt.Sprintf("%s\n[PROVENANCES - SBOMs]\n%s", string(tableBytes), sbomTableResult)
+		tableBytes = []byte(tmpTableStr)
+	}
+
 	return tableBytes
 }
 
@@ -469,11 +654,22 @@ type resourceResult struct {
 	Error  error                             `json:"-"`
 }
 
+type provenanceSummary struct {
+	Total     int      `json:"total"`
+	Artifacts []string `json:"artifacts"`
+}
+
+type provenanceResult struct {
+	Summary provenanceSummary        `json:"summary"`
+	Items   []k8smanifest.Provenance `json:"items"`
+}
+
 type VerifyResourceResult struct {
-	TypeMeta  metav1.TypeMeta  `json:""`
-	Summary   summary          `json:"summary"`
-	Images    []imageResult    `json:"images"`
-	Resources []resourceResult `json:"resources"`
+	metav1.TypeMeta `json:""`
+	Summary         summary           `json:"summary"`
+	Images          []imageResult     `json:"images"`
+	Resources       []resourceResult  `json:"resources"`
+	Provenance      *provenanceResult `json:"provenance,omitempty"`
 }
 
 // SingleResult contains a target object itself, but it is too much to show result.
@@ -514,7 +710,7 @@ func (r resourceResult) MarshalYAML() ([]byte, error) {
 	})
 }
 
-func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
+func NewVerifyResourceResult(results []resourceResult, provenanceEnabled bool) VerifyResourceResult {
 	summ := summary{}
 	images := []imageResult{}
 	resources := []resourceResult{}
@@ -522,6 +718,9 @@ func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
 	validCount := 0
 	invalidCount := 0
 	imageMap := map[string]bool{}
+	provenanceCount := 0
+	provenanceArtifactMap := map[string]bool{}
+	provenances := []k8smanifest.Provenance{}
 	for i := range results {
 		result := results[i]
 		if result.Result != nil && !result.Result.InScope {
@@ -545,12 +744,29 @@ func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
 				imageMap[imageRef] = true
 			}
 		}
+
+		if result.Result != nil && result.Result.Provenances != nil {
+			if provenanceEnabled {
+				for _, prov := range result.Result.Provenances {
+					artifact := prov.Artifact
+					if !provenanceArtifactMap[artifact] {
+						provenanceCount += 1
+						provenances = append(provenances, *prov)
+						provenanceArtifactMap[artifact] = true
+					}
+				}
+			}
+
+			// provenance will be displayed as a provenance result, and removed from a resource result
+			result.Result.Provenances = nil
+		}
+
 		resources = append(resources, result)
 	}
 	summ.Total = totalCount
 	summ.Valid = validCount
 	summ.Invalid = invalidCount
-	return VerifyResourceResult{
+	vrr := VerifyResourceResult{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: resultAPIVersion,
 			Kind:       resultKind,
@@ -559,6 +775,20 @@ func NewVerifyResourceResult(results []resourceResult) VerifyResourceResult {
 		Images:    images,
 		Resources: resources,
 	}
+	if provenanceEnabled {
+		provenanceArtifacts := []string{}
+		for artfct := range provenanceArtifactMap {
+			provenanceArtifacts = append(provenanceArtifacts, artfct)
+		}
+		vrr.Provenance = &provenanceResult{
+			Summary: provenanceSummary{
+				Total:     provenanceCount,
+				Artifacts: provenanceArtifacts,
+			},
+			Items: provenances,
+		}
+	}
+	return vrr
 }
 
 func obj2ref(obj unstructured.Unstructured) corev1.ObjectReference {

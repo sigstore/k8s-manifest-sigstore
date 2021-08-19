@@ -1,0 +1,562 @@
+//
+// Copyright 2021 The Sigstore Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package k8smanifest
+
+import (
+	"bytes"
+	"context"
+	"crypto/ecdsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
+
+	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
+	"github.com/go-openapi/runtime"
+	"github.com/sigstore/cosign/pkg/cosign"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	intoto "github.com/in-toto/in-toto-golang/in_toto"
+	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
+	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
+	"github.com/sigstore/rekor/pkg/client"
+	genclient "github.com/sigstore/rekor/pkg/generated/client"
+	"github.com/sigstore/rekor/pkg/generated/client/entries"
+	"github.com/sigstore/rekor/pkg/generated/client/index"
+	"github.com/sigstore/rekor/pkg/generated/models"
+	"github.com/sigstore/rekor/pkg/types"
+	_ "github.com/sigstore/rekor/pkg/types/intoto/v0.0.1"
+	rekorutil "github.com/sigstore/rekor/pkg/util"
+	tektonchainsprov "github.com/tektoncd/chains/pkg/chains/provenance"
+)
+
+type ArtifactType string
+
+const (
+	ArtifactUnknown          = ""
+	ArtifactManifestImage    = "manifestImage"
+	ArtifactManifestResource = "manifestResource"
+	ArtifactContainerImage   = "containerImage"
+)
+
+const (
+	AttestationDataKeyName = "attestation"
+	SBOMDataKeyName        = "sbom"
+)
+
+var onMemoryCacheForProvenance k8smnfutil.Cache = &k8smnfutil.OnMemoryCache{TTL: 30 * time.Second}
+
+type Provenance struct {
+	ResourceName         *resourceName        `json:"resource"`
+	Artifact             string               `json:"artifact"`
+	ArtifactType         ArtifactType         `json:"artifactType"`
+	Hash                 string               `json:"hash"`
+	Attestation          string               `json:"attestation"`
+	AttestationLogIndex  int                  `json:"attestationLogIndex"`
+	AttestationMaterials []ProvenanceMaterial `json:"attestationMaterials"`
+	SBOM                 string               `json:"sbom"`
+}
+
+type resourceName struct {
+	PodName       string `json:"podName"`
+	ContainerName string `json:"containerName"`
+}
+
+type ProvenanceGetter interface {
+	Get() ([]*Provenance, error)
+}
+
+func NewProvenanceGetter(obj *unstructured.Unstructured, imageRef, imageHash string) ProvenanceGetter {
+	if obj != nil {
+		return &RecursiveImageProvenanceGetter{object: obj, manifestImageRef: imageRef, cacheEnabled: true}
+	} else if imageRef != "" && imageRef != SigRefEmbeddedInAnnotation {
+		if imageHash == "" {
+			// TODO: get digest if empty
+		}
+		return &ImageProvenanceGetter{imageRef: imageRef, imageHash: imageHash, cacheEnabled: true}
+	} else {
+		return &NotImplementedProvenanceGetter{}
+	}
+}
+
+type RecursiveImageProvenanceGetter struct {
+	object           *unstructured.Unstructured
+	manifestImageRef string
+	cacheEnabled     bool
+}
+
+func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
+
+	provs := []*Provenance{}
+	// manifest provenance
+	if g.manifestImageRef != "" {
+		// manifest prov from image
+		log.Trace("manifest provenance imageDigest")
+		digest, err := g.imageDigest(g.manifestImageRef)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get manifest image digest")
+		}
+		log.Trace("manifest image provenance getter")
+		imgGetter := NewProvenanceGetter(nil, g.manifestImageRef, digest)
+		prov, err := imgGetter.Get()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get manifest image provenance")
+		}
+		for _, p := range prov {
+			p.ArtifactType = ArtifactManifestImage
+			provs = append(provs, p)
+		}
+	}
+
+	// container images from this object
+	if g.object != nil {
+		provsFromObject := []*Provenance{}
+		log.Trace("object provenance load")
+		images, err := kubeutil.GetAllImagesFromObject(g.object)
+		if err != nil {
+			return nil, err
+		}
+
+		sumErr := []string{}
+		for _, img := range images {
+			log.Trace("object provenance getter for image:", img.ImageRef)
+			imgGetter := NewProvenanceGetter(nil, img.ImageRef, img.Digest)
+			prov, err := imgGetter.Get()
+			if err != nil {
+				sumErr = append(sumErr, err.Error())
+				continue
+			}
+			for _, p := range prov {
+				p.ArtifactType = ArtifactContainerImage
+				p.ResourceName = &resourceName{
+					PodName:       img.PodName,
+					ContainerName: img.ContainerName,
+				}
+				provsFromObject = append(provsFromObject, p)
+			}
+		}
+		if len(provsFromObject) == 0 && len(sumErr) > 0 {
+			return nil, fmt.Errorf("failed to get provenance for this object: %s", strings.Join(sumErr, "; "))
+		}
+		provs = append(provs, provsFromObject...)
+	}
+
+	return provs, nil
+}
+
+func (g *RecursiveImageProvenanceGetter) imageDigest(imageRef string) (string, error) {
+	resultsNum := 2
+	cacheKey := fmt.Sprintf("RecursiveImageProvenanceGetter/imageDigest/%s", g.manifestImageRef)
+	digest := ""
+	var err error
+	if g.cacheEnabled {
+
+		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
+		cacheFound := false
+		if len(results) != resultsNum && cacheErr == nil {
+			return "", fmt.Errorf("the number of results is wrong, GetImageDigest() should return %v, got %v", resultsNum, len(results))
+		} else if len(results) == resultsNum && cacheErr == nil {
+			cacheFound = true
+		}
+
+		if cacheFound {
+			if results[0] != nil {
+				digest = results[0].(string)
+			}
+			if results[1] != nil {
+				err = results[1].(error)
+			}
+		} else {
+			log.Debug("image digest cache not found for image: ", imageRef)
+			digest, err = k8smnfutil.GetImageDigest(g.manifestImageRef)
+			err = onMemoryCacheForProvenance.Set(cacheKey, digest, err)
+			if err != nil {
+				log.Debug("failed to set image digest cache")
+			}
+		}
+	} else {
+		digest, err = k8smnfutil.GetImageDigest(g.manifestImageRef)
+	}
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get manifest image digest")
+	}
+	return digest, nil
+}
+
+type ImageProvenanceGetter struct {
+	imageRef     string
+	imageHash    string
+	cacheEnabled bool
+}
+
+func (g *ImageProvenanceGetter) Get() ([]*Provenance, error) {
+	sumErr := []string{}
+	log.Trace("ImageProvenanceGetter getAttestation()")
+	attestation, attestationLogIndex, err := g.getAttestation()
+	if err != nil {
+		log.Debug("getAttestation() error for image: ", g.imageRef, ", error: ", err.Error())
+		sumErr = append(sumErr, err.Error())
+	}
+	materials := []ProvenanceMaterial{}
+	if attestation != nil {
+		_, _, materials, _ = ParseAttestation(string(attestation))
+	}
+	log.Trace("ImageProvenanceGetter getSBOM()")
+	sbom, err := g.getSBOM()
+	if err != nil {
+		log.Debug("getSBOM() error for image: ", g.imageRef, ", error: ", err.Error())
+		sumErr = append(sumErr, err.Error())
+	}
+	if attestation == nil && sbom == "" && len(sumErr) > 0 {
+		return nil, fmt.Errorf("no provenance data fonud: %s", strings.Join(sumErr, "; "))
+	}
+	p := &Provenance{
+		Artifact:             g.imageRef,
+		Hash:                 g.imageHash,
+		Attestation:          string(attestation),
+		AttestationLogIndex:  attestationLogIndex,
+		AttestationMaterials: materials,
+		SBOM:                 sbom,
+	}
+	return []*Provenance{p}, nil
+}
+
+func (g *ImageProvenanceGetter) getAttestation() ([]byte, int, error) {
+
+	var attestationBytes []byte
+	var attestationLogIndex int
+	var err error
+	if g.cacheEnabled {
+		cacheKey := fmt.Sprintf("ImageProvenanceGetter/getAttestationEntry/%s", g.imageHash)
+		resultsNum := 3
+		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
+		cacheFound := false
+		if len(results) != resultsNum && cacheErr == nil {
+			return nil, -1, fmt.Errorf("the number of results is wrong, getAttestationEntry() should return %v, got %v", resultsNum, len(results))
+		} else if len(results) == resultsNum && cacheErr == nil {
+			cacheFound = true
+		}
+
+		if cacheFound {
+			if results[0] != nil {
+				attestationBytes = results[0].([]byte)
+			}
+			if results[1] != nil {
+				attestationLogIndex = results[1].(int)
+			}
+			if results[2] != nil {
+				err = results[2].(error)
+			}
+		} else {
+			log.Debug("attestation cache not found for image: ", g.imageRef, ", hash: ", g.imageHash)
+			attestationBytes, attestationLogIndex, err = getAttestationEntry(g.imageHash)
+			err = onMemoryCacheForProvenance.Set(cacheKey, attestationBytes, attestationLogIndex, err)
+			if err != nil {
+				log.Debug("failed to set attestation cache")
+			}
+		}
+	} else {
+		attestationBytes, attestationLogIndex, err = getAttestationEntry(g.imageHash)
+	}
+	if err != nil {
+		return nil, -1, errors.Wrap(err, "failed to get attestation data")
+	}
+	return attestationBytes, attestationLogIndex, nil
+}
+
+func (g *ImageProvenanceGetter) getSBOM() (string, error) {
+	sbomRef := ""
+	var err error
+	if g.cacheEnabled {
+		cacheKey := fmt.Sprintf("ImageProvenanceGetter/getSBOMRef/%s", g.imageRef)
+		resultsNum := 2
+		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
+		cacheFound := false
+		if len(results) != resultsNum && cacheErr == nil {
+			return "", fmt.Errorf("the number of results is wrong, getSBOMRef() should return %v, got %v", resultsNum, len(results))
+		} else if len(results) == resultsNum && cacheErr == nil {
+			cacheFound = true
+		}
+
+		if cacheFound {
+			if results[0] != nil {
+				sbomRef = results[0].(string)
+			}
+			if results[1] != nil {
+				err = results[1].(error)
+			}
+		} else {
+			log.Debug("sbom reference cache not found for image: ", g.imageRef)
+			sbomRef, err = g.getSBOMRef(g.imageRef)
+			err = onMemoryCacheForProvenance.Set(cacheKey, sbomRef, err)
+			if err != nil {
+				log.Debug("failed to set sbom reference cache")
+			}
+		}
+	} else {
+		sbomRef, err = g.getSBOMRef(g.imageRef)
+	}
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get sbom")
+	}
+	return sbomRef, nil
+}
+
+func (g *ImageProvenanceGetter) getSBOMRef(imageRef string) (string, error) {
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", err
+	}
+
+	auth := remote.WithAuthFromKeychain(authn.DefaultKeychain)
+
+	img, err := remote.Get(ref, auth)
+	if err != nil {
+		return "", err
+	}
+	imgDigest := img.Digest
+
+	repo := ref.Context()
+	dstRef := cosign.AttachedImageTag(repo, imgDigest, cosign.SBOMTagSuffix)
+	_, err = remote.Get(dstRef, auth)
+	if err != nil {
+		return "", err
+	}
+	return dstRef.String(), nil
+}
+
+type NotImplementedProvenanceGetter struct {
+}
+
+func (g *NotImplementedProvenanceGetter) Get() ([]*Provenance, error) {
+	return nil, fmt.Errorf("provenance getter for this object is not implemented yet")
+}
+
+func getAttestationEntry(hash string) ([]byte, int, error) {
+	rekorServerURL := k8scosign.GetRekorServerURL()
+	rekorClient, err := client.GetRekorClient(rekorServerURL)
+	if err != nil {
+		return nil, -1, err
+	}
+
+	// search tlog uuid by hash
+	params1 := index.NewSearchIndexParams()
+	params1.Query = &models.SearchIndex{
+		Hash: hash,
+	}
+
+	resp1, err := rekorClient.Index.SearchIndex(params1)
+	if err != nil {
+		switch t := err.(type) {
+		case *index.SearchIndexDefault:
+			if t.Code() == http.StatusNotImplemented {
+				return nil, -1, fmt.Errorf("search index not enabled on %v", rekorServerURL)
+			}
+			return nil, -1, err
+		default:
+			return nil, -1, err
+		}
+	}
+	uuids := resp1.GetPayload()
+	if len(uuids) == 0 {
+		return nil, -1, fmt.Errorf("attestation transparency log not found for hash: %s", hash)
+	}
+
+	// get tlog by uuid
+	uuid := uuids[0]
+
+	params2 := entries.NewGetLogEntryByUUIDParams()
+	params2.EntryUUID = uuid
+
+	resp2, err := rekorClient.Entries.GetLogEntryByUUID(params2)
+	if err != nil {
+		return nil, -1, err
+	}
+
+	for k, entry := range resp2.Payload {
+		if k != uuid {
+			continue
+		}
+
+		if verified, err := verifyLogEntry(context.Background(), rekorClient, entry); err != nil || !verified {
+			return nil, -1, fmt.Errorf("unable to verify entry was added to log %w", err)
+		}
+
+		attestationEntry, err := parseEntry(k, entry)
+		if err != nil {
+			return nil, -1, fmt.Errorf("unable to parse entry of tlog %w", err)
+		}
+		if attestationEntry.Attestation == "" {
+			return nil, -1, fmt.Errorf("no attestation found in tlog %w", err)
+		}
+		var decodedAttestation []byte
+		decodedAttestation, err = base64.StdEncoding.DecodeString(attestationEntry.Attestation)
+		if err != nil {
+			return nil, -1, fmt.Errorf("failed to decode base64 encoded attestation %w", err)
+		}
+		return decodedAttestation, attestationEntry.LogIndex, nil
+	}
+	return nil, -1, fmt.Errorf("attestation transparancy log not found for uuid: %s", uuid)
+}
+
+func verifyLogEntry(ctx context.Context, rekorClient *genclient.Rekor, logEntry models.LogEntryAnon) (bool, error) {
+	if logEntry.Verification == nil {
+		return false, nil
+	}
+	// verify the entry
+	if logEntry.Verification.SignedEntryTimestamp == nil {
+		return false, fmt.Errorf("signature missing")
+	}
+
+	le := &models.LogEntryAnon{
+		IntegratedTime: logEntry.IntegratedTime,
+		LogIndex:       logEntry.LogIndex,
+		Body:           logEntry.Body,
+		LogID:          logEntry.LogID,
+	}
+
+	payload, err := le.MarshalBinary()
+	if err != nil {
+		return false, err
+	}
+	canonicalized, err := jsoncanonicalizer.Transform(payload)
+	if err != nil {
+		return false, err
+	}
+
+	// get rekor's public key
+	rekorPubKey, err := rekorutil.PublicKey(ctx, rekorClient)
+	if err != nil {
+		return false, err
+	}
+
+	// verify the SET against the public key
+	hash := sha256.Sum256(canonicalized)
+	if !ecdsa.VerifyASN1(rekorPubKey, hash[:], []byte(logEntry.Verification.SignedEntryTimestamp)) {
+		return false, fmt.Errorf("unable to verify")
+	}
+	return true, nil
+}
+
+func parseEntry(uuid string, e models.LogEntryAnon) (*rekorCLIGetCmdOutput, error) {
+	b, err := base64.StdEncoding.DecodeString(e.Body.(string))
+	if err != nil {
+		return nil, err
+	}
+
+	pe, err := models.UnmarshalProposedEntry(bytes.NewReader(b), runtime.JSONConsumer())
+	if err != nil {
+		return nil, err
+	}
+	eimpl, err := types.NewEntry(pe)
+	if err != nil {
+		return nil, err
+	}
+
+	obj := &rekorCLIGetCmdOutput{
+		Attestation:     string(e.Attestation.Data),
+		AttestationType: e.Attestation.MediaType,
+		Body:            eimpl,
+		UUID:            uuid,
+		IntegratedTime:  *e.IntegratedTime,
+		LogIndex:        int(*e.LogIndex),
+		LogID:           *e.LogID,
+	}
+
+	return obj, nil
+}
+
+type rekorCLIGetCmdOutput struct {
+	Attestation     string
+	AttestationType string
+	Body            interface{}
+	LogIndex        int
+	IntegratedTime  int64
+	UUID            string
+	LogID           string
+}
+
+type DigestSet map[string]string
+
+type ProvenanceMaterial struct {
+	URI    string    `json:"uri"`
+	Digest DigestSet `json:"digest,omitempty"`
+}
+
+func ParseAttestation(attestationStr string) (*intoto.Statement, interface{}, []ProvenanceMaterial, error) {
+	var attestation *intoto.Statement
+	err := json.Unmarshal([]byte(attestationStr), &attestation)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	var predicate interface{}
+	materials := []ProvenanceMaterial{}
+	if attestation.PredicateType == "https://tekton.dev/chains/provenance" {
+		predicateBytes, _ := json.Marshal(attestation.Predicate)
+		var tmpPred tektonchainsprov.ProvenancePredicate
+		err := json.Unmarshal(predicateBytes, &tmpPred)
+		if err == nil {
+			predicate = &tmpPred
+			for _, m := range tmpPred.Materials {
+				digest := map[string]string{}
+				for k, v := range m.Digest {
+					digest[k] = v
+				}
+				materials = append(materials, ProvenanceMaterial{URI: m.URI, Digest: DigestSet(digest)})
+			}
+		}
+	} else if attestation.PredicateType == intoto.PredicateProvenanceV01 {
+		predicateBytes, _ := json.Marshal(attestation.Predicate)
+		var tmpPred intoto.ProvenancePredicate
+		err := json.Unmarshal(predicateBytes, &tmpPred)
+		if err == nil {
+			predicate = &tmpPred
+			for _, m := range tmpPred.Materials {
+				digest := map[string]string{}
+				for k, v := range m.Digest {
+					digest[k] = v
+				}
+				materials = append(materials, ProvenanceMaterial{URI: m.URI, Digest: DigestSet(digest)})
+			}
+		}
+	}
+	return attestation, predicate, materials, nil
+}
+
+func GenerateIntotoAttestationCurlCommand(logIndex int) string {
+	rekorServerURL := k8scosign.GetRekorServerURL()
+	logIndexStr := strconv.Itoa(logIndex)
+	cmdStr := fmt.Sprintf("curl -s \"%s/api/v1/log/entries/?logIndex=%s\"", rekorServerURL, logIndexStr)
+	return cmdStr
+}
+
+func GenerateSBOMDownloadCommand(imageRef string) string {
+	cmdStr := fmt.Sprintf("cosign download sbom %s", imageRef)
+	return cmdStr
+}
