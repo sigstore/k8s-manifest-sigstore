@@ -142,7 +142,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	}
 	// otherwise, use cosign.VerifyBundleCmd for verification
 
-	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
+	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
 

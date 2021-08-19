@@ -51,9 +51,7 @@ const (
 const signBlobTlogIndexLineIdentifier = "tlog entry created with index:"
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
-	// TODO: check usecase for yaml signing
-
-	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
+	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
 
@@ -86,7 +84,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {
-	// TODO: check sk (security key) and idToken (identity token for cert from fulcio)
+	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
 
@@ -113,6 +111,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	}
 
 	// TODO: find a better way to call cosigncli.SignBlobCmd() with interactive stdin and captured stdout
+	// might be better to make a PR to cosign so that SignBlobCmd() can reutrn not only signature but also tlog index and others
 	if opt.KeyRef != "" && opt.PassFunc != nil {
 		pw, err := opt.PassFunc(false)
 		if err != nil {

@@ -242,16 +242,6 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		}
 	}
 
-	// TODO: handle patch case
-	// // CASE4: dryrun patch match
-	// matched, diff, err = dryrunPatchMatch(objBytes, foundBytes)
-	// if err != nil {
-	// 	return false, errors.Wrap(err, "error occured during dryrun patch match")
-	// }
-	// if matched {
-	// 	return true, nil
-	// }
-
 	return false, diff, nil
 }
 

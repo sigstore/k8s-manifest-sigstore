@@ -106,9 +106,6 @@ func NewProvenanceGetter(obj *unstructured.Unstructured, sigRef, imageHash, prov
 	if obj != nil {
 		return &RecursiveImageProvenanceGetter{object: obj, manifestImageRef: imageRef, manifestProvenanceResourceRef: provResRef, cacheEnabled: true}
 	} else if imageRef != "" && imageRef != SigRefEmbeddedInAnnotation {
-		if imageHash == "" {
-			// TODO: get digest if empty
-		}
 		return &ImageProvenanceGetter{imageRef: imageRef, imageHash: imageHash, cacheEnabled: true}
 	} else if provResRef != "" {
 		return &ResourceProvenanceGetter{resourceRefString: provResRef}
