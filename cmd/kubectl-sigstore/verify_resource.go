@@ -63,6 +63,10 @@ const (
 	defaultConfigFieldPathConfigMap  = "data.\"config.yaml\""
 )
 
+const (
+	defaultManifetBundleNamespace = "manifest-bundles"
+)
+
 // This is common ignore fields for changes by k8s system
 //go:embed resources/default-config.yaml
 var defaultConfigBytes []byte
@@ -86,6 +90,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var disableDefaultConfig bool
 	var provenance bool
 	var provResRef string
+	var manifestBundleResRef string
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -111,6 +116,11 @@ func NewCmdVerifyResource() *cobra.Command {
 
 			configPath, configField = getConfigPathFromConfigFlags(configPath, configType, configKind, configName, configNamespace, configField)
 
+			if manifestBundleResRef != "" {
+				sigResRef = manifestBundleResRef
+				provResRef = manifestBundleResRef
+			}
+
 			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, disableDefaultConfig, provenance, provResRef, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
@@ -135,6 +145,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
+	cmd.PersistentFlags().StringVar(&manifestBundleResRef, "manifest-bundle-resource", "", "a comma-separated list of configmaps that contains signature, message, attestation, sbom")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 	return cmd
 }
@@ -193,7 +204,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		vo.ImageRef = imageRef
 	}
 	if sigResRef != "" {
-		vo.SignatureResourceRef = sigResRef
+		vo.SignatureResourceRef = validateConfigMapRef(sigResRef)
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
@@ -202,7 +213,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		vo.Provenance = true
 	}
 	if provResRef != "" {
-		vo.ProvenanceResourceRef = provResRef
+		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
 
 	results := []resourceResult{}
@@ -351,10 +362,10 @@ func makeResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte
 		return []byte("No resources found")
 	}
 	summaryTable := makeSummaryResultTable(result)
-	imageRefFound := len(result.Images) > 0
-	var imageTable []byte
-	if imageRefFound {
-		imageTable = makeImageResultTable(result, provenanceEnabled)
+	sigRefFound := len(result.Manifests) > 0
+	var manifestTable []byte
+	if sigRefFound {
+		manifestTable = makeManifestResultTable(result, provenanceEnabled)
 	}
 	resourceTable := makeResourceResultTable(result, provenanceEnabled)
 
@@ -364,8 +375,8 @@ func makeResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte
 	}
 
 	var resultTable string
-	if imageRefFound {
-		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[MANIFESTS]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(imageTable), string(resourceTable))
+	if sigRefFound {
+		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[MANIFESTS]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(manifestTable), string(resourceTable))
 	} else {
 		resultTable = fmt.Sprintf("[SUMMARY]\n%s\n[RESOURCES]\n%s", string(summaryTable), string(resourceTable))
 	}
@@ -388,33 +399,33 @@ func makeSummaryResultTable(result VerifyResourceResult) []byte {
 	return tableBytes
 }
 
-// generate image result table which will be shown in output
-func makeImageResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
+// generate manifest result table which will be shown in output
+func makeManifestResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
 	var tableResult string
 	if provenanceEnabled {
 		tableResult = "NAME\tSIGNED\tSIGNER\tATTESTATION\tSBOM\t\n"
 	} else {
 		tableResult = "NAME\tSIGNED\tSIGNER\t\n"
 	}
-	for i := range result.Images {
-		imgResult := result.Images[i]
+	for i := range result.Manifests {
+		manifestResult := result.Manifests[i]
 		// sigAge := ""
-		// if imgResult.SignedTime != nil {
-		// 	t := imgResult.SignedTime
+		// if manifestResult.SignedTime != nil {
+		// 	t := manifestResult.SignedTime
 		// 	sigAge = getAge(metav1.Time{Time: *t})
 		// }
 
-		// currently image table is showing only signed images, so `signed` is always true
-		// TODO: update this to show all related images even if the one is not signed
+		// currently manifest table is showing only signed manifest, so `signed` is always true
+		// TODO: update this to show all related manifests even if the one is not signed
 		signed := true
 		signedStr := strconv.FormatBool(signed)
 
 		signer := ""
 		if signed {
-			if imgResult.Signer == "" {
+			if manifestResult.Signer == "" {
 				signer = "N/A"
 			} else {
-				signer = imgResult.Signer
+				signer = manifestResult.Signer
 			}
 		}
 
@@ -422,20 +433,22 @@ func makeImageResultTable(result VerifyResourceResult, provenanceEnabled bool) [
 			attestationFoundStr := "-"
 			sbomFoundStr := "-"
 			for _, prov := range result.Provenance.Items {
-				if prov.Artifact != imgResult.Name {
+				isProvForManifestImage := (prov.ArtifactType == k8smanifest.ArtifactManifestImage)
+				isProvForManifestResource := (prov.ArtifactType == k8smanifest.ArtifactManifestResource)
+				if !isProvForManifestImage && !isProvForManifestResource {
 					continue
 				}
-				if prov.Attestation != "" {
+				if prov.RawAttestation != "" {
 					attestationFoundStr = "found"
 				}
-				if prov.SBOM != "" {
+				if prov.SBOMRef != "" {
 					sbomFoundStr = "found"
 				}
 				break
 			}
-			tableResult += fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", imgResult.Name, signedStr, signer, attestationFoundStr, sbomFoundStr)
+			tableResult += fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", manifestResult.Name, signedStr, signer, attestationFoundStr, sbomFoundStr)
 		} else {
-			tableResult += fmt.Sprintf("%s\t%s\t%s\t\n", imgResult.Name, signedStr, signer)
+			tableResult += fmt.Sprintf("%s\t%s\t%s\t\n", manifestResult.Name, signedStr, signer)
 		}
 
 	}
@@ -449,10 +462,10 @@ func makeImageResultTable(result VerifyResourceResult, provenanceEnabled bool) [
 
 // generate resource result table which will be shown in output
 func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
-	mutipleImagesFound := len(result.Images) >= 2
+	mutipleManifestsFound := len(result.Manifests) >= 2
 
 	var resourceTableResult string
-	if mutipleImagesFound {
+	if mutipleManifestsFound {
 		resourceTableResult = "KIND\tNAME\tVALID\tSIG_REF\tERROR\tAGE\t\n"
 	} else {
 		resourceTableResult = "KIND\tNAME\tVALID\tERROR\tAGE\t\n"
@@ -493,7 +506,7 @@ func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool
 		}
 		// make a row string
 		var line string
-		if mutipleImagesFound {
+		if mutipleManifestsFound {
 			line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, sigRef, reason, resAge)
 		} else {
 			line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", resKind, resName, valid, reason, resAge)
@@ -527,10 +540,10 @@ func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool
 					if prov.Artifact != ci.ImageRef {
 						continue
 					}
-					if prov.Attestation != "" {
+					if prov.RawAttestation != "" {
 						attestationFoundStr = "found"
 					}
-					if prov.SBOM != "" {
+					if prov.SBOMRef != "" {
 						sbomFoundStr = "found"
 					}
 					break
@@ -563,11 +576,11 @@ func makeProvenanceResultTable(result VerifyResourceResult) []byte {
 		// artifact := p.Artifact
 		// aType := p.ArtifactType
 		// atteFound := strconv.FormatBool(p.Attestation != "")
-		if p.Attestation != "" {
+		if p.RawAttestation != "" {
 			attestationExists = true
 		}
 		// sbomFound := strconv.FormatBool(p.SBOM != "")
-		if p.SBOM != "" {
+		if p.SBOMRef != "" {
 			sbomExists = true
 		}
 		// line := fmt.Sprintf("%s\t%s\t%s\t%s\t\n", artifact, aType, atteFound, sbomFound)
@@ -583,7 +596,7 @@ func makeProvenanceResultTable(result VerifyResourceResult) []byte {
 	if attestationExists {
 		attestationTableResult := ""
 		for _, p := range provResult.Items {
-			if p.Attestation == "" {
+			if p.RawAttestation == "" {
 				continue
 			}
 			attestationSingleTableResult := ""
@@ -605,10 +618,16 @@ func makeProvenanceResultTable(result VerifyResourceResult) []byte {
 			_, _ = w2.Write([]byte(attestationSingleTableResult))
 			w2.Flush()
 			singleAttestationTableStr := string(writer2.Bytes())
-
-			curlCmd := k8smanifest.GenerateIntotoAttestationCurlCommand(p.AttestationLogIndex)
-			singleAttestationTableStr = fmt.Sprintf("%sTo get this attestation: %s\n\n", singleAttestationTableStr, curlCmd)
+			if p.AttestationLogIndex != nil {
+				attestationLogIndex := *(p.AttestationLogIndex)
+				curlCmd := k8smanifest.GenerateIntotoAttestationCurlCommand(attestationLogIndex)
+				singleAttestationTableStr = fmt.Sprintf("%sTo get this attestation: %s\n\n", singleAttestationTableStr, curlCmd)
+			} else if p.ConfigMapRef != "" {
+				curlCmd := k8smanifest.GenerateIntotoAttestationKubectlCommand(p.ConfigMapRef)
+				singleAttestationTableStr = fmt.Sprintf("%sTo get this attestation: %s\n\n", singleAttestationTableStr, curlCmd)
+			}
 			attestationTableResult = fmt.Sprintf("%s%s", attestationTableResult, singleAttestationTableStr)
+
 		}
 		tmpTableStr := fmt.Sprintf("[PROVENANCES - ATTESTATIONS]\n%s", attestationTableResult)
 		tableBytes = []byte(tmpTableStr)
@@ -617,21 +636,26 @@ func makeProvenanceResultTable(result VerifyResourceResult) []byte {
 	if sbomExists {
 		sbomTableResult := ""
 		for _, p := range provResult.Items {
-			if p.SBOM == "" {
+			if p.SBOMRef == "" {
 				continue
 			}
 			artifact := p.Artifact
 			line1 := fmt.Sprintf("ARTIFACT\t%s\t\n", artifact)
-			line2 := fmt.Sprintf("SBOM NAME\t%s\t\n", p.SBOM)
+			line2 := fmt.Sprintf("SBOM NAME\t%s\t\n", p.SBOMRef)
 			tmpSBOMTableStr := fmt.Sprintf("%s%s", line1, line2)
 			writer3 := new(bytes.Buffer)
 			w3 := tabwriter.NewWriter(writer3, 0, 3, 3, ' ', 0)
 			_, _ = w3.Write([]byte(tmpSBOMTableStr))
 			w3.Flush()
 			tmpTableStr := string(writer3.Bytes())
-			sbomCmd := k8smanifest.GenerateSBOMDownloadCommand(artifact)
-			tmpTableResult := fmt.Sprintf("%sTo download SBOM: %s\n\n", tmpTableStr, sbomCmd)
-			sbomTableResult = fmt.Sprintf("%s%s", sbomTableResult, tmpTableResult)
+			if p.SBOMRef != "" {
+				sbomCmd := k8smanifest.GenerateSBOMDownloadCommand(artifact)
+				tmpTableStr = fmt.Sprintf("%sTo download SBOM: %s\n\n", tmpTableStr, sbomCmd)
+			} else if p.ConfigMapRef != "" {
+				sbomCmd := k8smanifest.GenerateSBOMDownloadCommand(p.ConfigMapRef)
+				tmpTableStr = fmt.Sprintf("%sTo download SBOM: %s\n\n", tmpTableStr, sbomCmd)
+			}
+			sbomTableResult = fmt.Sprintf("%s%s", sbomTableResult, tmpTableStr)
 		}
 		tmpTableStr := fmt.Sprintf("%s\n[PROVENANCES - SBOMs]\n%s", string(tableBytes), sbomTableResult)
 		tableBytes = []byte(tmpTableStr)
@@ -651,7 +675,7 @@ type summary struct {
 	Invalid int `json:"invalid"`
 }
 
-type imageResult struct {
+type manifestResult struct {
 	Name       string     `json:"name"`
 	Signer     string     `json:"signer"`
 	SignedTime *time.Time `json:"signedTime"`
@@ -676,7 +700,7 @@ type provenanceResult struct {
 type VerifyResourceResult struct {
 	metav1.TypeMeta `json:""`
 	Summary         summary           `json:"summary"`
-	Images          []imageResult     `json:"images"`
+	Manifests       []manifestResult  `json:"manifests"`
 	Resources       []resourceResult  `json:"resources"`
 	Provenance      *provenanceResult `json:"provenance,omitempty"`
 }
@@ -721,12 +745,12 @@ func (r resourceResult) MarshalYAML() ([]byte, error) {
 
 func NewVerifyResourceResult(results []resourceResult, provenanceEnabled bool) VerifyResourceResult {
 	summ := summary{}
-	images := []imageResult{}
+	manifests := []manifestResult{}
 	resources := []resourceResult{}
 	totalCount := 0
 	validCount := 0
 	invalidCount := 0
-	imageMap := map[string]bool{}
+	manifestMap := map[string]bool{}
 	provenanceCount := 0
 	provenanceArtifactMap := map[string]bool{}
 	provenances := []k8smanifest.Provenance{}
@@ -743,14 +767,14 @@ func NewVerifyResourceResult(results []resourceResult, provenanceEnabled bool) V
 		totalCount += 1
 
 		if result.Result != nil && result.Result.SigRef != "" && result.Result.SigRef != k8smanifest.SigRefEmbeddedInAnnotation {
-			imageRef := result.Result.SigRef
-			if !imageMap[imageRef] {
-				images = append(images, imageResult{
-					Name:       imageRef,
+			manifestRef := result.Result.SigRef
+			if !manifestMap[manifestRef] {
+				manifests = append(manifests, manifestResult{
+					Name:       manifestRef,
 					Signer:     result.Result.Signer,
 					SignedTime: result.Result.SignedTime,
 				})
-				imageMap[imageRef] = true
+				manifestMap[manifestRef] = true
 			}
 		}
 
@@ -781,7 +805,7 @@ func NewVerifyResourceResult(results []resourceResult, provenanceEnabled bool) V
 			Kind:       resultKind,
 		},
 		Summary:   summ,
-		Images:    images,
+		Manifests: manifests,
 		Resources: resources,
 	}
 	if provenanceEnabled {
@@ -865,4 +889,19 @@ func objsToConcatYAML(objs []unstructured.Unstructured) []byte {
 	}
 	concatYAMl := k8ssigutil.ConcatenateYAMLs(yamls)
 	return concatYAMl
+}
+
+func validateConfigMapRef(cmRefString string) string {
+	parts := k8ssigutil.SplitCommaSeparatedString(cmRefString)
+	validatedParts := []string{}
+	for _, p := range parts {
+		var validP string
+		if strings.HasPrefix(p, k8smanifest.InClusterObjectPrefix) {
+			validP = p
+		} else {
+			validP = fmt.Sprintf("%s%s/%s/%s", k8smanifest.InClusterObjectPrefix, "ConfigMap", defaultManifetBundleNamespace, p)
+		}
+		validatedParts = append(validatedParts, validP)
+	}
+	return strings.Join(validatedParts, ",")
 }

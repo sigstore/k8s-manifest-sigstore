@@ -146,3 +146,11 @@ func SplitRule(rules string) []string {
 	}
 	return result
 }
+
+func SplitCommaSeparatedString(in string) []string {
+	parts := strings.Split(in, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}

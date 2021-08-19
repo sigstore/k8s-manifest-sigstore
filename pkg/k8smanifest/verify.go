@@ -93,7 +93,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	pubkeyPathString := v.pubkeyPathString
 	var pubkeys []string
 	if pubkeyPathString != nil && *pubkeyPathString != "" {
-		pubkeys = splitCommaSeparatedString(*pubkeyPathString)
+		pubkeys = k8smnfutil.SplitCommaSeparatedString(*pubkeyPathString)
 	} else {
 		pubkeys = []string{""}
 	}
@@ -331,7 +331,7 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		maxResourceManifestNumPtr = &f.maxResourceManifestNum
 	}
 
-	imageRefList := splitCommaSeparatedString(imageRefString)
+	imageRefList := k8smnfutil.SplitCommaSeparatedString(imageRefString)
 	for _, imageRef := range imageRefList {
 		concatYAMLbytes, err := f.fetchManifestInSingleImage(imageRef)
 		if err != nil {
@@ -374,7 +374,7 @@ func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleImageRef string)
 
 func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 	imageRefString := f.imageRefString
-	imageRefList := splitCommaSeparatedString(imageRefString)
+	imageRefList := k8smnfutil.SplitCommaSeparatedString(imageRefString)
 
 	yamls := [][]byte{}
 	for _, imageRef := range imageRefList {
@@ -386,14 +386,6 @@ func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 		yamls = append(yamls, yamlsInImage...)
 	}
 	return yamls, nil
-}
-
-func splitCommaSeparatedString(in string) []string {
-	parts := strings.Split(in, ",")
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-	}
-	return parts
 }
 
 func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byte, error) {
@@ -493,7 +485,7 @@ func (f *ResourceManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, 
 		maxResourceManifestNumPtr = &f.maxResourceManifestNum
 	}
 
-	resourceRefList := splitCommaSeparatedString(resourceRefString)
+	resourceRefList := k8smnfutil.SplitCommaSeparatedString(resourceRefString)
 	for _, resourceRef := range resourceRefList {
 		concatYAMLbytes, err := f.fetchManifestInSingleConfigMap(resourceRef)
 		if err != nil {
