@@ -39,13 +39,14 @@ type SignOption struct {
 	commonOption `json:""`
 
 	// these options should be input from CLI arguments
-	KeyPath          string                 `json:"-"`
-	ImageRef         string                 `json:"-"`
-	CertPath         string                 `json:"-"`
-	Output           string                 `json:"-"`
-	UpdateAnnotation bool                   `json:"-"`
-	ImageAnnotations map[string]interface{} `json:"-"`
-	PassFunc         cosign.PassFunc        `json:"-"`
+	KeyPath           string                 `json:"-"`
+	ImageRef          string                 `json:"-"`
+	CertPath          string                 `json:"-"`
+	Output            string                 `json:"-"`
+	UpdateAnnotation  bool                   `json:"-"`
+	ImageAnnotations  map[string]interface{} `json:"-"`
+	PassFunc          cosign.PassFunc        `json:"-"`
+	ApplySigConfigMap bool                   `json:"-"`
 }
 
 // option for VerifyResource()
@@ -89,10 +90,12 @@ type verifyOption struct {
 	MaxResourceManifestNum int `json:"maxResourceManifestNum,omitempty"`
 
 	// these options should be input from CLI arguments
-	KeyPath  string `json:"-"`
-	ImageRef string `json:"-"`
-	UseCache bool   `json:"-"`
-	CacheDir string `json:"-"`
+	KeyPath               string `json:"-"`
+	ImageRef              string `json:"-"`
+	SignatureResourceRef  string `json:"-"`
+	ProvenanceResourceRef string `json:"-"`
+	UseCache              bool   `json:"-"`
+	CacheDir              string `json:"-"`
 
 	annotationKeyToIgnoreFields bool `json:"-"`
 }

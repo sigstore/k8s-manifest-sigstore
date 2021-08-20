@@ -25,16 +25,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 )
 
@@ -55,7 +60,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
+	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, output, so.ApplySigConfigMap, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -67,7 +72,7 @@ type Signer interface {
 	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
-func NewSigner(imageRef, keyPath, certPath string, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
+func NewSigner(imageRef, keyPath, certPath, output string, doApply bool, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
 	var prikeyPath *string
 	if keyPath != "" {
 		prikeyPath = &keyPath
@@ -76,10 +81,14 @@ func NewSigner(imageRef, keyPath, certPath string, AnnotationConfig AnnotationCo
 	if certPath != "" {
 		certPathP = &certPath
 	}
-	if imageRef == "" {
-		return &AnnotationSigner{AnnotationConfig: AnnotationConfig, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
-	} else {
+	createSigConfigMap := false
+	if strings.HasPrefix(output, InClusterObjectPrefix) {
+		createSigConfigMap = true
+	}
+	if imageRef != "" {
 		return &ImageSigner{AnnotationConfig: AnnotationConfig, imageRef: imageRef, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+	} else {
+		return &BlobSigner{AnnotationConfig: AnnotationConfig, createSigConfigMap: createSigConfigMap, doApply: doApply, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	}
 }
 
@@ -126,14 +135,16 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 	return signedBytes, nil
 }
 
-type AnnotationSigner struct {
-	AnnotationConfig AnnotationConfig
-	prikeyPath       *string
-	certPath         *string
-	passFunc         cosign.PassFunc
+type BlobSigner struct {
+	AnnotationConfig   AnnotationConfig
+	createSigConfigMap bool
+	doApply            bool
+	prikeyPath         *string
+	certPath           *string
+	passFunc           cosign.PassFunc
 }
 
-func (s *AnnotationSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
+func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
 	var inputDataBuffer bytes.Buffer
 	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
 	if err != nil {
@@ -161,7 +172,28 @@ func (s *AnnotationSigner) Sign(inputDir, output string, imageAnnotations map[st
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign a blob file")
 	}
-	if output != "" {
+	if s.createSigConfigMap {
+		cm, err := generateSignatureConfigMap(output, sigMaps)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate a signature configmap")
+		}
+		if s.doApply {
+			signedBytes, err = applySignatureConfigMap(output, cm)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to apply a signature configmap")
+			}
+		} else {
+			signedBytes, err = yaml.Marshal(cm)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to marshal a signature configmap")
+			}
+			sigResOutput := K8sResourceRef2FileName(output)
+			err = ioutil.WriteFile(sigResOutput, signedBytes, 0644)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to create a signature configmap YAML")
+			}
+		}
+	} else {
 		// generate a signed YAML file
 		signedBytes, err = generateSignedYAMLManifest(inputDir, "", sigMaps, imageAnnotations, s.AnnotationConfig)
 		if err != nil {
@@ -205,6 +237,28 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 		return err
 	}
 	return nil
+}
+
+func generateSignatureConfigMap(sigResRef string, sigMaps map[string][]byte) (*corev1.ConfigMap, error) {
+	kind, ns, name, err := parseObjectInCluster(sigResRef)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse a signature configmap reference `%s`", sigResRef)
+	}
+	if kind != "ConfigMap" && kind != "configmaps" && kind != "cm" {
+		return nil, errors.Wrapf(err, "output k8s reference must be k8s://ConfigMap/[NAMESPACE]/[NAME], but got `%s`", sigResRef)
+	}
+	sigData := map[string]string{}
+	for k, v := range sigMaps {
+		sigData[k] = string(v)
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Name:      name,
+		},
+		Data: sigData,
+	}
+	return cm, nil
 }
 
 func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte, imageAnnotations map[string]interface{}, AnnotationConfig AnnotationConfig) ([]byte, error) {
@@ -283,4 +337,43 @@ func embedAnnotation(yamlBytes []byte, annotationMap map[string]interface{}) ([]
 	}
 	embedYamlBytes := embedNode.ToYaml()
 	return []byte(embedYamlBytes), nil
+}
+
+func applySignatureConfigMap(configMapRef string, newCM *corev1.ConfigMap) ([]byte, error) {
+	create := false
+	currentCM, _ := GetConfigMapFromK8sObjectRef(configMapRef)
+	if currentCM == nil {
+		create = true
+	}
+	namespace := newCM.GetNamespace()
+	kcfg, err := kubeutil.GetKubeConfig()
+	if err != nil {
+		return nil, err
+	}
+	v1client, err := corev1client.NewForConfig(kcfg)
+	if err != nil {
+		return nil, err
+	}
+	var applied *corev1.ConfigMap
+	if create {
+		applied, err = v1client.ConfigMaps(namespace).Create(context.Background(), newCM, metav1.CreateOptions{})
+	} else {
+		currentCM.Data = newCM.Data
+		updatedCM := currentCM
+		applied, err = v1client.ConfigMaps(namespace).Update(context.Background(), updatedCM, metav1.UpdateOptions{})
+	}
+	if err != nil {
+		return nil, err
+	}
+	appliedBytes, err := yaml.Marshal(applied)
+	if err != nil {
+		return nil, err
+	}
+	return appliedBytes, nil
+}
+
+// sanitize resrouce ref as a filename
+// e.g.) k8s://ConfigMap/sample-ns/sample-cm --> k8s_ConfigMap_sample-ns_sample-cm.yaml
+func K8sResourceRef2FileName(resRef string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(resRef, InClusterObjectPrefix, "k8s/"), "/", "_") + ".yaml"
 }

@@ -60,8 +60,10 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	var err error
 
 	imageRefString := ""
+	sigResourceRefString := ""
 	if vo != nil {
 		imageRefString = vo.ImageRef
+		sigResourceRefString = vo.SignatureResourceRef
 	}
 
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
@@ -100,7 +102,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
@@ -146,7 +148,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	provenances := []*Provenance{}
 	if vo.Provenance {
-		provenances, err = NewProvenanceGetter(&obj, sigRef, "").Get()
+		provenances, err = NewProvenanceGetter(&obj, sigRef, "", vo.ProvenanceResourceRef).Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get provenance")
 		}
@@ -239,16 +241,6 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 			return true, nil, nil
 		}
 	}
-
-	// TODO: handle patch case
-	// // CASE4: dryrun patch match
-	// matched, diff, err = dryrunPatchMatch(objBytes, foundBytes)
-	// if err != nil {
-	// 	return false, errors.Wrap(err, "error occured during dryrun patch match")
-	// }
-	// if matched {
-	// 	return true, nil
-	// }
 
 	return false, diff, nil
 }

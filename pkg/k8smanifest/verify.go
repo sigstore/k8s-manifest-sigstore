@@ -24,14 +24,15 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
-
 	k8smnfcosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	mapnode "github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 	sigtypes "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes"
 	pgp "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/pgp"
 	x509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
+	log "github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const SigRefEmbeddedInAnnotation = "__embedded_in_annotation__"
@@ -46,7 +47,14 @@ type SignatureVerifier interface {
 	Verify() (bool, string, *int64, error)
 }
 
-func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
+func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
+	var imageRef, resourceRef string
+	if strings.HasPrefix(sigRef, InClusterObjectPrefix) {
+		resourceRef = sigRef
+	} else if sigRef != "" {
+		imageRef = sigRef
+	}
+
 	imageRefAnnotationKey := annotationConfig.ImageRefAnnotationKey()
 	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 	if imageRef == "" {
@@ -60,10 +68,10 @@ func NewSignatureVerifier(objYAMLBytes []byte, imageRef string, pubkeyPath *stri
 		pubkeyPathString = pubkeyPath
 	}
 
-	if imageRef == "" || imageRef == SigRefEmbeddedInAnnotation {
-		return &AnnotationSignatureVerifier{annotations: annotations, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
-	} else {
+	if imageRef != "" && imageRef != SigRefEmbeddedInAnnotation {
 		return &ImageSignatureVerifier{imageRef: imageRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
+	} else {
+		return &BlobSignatureVerifier{annotations: annotations, resourceRef: resourceRef, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
 	}
 }
 
@@ -83,7 +91,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	pubkeyPathString := v.pubkeyPathString
 	var pubkeys []string
 	if pubkeyPathString != nil && *pubkeyPathString != "" {
-		pubkeys = splitCommaSeparatedString(*pubkeyPathString)
+		pubkeys = k8smnfutil.SplitCommaSeparatedString(*pubkeyPathString)
 	} else {
 		pubkeys = []string{""}
 	}
@@ -171,43 +179,23 @@ func (v *ImageSignatureVerifier) setResultToMemCache(imageRef, pubkey string, ve
 	_ = onMemoryCacheForVerifyResource.Set(key, verified, signerName, signedTimestamp, err)
 }
 
-type AnnotationSignatureVerifier struct {
+type BlobSignatureVerifier struct {
 	annotations      map[string]string
+	resourceRef      string
 	pubkeyPathString *string
 	annotationConfig AnnotationConfig
 }
 
-func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
-	annotations := v.annotations
+func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
+	sigMap, err := v.getSignatures()
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "failed to get signature")
+	}
 
-	messageAnnotationKey := v.annotationConfig.MessageAnnotationKey()
-	msg, ok := annotations[messageAnnotationKey]
-	if !ok {
-		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", messageAnnotationKey)
-	}
-	signatureAnnotationKey := v.annotationConfig.SignatureAnnotationKey()
-	sig, ok := annotations[signatureAnnotationKey]
-	if !ok {
-		return false, "", nil, fmt.Errorf("`%s` is not found in the annotations", signatureAnnotationKey)
-	}
-	certificateAnnotationKey := v.annotationConfig.CertificateAnnotationKey()
-	budnleAnnotationKey := v.annotationConfig.BundleAnnotationKey()
-	cert := annotations[certificateAnnotationKey]
-	bundle := annotations[budnleAnnotationKey]
-
-	var msgBytes, sigBytes, certBytes, bundleBytes []byte
-	if msg != "" {
-		msgBytes = []byte(msg)
-	}
-	if sig != "" {
-		sigBytes = []byte(sig)
-	}
-	if cert != "" {
-		certBytes = []byte(cert)
-	}
-	if bundle != "" {
-		bundleBytes = []byte(bundle)
-	}
+	msgBytes := sigMap[MessageAnnotationBaseName]
+	sigBytes := sigMap[SignatureAnnotationBaseName]
+	certBytes := sigMap[CertificateAnnotationBaseName]
+	bundleBytes := sigMap[BundleAnnotationBaseName]
 
 	sigType := sigtypes.GetSignatureTypeFromPublicKey(v.pubkeyPathString)
 	if sigType == sigtypes.SigTypeUnknown {
@@ -223,6 +211,58 @@ func (v *AnnotationSignatureVerifier) Verify() (bool, string, *int64, error) {
 	return false, "", nil, errors.New("unknown error")
 }
 
+func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
+	sigMap := map[string][]byte{}
+	var msg, sig, cert, bundle string
+	var ok bool
+	if v.resourceRef != "" {
+		cmRef := v.resourceRef
+		cm, err := GetConfigMapFromK8sObjectRef(cmRef)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get a configmap")
+		}
+		msg, ok = cm.Data[MessageAnnotationBaseName]
+		if !ok {
+			return nil, fmt.Errorf("`%s` is not found in the configmap %s", MessageAnnotationBaseName, cmRef)
+		}
+		sig, ok = cm.Data[SignatureAnnotationBaseName]
+		if !ok {
+			return nil, fmt.Errorf("`%s` is not found in the configmap %s", SignatureAnnotationBaseName, cmRef)
+		}
+		cert = cm.Data[CertificateAnnotationBaseName]
+		bundle = cm.Data[BundleAnnotationBaseName]
+	} else {
+		annotations := v.annotations
+		messageAnnotationKey := v.annotationConfig.MessageAnnotationKey()
+		msg, ok = annotations[messageAnnotationKey]
+		if !ok {
+			return nil, fmt.Errorf("`%s` is not found in the annotations", messageAnnotationKey)
+		}
+		signatureAnnotationKey := v.annotationConfig.SignatureAnnotationKey()
+		sig, ok = annotations[signatureAnnotationKey]
+		if !ok {
+			return nil, fmt.Errorf("`%s` is not found in the annotations", signatureAnnotationKey)
+		}
+		certificateAnnotationKey := v.annotationConfig.CertificateAnnotationKey()
+		budnleAnnotationKey := v.annotationConfig.BundleAnnotationKey()
+		cert = annotations[certificateAnnotationKey]
+		bundle = annotations[budnleAnnotationKey]
+	}
+	if msg != "" {
+		sigMap[MessageAnnotationBaseName] = []byte(msg)
+	}
+	if sig != "" {
+		sigMap[SignatureAnnotationBaseName] = []byte(sig)
+	}
+	if cert != "" {
+		sigMap[CertificateAnnotationBaseName] = []byte(cert)
+	}
+	if bundle != "" {
+		sigMap[BundleAnnotationBaseName] = []byte(bundle)
+	}
+	return sigMap, nil
+}
+
 // This is an interface for fetching YAML manifest
 // a function Fetch() fetches a YAML manifest which matches the input object's kind, name and so on
 type ManifestFetcher interface {
@@ -233,11 +273,11 @@ type ManifestFetcher interface {
 // `imageRef` is used for judging if manifest is inside an image or not.
 // `annotationConfig` is used for annotation domain config like "cosign.sigstore.dev".
 // `ignoreFields` and `maxResourceManifestNum` are used inside manifest detection logic.
-func NewManifestFetcher(imageRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
-	if imageRef == "" {
-		return &AnnotationManifestFetcher{AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
-	} else {
+func NewManifestFetcher(imageRef, resourceRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
+	if imageRef != "" {
 		return &ImageManifestFetcher{imageRefString: imageRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, onMemoryCacheEnabled: true}
+	} else {
+		return &BlobManifestFetcher{AnnotationConfig: annotationConfig, resourceRefString: resourceRef, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	}
 }
 
@@ -268,7 +308,7 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		maxResourceManifestNumPtr = &f.maxResourceManifestNum
 	}
 
-	imageRefList := splitCommaSeparatedString(imageRefString)
+	imageRefList := k8smnfutil.SplitCommaSeparatedString(imageRefString)
 	for _, imageRef := range imageRefList {
 		concatYAMLbytes, err := f.fetchManifestInSingleImage(imageRef)
 		if err != nil {
@@ -311,7 +351,7 @@ func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleImageRef string)
 
 func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 	imageRefString := f.imageRefString
-	imageRefList := splitCommaSeparatedString(imageRefString)
+	imageRefList := k8smnfutil.SplitCommaSeparatedString(imageRefString)
 
 	yamls := [][]byte{}
 	for _, imageRef := range imageRefList {
@@ -323,14 +363,6 @@ func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 		yamls = append(yamls, yamlsInImage...)
 	}
 	return yamls, nil
-}
-
-func splitCommaSeparatedString(in string) []string {
-	parts := strings.Split(in, ",")
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-	}
-	return parts
 }
 
 func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byte, error) {
@@ -371,13 +403,17 @@ func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAML
 	_ = onMemoryCacheForVerifyResource.Set(key, concatYAMLbytes, err)
 }
 
-type AnnotationManifestFetcher struct {
+type BlobManifestFetcher struct {
 	AnnotationConfig       AnnotationConfig
+	resourceRefString      string
 	ignoreFields           []string // used by ManifestSearchByValue()
 	maxResourceManifestNum int      // used by ManifestSearchByValue()
 }
 
-func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
+func (f *BlobManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
+	if f.resourceRefString != "" {
+		return f.fetchManifestFromResource(objYAMLBytes)
+	}
 
 	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
 
@@ -412,6 +448,55 @@ func (f *AnnotationManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string
 	return resourceManifests, SigRefEmbeddedInAnnotation, nil
 }
 
+func (f *BlobManifestFetcher) fetchManifestFromResource(objYAMLBytes []byte) ([][]byte, string, error) {
+	resourceRefString := f.resourceRefString
+	if resourceRefString == "" {
+		return nil, "", errors.New("no signature resource reference is specified")
+	}
+
+	var maxResourceManifestNumPtr *int
+	if f.maxResourceManifestNum > 0 {
+		maxResourceManifestNumPtr = &f.maxResourceManifestNum
+	}
+
+	resourceRefList := k8smnfutil.SplitCommaSeparatedString(resourceRefString)
+	for _, resourceRef := range resourceRefList {
+		concatYAMLbytes, err := f.fetchManifestInSingleConfigMap(resourceRef)
+		if err != nil {
+			return nil, "", err
+		}
+		found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxResourceManifestNumPtr, f.ignoreFields)
+		if found {
+			return resourceManifests, resourceRef, nil
+		}
+	}
+	return nil, "", errors.New("failed to find a YAML manifest in the specified signature configmaps")
+}
+
+func (f *BlobManifestFetcher) fetchManifestInSingleConfigMap(singleCMRef string) ([]byte, error) {
+	cm, err := GetConfigMapFromK8sObjectRef(singleCMRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get a configmap")
+	}
+	base64Msg, messageFound := cm.Data[MessageAnnotationBaseName]
+	if !messageFound {
+		return nil, fmt.Errorf("failed to find `%s` in a configmap %s", MessageAnnotationBaseName, cm.GetName())
+	}
+	gzipMsg, err := base64.StdEncoding.DecodeString(base64Msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to decode base64 message in the configmap")
+	}
+	// `gzipMsg` is a gzip compressed .tar.gz file, so get a tar ball by decompressing it
+	gzipTarBall := k8smnfutil.GzipDecompress(gzipMsg)
+
+	yamls, err := k8smnfutil.GetYAMLsInArtifact(gzipTarBall)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read YAMLs in the gzipped message")
+	}
+	concatYAMLbytes := k8smnfutil.ConcatenateYAMLs(yamls)
+	return concatYAMLbytes, nil
+}
+
 type VerifyResult struct {
 	Verified bool                `json:"verified"`
 	Signer   string              `json:"signer"`
@@ -421,4 +506,28 @@ type VerifyResult struct {
 func (r *VerifyResult) String() string {
 	rB, _ := json.Marshal(r)
 	return string(rB)
+}
+
+func GetConfigMapFromK8sObjectRef(objRef string) (*corev1.ConfigMap, error) {
+	kind, ns, name, err := parseObjectInCluster(objRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse a configmap reference")
+	}
+	if kind != "ConfigMap" && kind != "configmaps" && kind != "cm" {
+		return nil, fmt.Errorf("configmap reference must be \"k8s://ConfigMap/[NAMESPACE]/[NAME]\", but got %s", objRef)
+	}
+	cmObj, err := kubeutil.GetResource("", kind, ns, name)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get a configmap")
+	}
+	cmBytes, err := json.Marshal(cmObj.Object)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal a configmap")
+	}
+	var cm *corev1.ConfigMap
+	err = json.Unmarshal(cmBytes, &cm)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to unmarshal a configmap bytes")
+	}
+	return cm, nil
 }

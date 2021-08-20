@@ -72,14 +72,20 @@ const (
 var onMemoryCacheForProvenance k8smnfutil.Cache = &k8smnfutil.OnMemoryCache{TTL: 30 * time.Second}
 
 type Provenance struct {
-	ResourceName         *resourceName        `json:"resource"`
+	ResourceName *resourceName `json:"resource"`
+
+	RawAttestation string `json:"rawAttestation"`
+	RawSBOM        string `json:"rawSBOM"`
+
 	Artifact             string               `json:"artifact"`
 	ArtifactType         ArtifactType         `json:"artifactType"`
 	Hash                 string               `json:"hash"`
-	Attestation          string               `json:"attestation"`
-	AttestationLogIndex  int                  `json:"attestationLogIndex"`
+	AttestationLogIndex  *int                 `json:"attestationLogIndex"`
 	AttestationMaterials []ProvenanceMaterial `json:"attestationMaterials"`
-	SBOM                 string               `json:"sbom"`
+
+	SBOMRef string `json:"sbom"`
+
+	ConfigMapRef string `json:"configMapRef"`
 }
 
 type resourceName struct {
@@ -91,23 +97,28 @@ type ProvenanceGetter interface {
 	Get() ([]*Provenance, error)
 }
 
-func NewProvenanceGetter(obj *unstructured.Unstructured, imageRef, imageHash string) ProvenanceGetter {
+func NewProvenanceGetter(obj *unstructured.Unstructured, sigRef, imageHash, provResRef string) ProvenanceGetter {
+	var imageRef string
+	if !strings.HasPrefix(sigRef, InClusterObjectPrefix) {
+		imageRef = sigRef
+	}
+
 	if obj != nil {
-		return &RecursiveImageProvenanceGetter{object: obj, manifestImageRef: imageRef, cacheEnabled: true}
+		return &RecursiveImageProvenanceGetter{object: obj, manifestImageRef: imageRef, manifestProvenanceResourceRef: provResRef, cacheEnabled: true}
 	} else if imageRef != "" && imageRef != SigRefEmbeddedInAnnotation {
-		if imageHash == "" {
-			// TODO: get digest if empty
-		}
 		return &ImageProvenanceGetter{imageRef: imageRef, imageHash: imageHash, cacheEnabled: true}
+	} else if provResRef != "" {
+		return &ResourceProvenanceGetter{resourceRefString: provResRef}
 	} else {
 		return &NotImplementedProvenanceGetter{}
 	}
 }
 
 type RecursiveImageProvenanceGetter struct {
-	object           *unstructured.Unstructured
-	manifestImageRef string
-	cacheEnabled     bool
+	object                        *unstructured.Unstructured
+	manifestImageRef              string
+	manifestProvenanceResourceRef string
+	cacheEnabled                  bool
 }
 
 func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
@@ -122,13 +133,25 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 			return nil, errors.Wrap(err, "failed to get manifest image digest")
 		}
 		log.Trace("manifest image provenance getter")
-		imgGetter := NewProvenanceGetter(nil, g.manifestImageRef, digest)
+		imgGetter := NewProvenanceGetter(nil, g.manifestImageRef, digest, "")
 		prov, err := imgGetter.Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get manifest image provenance")
 		}
 		for _, p := range prov {
 			p.ArtifactType = ArtifactManifestImage
+			provs = append(provs, p)
+		}
+	} else if g.manifestProvenanceResourceRef != "" {
+		// manifest prov from resource
+		log.Trace("manifest resource provenance getter")
+		resGetter := NewProvenanceGetter(nil, "", "", g.manifestProvenanceResourceRef)
+		prov, err := resGetter.Get()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get manifest resource provenance")
+		}
+		for _, p := range prov {
+			p.ArtifactType = ArtifactManifestResource
 			provs = append(provs, p)
 		}
 	}
@@ -145,7 +168,7 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 		sumErr := []string{}
 		for _, img := range images {
 			log.Trace("object provenance getter for image:", img.ImageRef)
-			imgGetter := NewProvenanceGetter(nil, img.ImageRef, img.Digest)
+			imgGetter := NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
 			prov, err := imgGetter.Get()
 			if err != nil {
 				sumErr = append(sumErr, err.Error())
@@ -236,20 +259,20 @@ func (g *ImageProvenanceGetter) Get() ([]*Provenance, error) {
 		return nil, fmt.Errorf("no provenance data fonud: %s", strings.Join(sumErr, "; "))
 	}
 	p := &Provenance{
+		RawAttestation:       string(attestation),
 		Artifact:             g.imageRef,
 		Hash:                 g.imageHash,
-		Attestation:          string(attestation),
 		AttestationLogIndex:  attestationLogIndex,
 		AttestationMaterials: materials,
-		SBOM:                 sbom,
+		SBOMRef:              sbom,
 	}
 	return []*Provenance{p}, nil
 }
 
-func (g *ImageProvenanceGetter) getAttestation() ([]byte, int, error) {
+func (g *ImageProvenanceGetter) getAttestation() ([]byte, *int, error) {
 
 	var attestationBytes []byte
-	var attestationLogIndex int
+	var attestationLogIndex *int
 	var err error
 	if g.cacheEnabled {
 		cacheKey := fmt.Sprintf("ImageProvenanceGetter/getAttestationEntry/%s", g.imageHash)
@@ -257,7 +280,7 @@ func (g *ImageProvenanceGetter) getAttestation() ([]byte, int, error) {
 		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
 		cacheFound := false
 		if len(results) != resultsNum && cacheErr == nil {
-			return nil, -1, fmt.Errorf("the number of results is wrong, getAttestationEntry() should return %v, got %v", resultsNum, len(results))
+			return nil, nil, fmt.Errorf("the number of results is wrong, getAttestationEntry() should return %v, got %v", resultsNum, len(results))
 		} else if len(results) == resultsNum && cacheErr == nil {
 			cacheFound = true
 		}
@@ -267,7 +290,7 @@ func (g *ImageProvenanceGetter) getAttestation() ([]byte, int, error) {
 				attestationBytes = results[0].([]byte)
 			}
 			if results[1] != nil {
-				attestationLogIndex = results[1].(int)
+				attestationLogIndex = results[1].(*int)
 			}
 			if results[2] != nil {
 				err = results[2].(error)
@@ -284,7 +307,7 @@ func (g *ImageProvenanceGetter) getAttestation() ([]byte, int, error) {
 		attestationBytes, attestationLogIndex, err = getAttestationEntry(g.imageHash)
 	}
 	if err != nil {
-		return nil, -1, errors.Wrap(err, "failed to get attestation data")
+		return nil, nil, errors.Wrap(err, "failed to get attestation data")
 	}
 	return attestationBytes, attestationLogIndex, nil
 }
@@ -350,6 +373,74 @@ func (g *ImageProvenanceGetter) getSBOMRef(imageRef string) (string, error) {
 	return dstRef.String(), nil
 }
 
+type ResourceProvenanceGetter struct {
+	resourceRefString string
+}
+
+func (g *ResourceProvenanceGetter) Get() ([]*Provenance, error) {
+	resourceRefString := g.resourceRefString
+	if resourceRefString == "" {
+		return nil, errors.New("no signature resource reference is specified")
+	}
+
+	provList := []*Provenance{}
+	resourceRefList := k8smnfutil.SplitCommaSeparatedString(resourceRefString)
+	for _, resourceRef := range resourceRefList {
+		prov, err := g.getProvenanceInSingleConfigMap(resourceRef)
+		if err != nil {
+			return nil, err
+		}
+		provList = append(provList, prov)
+	}
+	return provList, nil
+}
+
+func (g *ResourceProvenanceGetter) getProvenanceInSingleConfigMap(singleCMRef string) (*Provenance, error) {
+	cm, err := GetConfigMapFromK8sObjectRef(singleCMRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get a configmap")
+	}
+	base64atst, atstFound := cm.Data[AttestationDataKeyName]
+	base64sbom, sbomFound := cm.Data[SBOMDataKeyName]
+	if !atstFound && !sbomFound {
+		return nil, fmt.Errorf("no fields named `%s` and `%s`", AttestationDataKeyName, SBOMDataKeyName)
+	}
+	var atstBytes, sbomBytes []byte
+	if atstFound {
+		atstBytes, err = base64.StdEncoding.DecodeString(base64atst)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to base64 decode the found attestation")
+		}
+	}
+	if sbomFound {
+		sbomBytes, err = base64.StdEncoding.DecodeString(base64sbom)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to base64 decode the found sbom")
+		}
+	}
+	var statement *intoto.Statement
+	materials := []ProvenanceMaterial{}
+	if atstBytes != nil {
+		statement, _, materials, _ = ParseAttestation(string(atstBytes))
+	}
+	var artifact string
+	var artifactHash string
+
+	if statement != nil && len(statement.Subject) > 0 {
+		artifact = statement.Subject[0].Name
+		artifactHash = statement.Subject[0].Digest["sha256"]
+	}
+	prov := &Provenance{
+		RawAttestation:       string(atstBytes),
+		RawSBOM:              string(sbomBytes),
+		Artifact:             artifact,
+		Hash:                 artifactHash,
+		AttestationMaterials: materials,
+		ConfigMapRef:         singleCMRef,
+	}
+	return prov, nil
+}
+
 type NotImplementedProvenanceGetter struct {
 }
 
@@ -357,11 +448,11 @@ func (g *NotImplementedProvenanceGetter) Get() ([]*Provenance, error) {
 	return nil, fmt.Errorf("provenance getter for this object is not implemented yet")
 }
 
-func getAttestationEntry(hash string) ([]byte, int, error) {
+func getAttestationEntry(hash string) ([]byte, *int, error) {
 	rekorServerURL := k8scosign.GetRekorServerURL()
 	rekorClient, err := client.GetRekorClient(rekorServerURL)
 	if err != nil {
-		return nil, -1, err
+		return nil, nil, err
 	}
 
 	// search tlog uuid by hash
@@ -375,16 +466,16 @@ func getAttestationEntry(hash string) ([]byte, int, error) {
 		switch t := err.(type) {
 		case *index.SearchIndexDefault:
 			if t.Code() == http.StatusNotImplemented {
-				return nil, -1, fmt.Errorf("search index not enabled on %v", rekorServerURL)
+				return nil, nil, fmt.Errorf("search index not enabled on %v", rekorServerURL)
 			}
-			return nil, -1, err
+			return nil, nil, err
 		default:
-			return nil, -1, err
+			return nil, nil, err
 		}
 	}
 	uuids := resp1.GetPayload()
 	if len(uuids) == 0 {
-		return nil, -1, fmt.Errorf("attestation transparency log not found for hash: %s", hash)
+		return nil, nil, fmt.Errorf("attestation transparency log not found for hash: %s", hash)
 	}
 
 	// get tlog by uuid
@@ -395,7 +486,7 @@ func getAttestationEntry(hash string) ([]byte, int, error) {
 
 	resp2, err := rekorClient.Entries.GetLogEntryByUUID(params2)
 	if err != nil {
-		return nil, -1, err
+		return nil, nil, err
 	}
 
 	for k, entry := range resp2.Payload {
@@ -404,24 +495,25 @@ func getAttestationEntry(hash string) ([]byte, int, error) {
 		}
 
 		if verified, err := verifyLogEntry(context.Background(), rekorClient, entry); err != nil || !verified {
-			return nil, -1, fmt.Errorf("unable to verify entry was added to log %w", err)
+			return nil, nil, fmt.Errorf("unable to verify entry was added to log %w", err)
 		}
 
 		attestationEntry, err := parseEntry(k, entry)
 		if err != nil {
-			return nil, -1, fmt.Errorf("unable to parse entry of tlog %w", err)
+			return nil, nil, fmt.Errorf("unable to parse entry of tlog %w", err)
 		}
 		if attestationEntry.Attestation == "" {
-			return nil, -1, fmt.Errorf("no attestation found in tlog %w", err)
+			return nil, nil, fmt.Errorf("no attestation found in tlog %w", err)
 		}
 		var decodedAttestation []byte
 		decodedAttestation, err = base64.StdEncoding.DecodeString(attestationEntry.Attestation)
 		if err != nil {
-			return nil, -1, fmt.Errorf("failed to decode base64 encoded attestation %w", err)
+			return nil, nil, fmt.Errorf("failed to decode base64 encoded attestation %w", err)
 		}
-		return decodedAttestation, attestationEntry.LogIndex, nil
+		attestationLogIndexNum := attestationEntry.LogIndex
+		return decodedAttestation, &attestationLogIndexNum, nil
 	}
-	return nil, -1, fmt.Errorf("attestation transparancy log not found for uuid: %s", uuid)
+	return nil, nil, fmt.Errorf("attestation transparancy log not found for uuid: %s", uuid)
 }
 
 func verifyLogEntry(ctx context.Context, rekorClient *genclient.Rekor, logEntry models.LogEntryAnon) (bool, error) {
@@ -556,7 +648,19 @@ func GenerateIntotoAttestationCurlCommand(logIndex int) string {
 	return cmdStr
 }
 
+func GenerateIntotoAttestationKubectlCommand(resourceRef string) string {
+	kind, ns, name, _ := parseObjectInCluster(resourceRef)
+	cmdStr := fmt.Sprintf("kubectl get %s -n %s %s -o=jsonpath='{.data.%s}'", kind, ns, name, AttestationDataKeyName)
+	return cmdStr
+}
+
 func GenerateSBOMDownloadCommand(imageRef string) string {
 	cmdStr := fmt.Sprintf("cosign download sbom %s", imageRef)
+	return cmdStr
+}
+
+func GenerateSBOMKubectlCommand(resourceRef string) string {
+	kind, ns, name, _ := parseObjectInCluster(resourceRef)
+	cmdStr := fmt.Sprintf("kubectl get %s -n %s %s -o=jsonpath='{.data.%s}'", kind, ns, name, SBOMDataKeyName)
 	return cmdStr
 }
