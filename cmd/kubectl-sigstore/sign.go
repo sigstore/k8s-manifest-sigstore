@@ -35,6 +35,7 @@ func NewCmdSign() *cobra.Command {
 	var inputDir string
 	var keyPath string
 	var output string
+	var applySignatureConfigMap bool
 	var updateAnnotation bool
 	var imageAnnotations []string
 	cmd := &cobra.Command{
@@ -42,7 +43,7 @@ func NewCmdSign() *cobra.Command {
 		Short: "A command to sign Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := sign(inputDir, imageRef, keyPath, output, updateAnnotation, imageAnnotations)
+			err := sign(inputDir, imageRef, keyPath, output, applySignatureConfigMap, updateAnnotation, imageAnnotations)
 			if err != nil {
 				log.Fatalf("error occurred during signing: %s", err.Error())
 				return nil
@@ -55,13 +56,14 @@ func NewCmdSign() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "image name which bundles yaml files and be signed")
 	cmd.PersistentFlags().StringVarP(&output, "output", "o", "", "output file name or k8s signature configmap reference (if empty, use `<filename>.signed`)")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
+	cmd.PersistentFlags().BoolVar(&applySignatureConfigMap, "apply-signature-configmap", false, "whether to apply a generated signature configmap only when `output` is k8s configmap")
 	cmd.PersistentFlags().BoolVar(&updateAnnotation, "annotation-metadata", true, "whether to update annotation and generate signed yaml file")
 	cmd.PersistentFlags().StringArrayVarP(&imageAnnotations, "annotation", "a", []string{}, "extra key=value pairs to sign")
 
 	return cmd
 }
 
-func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, annotations []string) error {
+func sign(inputDir, imageRef, keyPath, output string, applySignatureConfigMap, updateAnnotation bool, annotations []string) error {
 	if output == "" && updateAnnotation {
 		if isDir, _ := k8smnfutil.IsDir(inputDir); isDir {
 			// e.g.) "./yamls/" --> "./yamls/manifest.yaml.signed"
@@ -85,12 +87,20 @@ func sign(inputDir, imageRef, keyPath, output string, updateAnnotation bool, ann
 		ImageAnnotations: anntns,
 	}
 
+	if applySignatureConfigMap && strings.HasPrefix(output, k8smanifest.InClusterObjectPrefix) {
+		so.ApplySigConfigMap = true
+	}
+
 	_, err = k8smanifest.Sign(inputDir, so)
 	if err != nil {
 		return err
 	}
 	if so.UpdateAnnotation {
-		log.Info("signed manifest generated at ", output)
+		finalOutput := output
+		if strings.HasPrefix(output, k8smanifest.InClusterObjectPrefix) && !applySignatureConfigMap {
+			finalOutput = k8smanifest.K8sResourceRef2FileName(output)
+		}
+		log.Info("signed manifest generated at ", finalOutput)
 	}
 	return nil
 }
