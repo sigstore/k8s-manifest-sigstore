@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -65,8 +66,7 @@ func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string
 	if err != nil {
 		return errors.Wrap(err, "failed to get current working directory")
 	}
-	// baseDir = filepath.Clean(filepath.Join(wd, baseDir))
-	// TODO: support additinoal args for kustomize command
+	// TODO: support additinoal args for kustomize build command
 	manifest, err := kustbuildutil.KustomizeExec(wd, "build", baseDir)
 	if err != nil {
 		return errors.Wrap(err, "failed to execute kustomize build")
@@ -76,6 +76,10 @@ func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string
 	if err != nil {
 		return errors.Wrap(err, "failed to create a manifest file")
 	}
+	// TODO: support uploading manifest image
+	// if imageRef != "" {
+	//
+	// }
 	digest, err := kustbuildutil.GetDigestOfArtifact(manifestFile)
 	if err != nil {
 		return errors.Wrap(err, "failed to get a digest of a generated manifest file")
@@ -84,7 +88,7 @@ func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string
 	finishTime := time.Now().UTC()
 	recipeCmds := []string{"kubectl", "sigstore"}
 	recipeCmds = append(recipeCmds, os.Args[1:]...)
-	prov, err := kustbuildutil.GenerateProvenance(provenancePath, digest, baseDir, startTime, finishTime, recipeCmds)
+	prov, err := kustbuildutil.GenerateProvenance(manifestFile, digest, baseDir, startTime, finishTime, recipeCmds)
 	if err != nil {
 		return errors.Wrap(err, "failed to generate a provenance")
 	}
@@ -92,25 +96,25 @@ func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal provenance")
 	}
-	tmpProvFile := "./provenance.json"
-	err = ioutil.WriteFile(tmpProvFile, provBytes, 0644)
+	provFile := provenancePath
+	err = ioutil.WriteFile(provFile, provBytes, 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to create a provenance file")
 	}
 
 	if signProvenance && keyPath != "" {
-		attestation, err := kustbuildutil.GenerateAttestation(tmpProvFile, keyPath)
+		attestation, err := kustbuildutil.GenerateAttestation(provFile, keyPath)
 		if err != nil {
-			return errors.Wrap(err, "failed to generate an attestation data")
+			return errors.Wrap(err, "failed to generate an provenance rekor entry data")
 		}
 		attestationBytes, err := json.Marshal(attestation)
 		if err != nil {
-			return errors.Wrap(err, "failed to marshal an attestation data")
+			return errors.Wrap(err, "failed to marshal a rekor entry data")
 		}
-		tmpAttestationFile := "./attestation.json"
-		err = ioutil.WriteFile(tmpAttestationFile, attestationBytes, 0644)
+		rekorEntryFile := strings.TrimSuffix(provenancePath, ".json") + "-entry.json"
+		err = ioutil.WriteFile(rekorEntryFile, attestationBytes, 0644)
 		if err != nil {
-			return errors.Wrap(err, "failed to create an attestation file")
+			return errors.Wrap(err, "failed to create a rekor entry file")
 		}
 	}
 
