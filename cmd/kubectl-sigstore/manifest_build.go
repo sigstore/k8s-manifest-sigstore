@@ -18,6 +18,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -27,6 +28,10 @@ import (
 	kustbuildutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/manifestbuild/kustomize"
 	"github.com/spf13/cobra"
 )
+
+var supportedMode = []string{
+	"--kustomize",
+}
 
 func NewCmdManifestBuild() *cobra.Command {
 
@@ -61,6 +66,11 @@ func NewCmdManifestBuild() *cobra.Command {
 }
 
 func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string, kustomizeMode, signProvenance bool) error {
+
+	if !kustomizeMode {
+		return fmt.Errorf("only the following manifest types are supported: %v", supportedMode)
+	}
+
 	startTime := time.Now().UTC()
 	wd, err := os.Getwd()
 	if err != nil {
