@@ -43,6 +43,8 @@ type KustomizationResource struct {
 	File    *FileInfo
 }
 
+// it loads a kustomization.yaml in a specified base dir and its resources and bases even in remote repository.
+// then it returns a list of resources that have file hash info for files and commit digest info for remote repos.
 func LoadKustomization(fpath, baseDir string, inRemoteRepo bool) ([]*KustomizationResource, error) {
 	isDir, err := IsDir(fpath)
 	if err != nil {
@@ -140,6 +142,7 @@ func LoadKustomization(fpath, baseDir string, inRemoteRepo bool) ([]*Kustomizati
 	return resources, nil
 }
 
+// get a sha 256 hash for a file
 func Sha256Hash(fpath string) (string, error) {
 	f, err := os.Open(fpath)
 	if err != nil {
@@ -215,6 +218,7 @@ func parseGitURLinKustomization(urlInKustomization string) (string, string, stri
 	return host + orgRepo + gitSuff, gitRef, path
 }
 
+// execute command in a specified dir
 func CmdExec(baseCmd, dir string, args ...string) (string, error) {
 	cmd := exec.Command(baseCmd, args...)
 	var stdout bytes.Buffer
@@ -232,10 +236,12 @@ func CmdExec(baseCmd, dir string, args ...string) (string, error) {
 	return out, nil
 }
 
+// execute kustomize command
 func KustomizeExec(dir string, args ...string) (string, error) {
 	return CmdExec(kustCmd, dir, args...)
 }
 
+// returns if a resource in kustomization.yaml is a git repo or not
 func IsRepositoryResource(path string) bool {
 	host, orgRepo, _, _, _ := parseGitUrl(path)
 	if host != "" && orgRepo != "" {
@@ -244,10 +250,12 @@ func IsRepositoryResource(path string) bool {
 	return false
 }
 
+// returns if a resource in kustomization.yaml is a local file/dir or not
 func IsFileResource(path string) bool {
 	return !IsRepositoryResource(path)
 }
 
+// returns if a filepath is pointing a file or not
 func IsFile(name string) (bool, error) {
 	isDir, err := IsDir(name)
 	if err != nil {
@@ -256,6 +264,7 @@ func IsFile(name string) (bool, error) {
 	return !isDir, nil
 }
 
+// returns if a filepath is pointing a directory or not
 func IsDir(name string) (bool, error) {
 	fInfo, err := os.Stat(name)
 	if err != nil {
@@ -264,6 +273,7 @@ func IsDir(name string) (bool, error) {
 	return fInfo.IsDir(), nil
 }
 
+// returns if a filepath exists or not
 func FileExists(fpath string) bool {
 	if _, err := os.Stat(fpath); err == nil {
 		return true

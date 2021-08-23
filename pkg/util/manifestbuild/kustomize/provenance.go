@@ -42,6 +42,8 @@ import (
 
 const cosignPwdEnvKey = "COSIGN_PASSWORD"
 
+// generate provenance data by checking kustomization.yaml and its sub resources
+// all local files and remote repos are included in `materials` of a generated provenance
 func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, finishTime time.Time, recipeCmd []string) (*intoto.Statement, error) {
 
 	subjects := []intoto.Subject{}
@@ -83,6 +85,9 @@ func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, f
 	return it, nil
 }
 
+// generate a rekor entry data by signing a specified provenance with private key
+// the output data contains a base64 encoded provenance and its signature.
+// it can be used in `rekor-cli upload --artifact xxxxx`.
 func GenerateAttestation(provPath, privKeyPath string) (*ssl.Envelope, error) {
 	b, err := ioutil.ReadFile(provPath)
 	if err != nil {
@@ -120,6 +125,9 @@ func GenerateAttestation(provPath, privKeyPath string) (*ssl.Envelope, error) {
 	return envelope, nil
 }
 
+// get a digest of artifact by checking artifact type
+// when the artifact is local file --> sha256 file hash
+//                   is OCI image --> image digest
 func GetDigestOfArtifact(artifactPath string) (string, error) {
 	var digest string
 	var err error
@@ -133,6 +141,7 @@ func GetDigestOfArtifact(artifactPath string) (string, error) {
 	return digest, err
 }
 
+// overwrite `subject` in provenance with a specified artifact
 func OverwriteArtifactInProvenance(provPath, overwriteArtifact string) (string, error) {
 	b, err := ioutil.ReadFile(provPath)
 	if err != nil {
@@ -213,6 +222,7 @@ func resourceToMaterial(kr *KustomizationResource) *intoto.ProvenanceMaterial {
 	return nil
 }
 
+// returns image digest
 func GetImageDigest(imageRef string) (string, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
@@ -234,6 +244,7 @@ type IntotoSigner struct {
 	priv *ecdsa.PrivateKey
 }
 
+// sign a provenance data
 func (it *IntotoSigner) Sign(data []byte) ([]byte, string, error) {
 	h := sha256.Sum256(data)
 	sig, err := it.priv.Sign(rand.Reader, h[:], crypto.SHA256)
@@ -243,6 +254,7 @@ func (it *IntotoSigner) Sign(data []byte) ([]byte, string, error) {
 	return sig, "", nil
 }
 
+// sverify a provenance data and its signature
 func (it *IntotoSigner) Verify(_ string, data, sig []byte) error {
 	h := sha256.Sum256(data)
 	ok := ecdsa.VerifyASN1(&it.priv.PublicKey, h[:], sig)
