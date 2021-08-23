@@ -45,7 +45,32 @@ type KustomizationResource struct {
 
 // it loads a kustomization.yaml in a specified base dir and its resources and bases even in remote repository.
 // then it returns a list of resources that have file hash info for files and commit digest info for remote repos.
-func LoadKustomization(fpath, baseDir string, inRemoteRepo bool) ([]*KustomizationResource, error) {
+func LoadKustomization(fpath, baseDir, gitURL, gitRevision string, inRemoteRepo bool) ([]*KustomizationResource, error) {
+	// in case that root kustomization in a repository
+	if gitURL != "" && gitRevision != "" {
+		var tmpURL string
+		if fpath == "" {
+			tmpURL = gitURL
+		} else {
+			tmpURL = fmt.Sprintf("%s%s", gitURL, fpath)
+		}
+		resURL := fmt.Sprintf("%s?ref=%s", tmpURL, gitRevision)
+		repo, err := prepareBaseDirForRemoteRepository(resURL)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create a directory for a git repository resource %s", resURL)
+		}
+		kustPath := filepath.Join(repo.RootDir, repo.Path, kustomizationFileName)
+		repoBaseDir := filepath.Join(repo.RootDir, repo.Path)
+		rr := &KustomizationResource{GitRepo: repo}
+		resources := []*KustomizationResource{rr}
+		remoteResources, err := LoadKustomization(kustPath, repoBaseDir, "", "", true)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to load resources in a git repository %s", resURL)
+		}
+		resources = append(resources, remoteResources...)
+		return resources, nil
+	}
+	// otherwise
 	isDir, err := IsDir(fpath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to judge if %s is directory or not", fpath)
@@ -90,7 +115,7 @@ func LoadKustomization(fpath, baseDir string, inRemoteRepo bool) ([]*Kustomizati
 			repoBaseDir := filepath.Join(repo.RootDir, repo.Path)
 			rr := &KustomizationResource{GitRepo: repo}
 			resources = append(resources, rr)
-			remoteResources, err := LoadKustomization(kustPath, repoBaseDir, true)
+			remoteResources, err := LoadKustomization(kustPath, repoBaseDir, "", "", true)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to load resources in a git repository %s", res)
 			}
@@ -130,7 +155,7 @@ func LoadKustomization(fpath, baseDir string, inRemoteRepo bool) ([]*Kustomizati
 				}
 				// load a sub kustomization.yaml
 				kustFileDir := filepath.Dir(kustFile)
-				subResources, err := LoadKustomization(kustFile, kustFileDir, inRemoteRepo)
+				subResources, err := LoadKustomization(kustFile, kustFileDir, "", "", inRemoteRepo)
 				if err != nil {
 					return nil, errors.Wrapf(err, "failed to load a kustomization file %s", kustFile)
 				}
@@ -239,6 +264,11 @@ func CmdExec(baseCmd, dir string, args ...string) (string, error) {
 // execute kustomize command
 func KustomizeExec(dir string, args ...string) (string, error) {
 	return CmdExec(kustCmd, dir, args...)
+}
+
+// execute git command
+func GitExec(dir string, args ...string) (string, error) {
+	return CmdExec(gitCmd, dir, args...)
 }
 
 // returns if a resource in kustomization.yaml is a git repo or not

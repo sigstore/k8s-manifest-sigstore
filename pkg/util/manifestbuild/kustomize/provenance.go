@@ -24,12 +24,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/pkg/ssl"
@@ -182,11 +183,20 @@ func OverwriteArtifactInProvenance(provPath, overwriteArtifact string) (string, 
 }
 
 func generateMaterialsFromKustomization(kustomizeBase string) ([]intoto.ProvenanceMaterial, error) {
-	materials := []intoto.ProvenanceMaterial{}
-	resources, err := LoadKustomization(kustomizeBase, "", false)
+	var resources []*KustomizationResource
+	var err error
+	repoURL, repoRevision, kustPath, err := checkRepoInfoOfKustomizeBase(kustomizeBase)
+	if err == nil {
+		// a repository in local filesystem
+		resources, err = LoadKustomization(kustPath, "", repoURL, repoRevision, true)
+	} else {
+		// pure kustomization.yaml which is not in repository
+		resources, err = LoadKustomization(kustomizeBase, "", "", "", false)
+	}
 	if err != nil {
 		return nil, err
 	}
+	materials := []intoto.ProvenanceMaterial{}
 	for _, r := range resources {
 		m := resourceToMaterial(r)
 		if m == nil {
@@ -195,6 +205,33 @@ func generateMaterialsFromKustomization(kustomizeBase string) ([]intoto.Provenan
 		materials = append(materials, *m)
 	}
 	return materials, nil
+}
+
+func checkRepoInfoOfKustomizeBase(kustomizeBase string) (string, string, string, error) {
+	url, err := GitExec(kustomizeBase, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return "", "", "", errors.Wrap(err, "failed to get remote.origin.url")
+	}
+	url = strings.TrimSuffix(url, "\n")
+	revision, err := GitExec(kustomizeBase, "rev-parse", "HEAD")
+	if err != nil {
+		return "", "", "", errors.Wrap(err, "failed to get revision HEAD")
+	}
+	revision = strings.TrimSuffix(revision, "\n")
+	absKustBase, err := filepath.Abs(kustomizeBase)
+	if err != nil {
+		return "", "", "", errors.Wrap(err, "failed to get absolute path of kustomize base dir")
+	}
+	rootDirInRepo, err := GitExec(kustomizeBase, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", "", "", errors.Wrap(err, "failed to get root directory of repository")
+	}
+	rootDirInRepo = strings.TrimSuffix(rootDirInRepo, "\n")
+	relativePath := strings.TrimPrefix(absKustBase, rootDirInRepo)
+	if strings.HasPrefix(relativePath, "/") {
+		relativePath = strings.TrimPrefix(relativePath, "/")
+	}
+	return url, revision, relativePath, nil
 }
 
 func resourceToMaterial(kr *KustomizationResource) *intoto.ProvenanceMaterial {
