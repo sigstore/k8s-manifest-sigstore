@@ -507,16 +507,6 @@ func getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField s
 	return objs, nil
 }
 
-func getKindsByGroup(apiResources []metav1.APIResource, group string) []string {
-	kinds := []string{}
-	for _, groupResource := range apiResources {
-		if groupResource.Group == group {
-			kinds = append(kinds, groupResource.Kind)
-		}
-	}
-	return kinds
-}
-
 // generate result bytes in a table which will be shown in output
 func makeResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
 	if result.Summary.Total == 0 {
@@ -778,7 +768,7 @@ func makeProvenanceResultTable(result VerifyResourceResult) []byte {
 			w2 := tabwriter.NewWriter(writer2, 0, 3, 3, ' ', 0)
 			_, _ = w2.Write([]byte(attestationSingleTableResult))
 			w2.Flush()
-			singleAttestationTableStr := string(writer2.Bytes())
+			singleAttestationTableStr := writer2.String()
 			if p.AttestationLogIndex != nil {
 				attestationLogIndex := *(p.AttestationLogIndex)
 				curlCmd := k8smanifest.GenerateIntotoAttestationCurlCommand(attestationLogIndex)
@@ -808,7 +798,7 @@ func makeProvenanceResultTable(result VerifyResourceResult) []byte {
 			w3 := tabwriter.NewWriter(writer3, 0, 3, 3, ' ', 0)
 			_, _ = w3.Write([]byte(tmpSBOMTableStr))
 			w3.Flush()
-			tmpTableStr := string(writer3.Bytes())
+			tmpTableStr := writer3.String()
 			if p.SBOMRef != "" {
 				sbomCmd := k8smanifest.GenerateSBOMDownloadCommand(artifact)
 				tmpTableStr = fmt.Sprintf("%sTo download SBOM: %s\n\n", tmpTableStr, sbomCmd)

@@ -312,7 +312,7 @@ func FileExists(fpath string) bool {
 }
 
 const (
-	refQuery      = "?ref="
+	// refQuery      = "?ref="
 	refQueryRegex = "\\?(version|ref)="
 	gitSuffix     = ".git"
 	gitDelimiter  = "_git/"
