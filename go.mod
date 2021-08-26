@@ -12,6 +12,7 @@ require (
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/onsi/ginkgo v1.15.0
 	github.com/onsi/gomega v1.11.0
+	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
 	github.com/sigstore/cosign v1.0.1
