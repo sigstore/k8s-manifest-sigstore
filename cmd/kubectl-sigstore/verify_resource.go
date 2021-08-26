@@ -32,6 +32,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ghodss/yaml"
+	gkmatch "github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
@@ -40,6 +41,7 @@ import (
 	metatable "k8s.io/apimachinery/pkg/api/meta/table"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 const (
@@ -61,6 +63,9 @@ const (
 const (
 	defaultConfigFieldPathConstraint = "spec.parameters"
 	defaultConfigFieldPathConfigMap  = "data.\"config.yaml\""
+
+	defaultMatchFieldPathConstraint                  = "spec.match"
+	defaultInScopeObjectParameterFieldPathConstraint = "spec.parameters.inScopeObjects"
 )
 
 const (
@@ -121,7 +126,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, disableDefaultConfig, provenance, provResRef, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -150,7 +155,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField string, disableDefaultConfig, provenance bool, provResRef, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string) (bool, error) {
 	var err error
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
@@ -184,7 +189,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	vo.SetAnnotationIgnoreFields()
 
 	objs := []unstructured.Unstructured{}
-	if len(kubeGetArgs) > 0 {
+	if configType == configTypeConstraint {
+		objs, err = getObjsByConstraintMatchCondition(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
+	} else if len(kubeGetArgs) > 0 {
 		objs, err = kubectlOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
@@ -354,6 +361,160 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 		return nil, fmt.Errorf("error occurred during getting resources: %s", strings.Join(allErrs, "; "))
 	}
 	return objs, nil
+}
+
+// By checking constraint match conditions, try finding the matched resources on a cluster.
+// This returns a list of existing K8s resources that will be verified with VerifyResource().
+// [Detail Steps]
+// 1. get Constraint resource from cluster and extract its gatekeeper match condition and `inScopeObjects` in parameters
+// 2. list kinds in the match condition and check its scope
+// 3. get all namespaces in a cluster and extract some of them that match the match condition
+// 4. check ExcludeNamespace conditions if exist
+// 5. list existing resources by kind in a namespace. do this for all selected kinds and namespaces
+// 6. check inScopeOpject condition if exists
+func getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+	// step 1
+	// get Constraint resource from cluster and extract its gatekeeper match condition and `inScopeObjects` in parameters
+	constraintMatch, inScopeObjectCondition, err := k8smanifest.GetMatchConditionFromConfigResource(constraintRef, matchField, inscopeField)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get a match condition from config resource `%s`", constraintRef)
+	}
+	apiResources, err := kubeutil.GetAPIResources()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get api resources")
+	}
+	// step 2
+	// list kinds in the match condition and check its scope
+	kinds := map[string]metav1.APIResource{}
+	for _, ck := range constraintMatch.Kinds {
+		matchAllKindsInGroup := false
+		if len(ck.Kinds) == 1 && ck.Kinds[0] == "*" {
+			matchAllKindsInGroup = true
+		}
+		if matchAllKindsInGroup {
+			for _, g := range ck.APIGroups {
+				for _, apiResource := range apiResources {
+					if g == apiResource.Group {
+						kinds[apiResource.Kind] = apiResource
+					}
+				}
+			}
+		} else {
+			for _, k := range ck.Kinds {
+				for _, apiResource := range apiResources {
+					if k == apiResource.Kind {
+						kinds[apiResource.Kind] = apiResource
+					}
+				}
+			}
+		}
+	}
+
+	// step 3
+	// get all namespaces in a cluster and extract some of them that match the match condition
+	namespaces := map[string]*corev1.Namespace{}
+	allNamespaces, err := kubeutil.GetNamespaces()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get namespaces")
+	}
+	if len(constraintMatch.Namespaces) > 0 {
+		for _, nsNamePattern := range constraintMatch.Namespaces {
+			for _, nsObj := range allNamespaces {
+				if k8ssigutil.MatchSinglePattern(nsNamePattern, nsObj.GetName()) {
+					nsName := nsObj.GetName()
+					namespaces[nsName] = nsObj
+				}
+			}
+		}
+	} else if constraintMatch.NamespaceSelector != nil {
+		selector, err := metav1.LabelSelectorAsSelector(constraintMatch.NamespaceSelector)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to convert *metav1.LabelSelector to labels.Selector")
+		}
+		for _, nsObj := range allNamespaces {
+			if selector.Matches(labels.Set(nsObj.Labels)) {
+				nsName := nsObj.GetName()
+				namespaces[nsName] = nsObj
+			}
+		}
+	}
+	// step 4
+	// check ExcludeNamespace conditions if exist
+	if len(constraintMatch.ExcludedNamespaces) > 0 {
+		tmpNamespaces := map[string]*corev1.Namespace{}
+		for nsName, nsObj := range namespaces {
+			if !k8ssigutil.ExactMatchWithPatternArray(nsName, constraintMatch.ExcludedNamespaces) {
+				tmpNamespaces[nsName] = nsObj
+			}
+		}
+		namespaces = tmpNamespaces
+	}
+
+	type objData struct {
+		obj       *unstructured.Unstructured
+		kind      metav1.APIResource
+		namespace *corev1.Namespace
+	}
+
+	// step 5
+	// list existing resources by kind in a namespace. do this for all selected kinds and namespaces
+	objDataList := []objData{}
+	for kindName, kindResource := range kinds {
+		for nsName, nsObj := range namespaces {
+			tmpObjList, err := kubeutil.ListResources("", kindName, nsName)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to list %s in %s namespace", kindName, nsName)
+			}
+			if len(tmpObjList) > 0 {
+				var nsForThis *corev1.Namespace
+				if kindResource.Namespaced {
+					nsForThis = nsObj
+				}
+				for _, obj := range tmpObjList {
+					objDataList = append(objDataList, objData{
+						obj:       obj,
+						kind:      kindResource,
+						namespace: nsForThis, // must be nil for cluster scope resource
+					})
+				}
+			}
+		}
+	}
+
+	objs := []unstructured.Unstructured{}
+	for _, od := range objDataList {
+		matched, err := gkmatch.Matches(constraintMatch, od.obj, od.namespace)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to check if the constraint matches this object %s %s", od.kind.Kind, od.obj.GetName())
+		}
+		if matched {
+			objs = append(objs, *od.obj)
+		}
+	}
+
+	// step 6
+	// check inScopeOpject condition if exists
+	if inScopeObjectCondition != nil {
+		tmpObjs := []unstructured.Unstructured{}
+		for _, obj := range objs {
+			if inScopeObjectCondition.Match(obj) {
+				tmpObjs = append(tmpObjs, obj)
+			}
+		}
+		objs = tmpObjs
+	}
+
+	return objs, nil
+}
+
+func getKindsByGroup(apiResources []metav1.APIResource, group string) []string {
+	kinds := []string{}
+	for _, groupResource := range apiResources {
+		if groupResource.Group == group {
+			kinds = append(kinds, groupResource.Kind)
+		}
+	}
+	return kinds
 }
 
 // generate result bytes in a table which will be shown in output

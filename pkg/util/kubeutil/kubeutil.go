@@ -151,6 +151,28 @@ func GetAPIResources() ([]metav1.APIResource, error) {
 	return resources, nil
 }
 
+func GetNamespaces() ([]*corev1.Namespace, error) {
+	config, err := GetKubeConfig()
+	if err != nil {
+		return nil, fmt.Errorf("error in getting k8s config; %s", err.Error())
+	}
+
+	client, err := corev1client.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("error in creating Core V1 Client; %s", err.Error())
+	}
+	nsList, err := client.Namespaces().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error in listing namespaces; %s", err.Error())
+	}
+	namespaces := []*corev1.Namespace{}
+	for i := range nsList.Items {
+		ns := nsList.Items[i]
+		namespaces = append(namespaces, &ns)
+	}
+	return namespaces, nil
+}
+
 func GetResource(apiVersion, kind, namespace, name string) (*unstructured.Unstructured, error) {
 	var gv schema.GroupVersion
 	var err error
@@ -211,7 +233,20 @@ func GetResource(apiVersion, kind, namespace, name string) (*unstructured.Unstru
 }
 
 func ListResources(apiVersion, kind, namespace string) ([]*unstructured.Unstructured, error) {
-	gv, err := schema.ParseGroupVersion(apiVersion)
+	var gv schema.GroupVersion
+	var err error
+	skipGV := false
+	if apiVersion == "" {
+		// if apiVersion is not specified, just use kind to identify resource kind
+		skipGV = true
+	} else {
+		gv, err = schema.ParseGroupVersion(apiVersion)
+		if err != nil {
+			return nil, fmt.Errorf("Error in parsing apiVersion; %s", err.Error())
+		}
+	}
+
+	gv, err = schema.ParseGroupVersion(apiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("Error in parsing apiVersion; %s", err.Error())
 	}
@@ -222,9 +257,9 @@ func ListResources(apiVersion, kind, namespace string) ([]*unstructured.Unstruct
 	namespaced := true
 	gvr := schema.GroupVersionResource{}
 	for _, r := range apiResources {
-		gOk := (r.Group == gv.Group)
-		vOk := (r.Version == gv.Version)
-		kOk := (r.Kind == kind)
+		gOk := (r.Group == gv.Group) || skipGV
+		vOk := (r.Version == gv.Version) || skipGV
+		kOk := (r.Kind == kind) || (r.Name == kind) || (r.SingularName == kind) || contains(r.ShortNames, kind)
 		if gOk && vOk && kOk {
 			gvr = schema.GroupVersionResource{
 				Group:    r.Group,
