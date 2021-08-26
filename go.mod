@@ -12,6 +12,7 @@ require (
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/onsi/ginkgo v1.15.0
 	github.com/onsi/gomega v1.11.0
+	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
 	github.com/sigstore/cosign v1.0.1
@@ -22,7 +23,6 @@ require (
 	github.com/spf13/cobra v1.2.1
 	github.com/tektoncd/chains v0.3.0
 	github.com/theupdateframework/go-tuf v0.0.0-20210722233521-90e262754396
-	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.21.3
