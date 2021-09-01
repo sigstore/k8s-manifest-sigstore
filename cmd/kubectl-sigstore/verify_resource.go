@@ -294,13 +294,15 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if err = eg1.Wait(); err != nil {
 		return false, errors.Wrap(err, "error in executing preparaction for verify-resource")
 	}
+
+	preVerifyResource := time.Now().UTC()
+	eg2 := errgroup.Group{}
+	mutex := sync.Mutex{}
+	results := []resourceResult{}
 	for i := range objs {
-		if i == 0 {
-			continue
-		}
 		obj := objs[i]
 		sem.Acquire(context.Background(), 1)
-		eg.Go(func() error {
+		eg2.Go(func() error {
 			log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
 			vResult, err := k8smanifest.VerifyResource(obj, vo)
 			r := resourceResult{
@@ -321,7 +323,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		})
 
 	}
-	if err = eg.Wait(); err != nil {
+	if err = eg2.Wait(); err != nil {
 		return false, errors.Wrap(err, "error in executing verify-resource")
 	}
 	postVerifyResource := time.Now().UTC()
