@@ -43,12 +43,12 @@ var cfg *rest.Config
 type podGetterFunc func(obj *unstructured.Unstructured) ([]*corev1.Pod, error)
 
 var podGetterMapper map[string]podGetterFunc = map[string]podGetterFunc{
-	"Deployment": getPodsFromDeployment,
-	// TODO: implement below
-	"ReplicaSet":  getPodsNotImplemented,
-	"Pod":         getPodsNotImplemented,
-	"DaemonSet":   getPodsNotImplemented,
-	"StatefulSet": getPodsNotImplemented,
+	"Deployment":  getPodsFromDeployment,
+	"ReplicaSet":  getPodsFromReplicaSet,
+	"Pod":         getPodsFromPod,
+	"DaemonSet":   getPodsFromDaemonSet,
+	"StatefulSet": getPodsFromStatefulSet,
+	// TODO: check also other major CRD Kinds such as tekton TaskRun?
 }
 
 func GetInClusterConfig() (*rest.Config, error) {
@@ -371,16 +371,8 @@ func getPodsNotImplemented(obj *unstructured.Unstructured) ([]*corev1.Pod, error
 	return nil, fmt.Errorf("pod getter is not implemented yet for kind: %s", kind)
 }
 
-func getPodsFromDeployment(obj *unstructured.Unstructured) ([]*corev1.Pod, error) {
-	var deploy appsv1.Deployment
-	objBytes, _ := json.Marshal(obj.Object)
-	err := json.Unmarshal(objBytes, &deploy)
-	if err != nil {
-		return nil, fmt.Errorf("error in converting object to Deployment; %s", err.Error())
-	}
-
-	namespace := deploy.GetNamespace()
-	selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
+func getPodsBySelector(namespace string, labelSelector *metav1.LabelSelector) ([]*corev1.Pod, error) {
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		return nil, fmt.Errorf("error in converting *metav1.LabelSelector to labels.Selector; %s", err.Error())
 	}
@@ -404,4 +396,55 @@ func getPodsFromDeployment(obj *unstructured.Unstructured) ([]*corev1.Pod, error
 		pods = append(pods, &p)
 	}
 	return pods, nil
+}
+
+func getPodsFromDeployment(obj *unstructured.Unstructured) ([]*corev1.Pod, error) {
+	var deploy *appsv1.Deployment
+	objBytes, _ := json.Marshal(obj.Object)
+	err := json.Unmarshal(objBytes, &deploy)
+	if err != nil {
+		return nil, fmt.Errorf("error in converting object to Deployment; %s", err.Error())
+	}
+	return getPodsBySelector(deploy.GetNamespace(), deploy.Spec.Selector)
+}
+
+func getPodsFromReplicaSet(obj *unstructured.Unstructured) ([]*corev1.Pod, error) {
+	var rs *appsv1.ReplicaSet
+	objBytes, _ := json.Marshal(obj.Object)
+	err := json.Unmarshal(objBytes, &rs)
+	if err != nil {
+		return nil, fmt.Errorf("error in converting object to ReplicaSet; %s", err.Error())
+	}
+	return getPodsBySelector(rs.GetNamespace(), rs.Spec.Selector)
+}
+
+func getPodsFromPod(obj *unstructured.Unstructured) ([]*corev1.Pod, error) {
+	var pod *corev1.Pod
+	objBytes, _ := json.Marshal(obj.Object)
+	err := json.Unmarshal(objBytes, &pod)
+	if err != nil {
+		return nil, fmt.Errorf("error in converting object to Pod; %s", err.Error())
+	}
+	pods := []*corev1.Pod{pod}
+	return pods, nil
+}
+
+func getPodsFromDaemonSet(obj *unstructured.Unstructured) ([]*corev1.Pod, error) {
+	var ds *appsv1.DaemonSet
+	objBytes, _ := json.Marshal(obj.Object)
+	err := json.Unmarshal(objBytes, &ds)
+	if err != nil {
+		return nil, fmt.Errorf("error in converting object to DaemonSet; %s", err.Error())
+	}
+	return getPodsBySelector(ds.GetNamespace(), ds.Spec.Selector)
+}
+
+func getPodsFromStatefulSet(obj *unstructured.Unstructured) ([]*corev1.Pod, error) {
+	var sts *appsv1.StatefulSet
+	objBytes, _ := json.Marshal(obj.Object)
+	err := json.Unmarshal(objBytes, &sts)
+	if err != nil {
+		return nil, fmt.Errorf("error in converting object to StatefulSet; %s", err.Error())
+	}
+	return getPodsBySelector(sts.GetNamespace(), sts.Spec.Selector)
 }

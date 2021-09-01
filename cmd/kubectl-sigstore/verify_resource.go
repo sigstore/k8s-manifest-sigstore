@@ -99,6 +99,8 @@ func NewCmdVerifyResource() *cobra.Command {
 	var outputFormat string
 	var manifestYAMLs [][]byte
 	var disableDefaultConfig bool
+	var imageVerify bool
+	var imageKeyPath string
 	var provenance bool
 	var provResRef string
 	var manifestBundleResRef string
@@ -133,7 +135,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat, concurrencyNum)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, imageVerify, imageKeyPath, provenance, provResRef, outputFormat, concurrencyNum)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -229,6 +231,12 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
+	}
+	if imageVerify {
+		vo.ImageVerification.Enabled = imageVerify
+	}
+	if imageKeyPath != "" {
+		vo.ImageVerification.KeyPath = imageKeyPath
 	}
 	if provenance {
 		vo.Provenance = true
@@ -372,7 +380,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	var resultBytes []byte
 	summarizedResult := NewVerifyResourceResult(results, vo.Provenance)
 	if outputFormat == "" {
-		resultBytes = makeResultTable(summarizedResult, vo.Provenance)
+		resultBytes = makeResultTable(summarizedResult, vo.ImageVerification.Enabled, vo.Provenance)
 	} else if outputFormat == "json" {
 		resultBytes, _ = json.MarshalIndent(summarizedResult, "", "    ") // pretty print json as well as kubectl get -o json
 	} else if outputFormat == "yaml" {
@@ -713,7 +721,7 @@ func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string
 }
 
 // generate result bytes in a table which will be shown in output
-func makeResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
+func makeResultTable(result VerifyResourceResult, imageVerifyEnabled, provenanceEnabled bool) []byte {
 	if result.Summary.Total == 0 {
 		return []byte("No resources found")
 	}
@@ -723,7 +731,7 @@ func makeResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte
 	if sigRefFound {
 		manifestTable = makeManifestResultTable(result, provenanceEnabled)
 	}
-	resourceTable := makeResourceResultTable(result, provenanceEnabled)
+	resourceTable := makeResourceResultTable(result, imageVerifyEnabled, provenanceEnabled)
 
 	var provenanceTable []byte
 	if provenanceEnabled {
@@ -817,7 +825,7 @@ func makeManifestResultTable(result VerifyResourceResult, provenanceEnabled bool
 }
 
 // generate resource result table which will be shown in output
-func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool) []byte {
+func makeResourceResultTable(result VerifyResourceResult, imageVerifyEnabled, provenanceEnabled bool) []byte {
 	mutipleManifestsFound := len(result.Manifests) >= 2
 
 	var resourceTableResult string
@@ -881,7 +889,11 @@ func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool
 
 	if len(containerImages) > 0 {
 		var podTableResult string
-		if provenanceEnabled {
+		if imageVerifyEnabled && provenanceEnabled {
+			podTableResult = "POD\tCONTAINER\tIMAGE ID\tSIGNED\tSIGNER\tATTESTATION\tSBOM\t\n"
+		} else if imageVerifyEnabled {
+			podTableResult = "POD\tCONTAINER\tIMAGE ID\tSIGNED\tSIGNER\t\n"
+		} else if provenanceEnabled {
 			podTableResult = "POD\tCONTAINER\tIMAGE ID\tATTESTATION\tSBOM\t\n"
 		} else {
 			podTableResult = "POD\tCONTAINER\tIMAGE ID\t\n"
@@ -889,9 +901,32 @@ func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool
 
 		for _, ci := range containerImages {
 			var line string
+			signed := ""
+			signerName := ""
+			if imageVerifyEnabled {
+
+				for _, resResult := range result.Resources {
+					for _, imageResult := range resResult.Result.ImageVerifyResults {
+						if ci.PodName == imageResult.ImageObject.PodName &&
+							ci.ContainerName == imageResult.ImageObject.ContainerName &&
+							ci.ImageRef == imageResult.ImageObject.ImageRef {
+							signed = strconv.FormatBool(imageResult.Verified)
+							if !imageResult.InScope {
+								signed = "N/A"
+							}
+							signerName = imageResult.Signer
+							if imageResult.Verified && signerName == "" {
+								signerName = "N/A"
+							}
+							break
+						}
+					}
+				}
+			}
+			attestationFoundStr := "-"
+			sbomFoundStr := "-"
 			if provenanceEnabled {
-				attestationFoundStr := "-"
-				sbomFoundStr := "-"
+
 				for _, prov := range result.Provenance.Items {
 					if prov.Artifact != ci.ImageRef {
 						continue
@@ -904,6 +939,13 @@ func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool
 					}
 					break
 				}
+			}
+
+			if imageVerifyEnabled && provenanceEnabled {
+				line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", ci.PodName, ci.ContainerName, ci.ImageID, signed, signerName, attestationFoundStr, sbomFoundStr)
+			} else if imageVerifyEnabled {
+				line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", ci.PodName, ci.ContainerName, ci.ImageID, signed, signerName)
+			} else if provenanceEnabled {
 				line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t\n", ci.PodName, ci.ContainerName, ci.ImageID, attestationFoundStr, sbomFoundStr)
 			} else {
 				line = fmt.Sprintf("%s\t%s\t%s\t\n", ci.PodName, ci.ContainerName, ci.ImageID)

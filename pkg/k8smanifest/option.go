@@ -52,9 +52,10 @@ type SignOption struct {
 
 // option for VerifyResource()
 type VerifyResourceOption struct {
-	commonOption `json:""`
-	verifyOption `json:""`
-	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
+	commonOption      `json:""`
+	verifyOption      `json:""`
+	SkipObjects       ObjectReferenceList `json:"skipObjects,omitempty"`
+	ImageVerification ImageVerifyOption   `json:"imageVerification,omitempty"`
 
 	Provenance          bool   `json:"-"`
 	CheckDryRunForApply bool   `json:"-"`
@@ -79,6 +80,13 @@ func (o *VerifyManifestOption) SetAnnotationIgnoreFields() {
 		return
 	}
 	o.verifyOption = o.verifyOption.setAnnotationKeyToIgnoreField(o.AnnotationConfig)
+}
+
+type ImageVerifyOption struct {
+	Enabled       bool               `json:"enabled,omitempty"`
+	KeyPath       string             `json:"keyPath"`
+	InScopeImages ImageReferenceList `json:"inScopeImages,omitempty"` // if empty, match all
+	Signers       SignerList         `json:"signers,omitempty"`       // if emprt, match all
 }
 
 // common options for verify functions
@@ -206,6 +214,9 @@ type ObjectFieldBinding struct {
 type ObjectFieldBindingList []ObjectFieldBinding
 
 type SignerList []string
+
+type ImageReference string
+type ImageReferenceList []ImageReference
 
 func ObjectToReference(obj unstructured.Unstructured) ObjectReference {
 	return ObjectReference{
@@ -457,4 +468,20 @@ func (vo *VerifyResourceOption) AddDefaultConfig(defaultConfig *VerifyResourceOp
 	ignoreFields = append(ignoreFields, []ObjectFieldBinding(defaultConfig.verifyOption.IgnoreFields)...)
 	vo.verifyOption.IgnoreFields = ignoreFields
 	return vo
+}
+
+func (l ImageReferenceList) Match(imageRef string) bool {
+	if len(l) == 0 {
+		return true
+	}
+	for _, r := range l {
+		if r.Match(imageRef) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r ImageReference) Match(imageRef string) bool {
+	return k8ssigutil.MatchPattern(string(r), imageRef)
 }
