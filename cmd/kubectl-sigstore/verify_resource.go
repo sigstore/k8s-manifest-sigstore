@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -200,7 +201,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 
 	objs := []unstructured.Unstructured{}
 	if configType == configTypeConstraint {
-		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
+		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint, concurrencyNum)
 	} else if len(kubeGetArgs) > 0 {
 		objs, err = kubectlOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
@@ -232,36 +233,65 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if provResRef != "" {
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
-	preVerifyResource := time.Now().UTC()
-	eg := errgroup.Group{}
-	mutex := sync.Mutex{}
+
+	imagesToBeVerified := getAllImagesToBeVerified(vo.ImageRef, objs, vo.AnnotationConfig, vo.ImageVerification.Enabled)
+
+	prepareFuncs := []reflect.Value{}
+	for i := range imagesToBeVerified {
+		img := imagesToBeVerified[i]
+		if img.imageType == k8smanifest.ArtifactManifestImage {
+			manifestFetcher := k8smanifest.NewManifestFetcher(img.ImageRef, "", vo.AnnotationConfig, nil, 0)
+			if fetcher, ok := manifestFetcher.(*k8smanifest.ImageManifestFetcher); ok {
+				prepareFuncs = append(prepareFuncs, reflect.ValueOf(fetcher.FetchAll))
+			}
+		}
+
+		var keyPath *string
+		if vo.KeyPath != "" {
+			keyPath = &(vo.KeyPath)
+		}
+		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ImageRef, keyPath, vo.AnnotationConfig)
+		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
+			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
+		}
+
+		if vo.Provenance {
+			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
+			if getter, ok := provGetter.(*k8smanifest.ImageProvenanceGetter); ok {
+				prepareFuncs = append(prepareFuncs, reflect.ValueOf(getter.Get))
+			}
+		}
+	}
+
+	eg1 := errgroup.Group{}
 	if concurrencyNum < 1 {
 		concurrencyNum = int64(runtime.NumCPU())
 	}
 	sem := semaphore.NewWeighted(concurrencyNum)
-	results := []resourceResult{}
-	if len(objs) > 0 {
-		obj := objs[0]
-		log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
-		vResult, err := k8smanifest.VerifyResource(obj, vo)
-		r := resourceResult{
-			Object: obj,
-		}
-		if err == nil {
-			r.Result = vResult
-		} else {
-			r.Error = err
-		}
-		log.Debug("result: ", r)
-		results = append(results, r)
+	for i := range prepareFuncs {
+		pf := prepareFuncs[i]
+		sem.Acquire(context.Background(), 1)
+		eg1.Go(func() error {
+			if pf.Type().Kind() != reflect.Func {
+				return fmt.Errorf("failed to call preparation function; this is not a function, but %s", pf.Type().Kind().String())
+			}
+			_ = pf.Call(nil)
+			sem.Release(1)
+			return nil
+		})
 	}
+	if err = eg1.Wait(); err != nil {
+		return false, errors.Wrap(err, "error in executing preparaction for verify-resource")
+	}
+
+	preVerifyResource := time.Now().UTC()
+	eg2 := errgroup.Group{}
+	mutex := sync.Mutex{}
+	results := []resourceResult{}
 	for i := range objs {
-		if i == 0 {
-			continue
-		}
 		obj := objs[i]
 		sem.Acquire(context.Background(), 1)
-		eg.Go(func() error {
+		eg2.Go(func() error {
 			log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
 			vResult, err := k8smanifest.VerifyResource(obj, vo)
 			r := resourceResult{
@@ -282,7 +312,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		})
 
 	}
-	if err = eg.Wait(); err != nil {
+	if err = eg2.Wait(); err != nil {
 		return false, errors.Wrap(err, "error in executing verify-resource")
 	}
 	postVerifyResource := time.Now().UTC()
@@ -426,7 +456,7 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 // 4. check ExcludeNamespace conditions if exist
 // 5. list existing resources by kind in a namespace. do this for all selected kinds and namespaces
 // 6. check inScopeOpject condition if exists
-func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurrencyNum int64) ([]unstructured.Unstructured, error) {
 	// step 1
 	// get Constraint resource from cluster and extract its gatekeeper match condition and `inScopeObjects` in parameters
 	constraintMatch, inScopeObjectCondition, err := k8smanifest.GetMatchConditionFromConfigResource(constraintRef, matchField, inscopeField)
@@ -514,27 +544,55 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 	log.Debug("[DEBUG] step4 done")
 	// step 5
 	// list existing resources by kind in a namespace. do this for all selected kinds and namespaces
+	eg1 := errgroup.Group{}
+	if concurrencyNum < 1 {
+		concurrencyNum = int64(runtime.NumCPU())
+	}
+	sem := semaphore.NewWeighted(concurrencyNum)
+	mutex := sync.Mutex{}
 	objDataList := []objData{}
-	for kindName, kindResource := range kinds {
-		for nsName, nsObj := range namespaces {
+	kindNamespaces := [][2]string{}
+	for kindName := range kinds {
+		for nsName := range namespaces {
+			kindNamespaces = append(kindNamespaces, [2]string{kindName, nsName})
+		}
+	}
+	for i := range kindNamespaces {
+		kindName := kindNamespaces[i][0]
+		nsName := kindNamespaces[i][1]
+		kindResource := kinds[kindName]
+		nsObj := namespaces[nsName]
+		sem.Acquire(context.Background(), 1)
+		eg1.Go(func() error {
 			tmpObjList, err := kubeutil.ListResources("", kindName, nsName)
 			if err != nil {
-				return nil, errors.Wrapf(err, "failed to list %s in %s namespace", kindName, nsName)
+				return errors.Wrapf(err, "failed to list %s in %s namespace", kindName, nsName)
 			}
 			if len(tmpObjList) > 0 {
 				var nsForThis *corev1.Namespace
 				if kindResource.Namespaced {
 					nsForThis = nsObj
 				}
+				tmpObjDataList := []objData{}
 				for _, obj := range tmpObjList {
-					objDataList = append(objDataList, objData{
+
+					tmpObjDataList = append(tmpObjDataList, objData{
 						obj:       obj,
 						kind:      kindResource,
 						namespace: nsForThis, // must be nil for cluster scope resource
 					})
 				}
+				mutex.Lock()
+				objDataList = append(objDataList, tmpObjDataList...)
+				mutex.Unlock()
 			}
-		}
+			sem.Release(1)
+			return nil
+		})
+	}
+
+	if err = eg1.Wait(); err != nil {
+		return nil, errors.Wrap(err, "error in listing object by kind and namespace in constraint")
 	}
 
 	objs := []unstructured.Unstructured{}
@@ -1153,4 +1211,43 @@ func validateConfigMapRef(cmRefString string) string {
 		validatedParts = append(validatedParts, validP)
 	}
 	return strings.Join(validatedParts, ",")
+}
+
+type imageToBeVerified struct {
+	kubeutil.ImageObject
+	imageType k8smanifest.ArtifactType
+}
+
+// list all images to be verified
+func getAllImagesToBeVerified(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, imageVerify bool) []imageToBeVerified {
+	images := []imageToBeVerified{}
+	if imageRef == "" {
+		imageAnnotationKey := annotationConfig.ImageRefAnnotationKey()
+		for _, obj := range objs {
+			annt := obj.GetAnnotations()
+			if img, ok := annt[imageAnnotationKey]; ok {
+				images = append(images, imageToBeVerified{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+			}
+		}
+	} else {
+		imageRefList := k8ssigutil.SplitCommaSeparatedString(imageRef)
+		for _, img := range imageRefList {
+			images = append(images, imageToBeVerified{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+		}
+	}
+
+	if imageVerify {
+		for i := range objs {
+			obj := objs[i]
+			imageObjects, err := kubeutil.GetAllImagesFromObject(&obj)
+			if err != nil {
+				log.Warn(err)
+				continue
+			}
+			for _, img := range imageObjects {
+				images = append(images, imageToBeVerified{imageType: k8smanifest.ArtifactContainerImage, ImageObject: img})
+			}
+		}
+	}
+	return images
 }
