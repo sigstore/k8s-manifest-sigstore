@@ -21,12 +21,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+<<<<<<< HEAD
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+=======
+	"sync"
+>>>>>>> 5ea58a8 (update xonxurrency)
 	"time"
 )
 
@@ -62,13 +66,15 @@ type cachedObject struct {
 type OnMemoryCache struct {
 	TTL  time.Duration
 	data map[string]cachedObject
+	mu   sync.RWMutex
 }
 
 func (c *OnMemoryCache) Set(key string, value ...interface{}) error {
 	if c.data == nil {
 		c.data = map[string]cachedObject{}
 	}
-
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.data[key] = cachedObject{
 		timestamp: time.Now().UTC(),
 		object:    value,
@@ -82,6 +88,8 @@ func (c *OnMemoryCache) Get(key string) ([]interface{}, error) {
 	}
 	c.clearExpiredData()
 
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	obj, ok := c.data[key]
 	if !ok {
 		return nil, fmt.Errorf("no cached data is found with key `%s`", key)
@@ -93,7 +101,8 @@ func (c *OnMemoryCache) clearExpiredData() {
 	if c.data == nil {
 		c.data = map[string]cachedObject{}
 	}
-
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	newData := map[string]cachedObject{}
 	for key, obj := range c.data {
 		now := time.Now().UTC()

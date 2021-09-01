@@ -18,18 +18,23 @@ package main
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ghodss/yaml"
 	gkmatch "github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
@@ -96,6 +101,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var provenance bool
 	var provResRef string
 	var manifestBundleResRef string
+	var concurrencyNum int64
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -126,7 +132,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat, concurrencyNum)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -148,6 +154,9 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configNamespace, "config-namespace", "", "a namespace of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
 	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
+	cmd.PersistentFlags().BoolVar(&imageVerify, "image-verify", false, "if true, verify images of the specified resources")
+	cmd.PersistentFlags().StringVar(&imageKeyPath, "image-key", "", "a comma-separated list of paths to public keys for images (if empty, do key-less verification)")
+	cmd.PersistentFlags().Int64Var(&concurrencyNum, "concurrency", -1, "number of concurrency for verifying multiple resources. If negative, use num of CPU cores.")
 	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
 	cmd.PersistentFlags().StringVar(&manifestBundleResRef, "manifest-bundle-resource", "", "a comma-separated list of configmaps that contains signature, message, attestation, sbom")
@@ -155,8 +164,9 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, imageVerify bool, imageKeyPath string, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
 	var err error
+	start := time.Now().UTC()
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
 			return false, fmt.Errorf("output format `%s` is not supported", outputFormat)
@@ -222,9 +232,16 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if provResRef != "" {
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
-
+	preVerifyResource := time.Now().UTC()
+	eg := errgroup.Group{}
+	mutex := sync.Mutex{}
+	if concurrencyNum < 1 {
+		concurrencyNum = int64(runtime.NumCPU())
+	}
+	sem := semaphore.NewWeighted(concurrencyNum)
 	results := []resourceResult{}
-	for _, obj := range objs {
+	if len(objs) > 0 {
+		obj := objs[0]
 		log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
 		vResult, err := k8smanifest.VerifyResource(obj, vo)
 		r := resourceResult{
@@ -238,6 +255,37 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		log.Debug("result: ", r)
 		results = append(results, r)
 	}
+	for i := range objs {
+		if i == 0 {
+			continue
+		}
+		obj := objs[i]
+		sem.Acquire(context.Background(), 1)
+		eg.Go(func() error {
+			log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
+			vResult, err := k8smanifest.VerifyResource(obj, vo)
+			r := resourceResult{
+				Object: obj,
+			}
+			if err == nil {
+				r.Result = vResult
+			} else {
+				r.Error = err
+			}
+			log.Debug("result: ", r)
+			mutex.Lock()
+			results = append(results, r)
+			mutex.Unlock()
+
+			sem.Release(1)
+			return nil
+		})
+
+	}
+	if err = eg.Wait(); err != nil {
+		return false, errors.Wrap(err, "error in executing verify-resource")
+	}
+	postVerifyResource := time.Now().UTC()
 
 	var resultBytes []byte
 	summarizedResult := NewVerifyResourceResult(results, vo.Provenance)
@@ -252,6 +300,12 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	fmt.Println(string(resultBytes))
 
 	allVerified := summarizedResult.Summary.Total == summarizedResult.Summary.Valid
+	finish := time.Now().UTC()
+
+	log.Infof("total time: %vs", finish.Sub(start).Seconds())
+	log.Infof("  initialize: %vs", preVerifyResource.Sub(start).Seconds())
+	log.Infof("  verify-resource: %vs", postVerifyResource.Sub(preVerifyResource).Seconds())
+	log.Infof("  finalize: %vs", finish.Sub(postVerifyResource).Seconds())
 	return allVerified, nil
 }
 
@@ -383,6 +437,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get api resources")
 	}
+	log.Debug("[DEBUG] step1 done")
 	// step 2
 	// list kinds in the match condition and check its scope
 	kinds := map[string]metav1.APIResource{}
@@ -409,7 +464,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 			}
 		}
 	}
-
+	log.Debug("[DEBUG] step2 done")
 	// step 3
 	// get all namespaces in a cluster and extract some of them that match the match condition
 	namespaces := map[string]*corev1.Namespace{}
@@ -438,6 +493,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 			}
 		}
 	}
+	log.Debug("[DEBUG] step3 done")
 	// step 4
 	// check ExcludeNamespace conditions if exist
 	if len(constraintMatch.ExcludedNamespaces) > 0 {
@@ -455,7 +511,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 		kind      metav1.APIResource
 		namespace *corev1.Namespace
 	}
-
+	log.Debug("[DEBUG] step4 done")
 	// step 5
 	// list existing resources by kind in a namespace. do this for all selected kinds and namespaces
 	objDataList := []objData{}
@@ -491,7 +547,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 			objs = append(objs, *od.obj)
 		}
 	}
-
+	log.Debug("[DEBUG] step5 done")
 	// step 6
 	// check inScopeOpject condition if exists
 	if inScopeObjectCondition != nil {
