@@ -50,12 +50,18 @@ type SignOption struct {
 	ApplySigConfigMap bool                   `json:"-"`
 }
 
+// option for VerifyImage()
+type VerifyImageOption struct {
+	KeyPath       string             `json:"keyPath"`
+	InScopeImages ImageReferenceList `json:"inScopeImages,omitempty"` // if empty, match all
+	Signers       SignerList         `json:"signers,omitempty"`       // if emprt, match all
+}
+
 // option for VerifyResource()
 type VerifyResourceOption struct {
-	commonOption      `json:""`
-	verifyOption      `json:""`
-	SkipObjects       ObjectReferenceList `json:"skipObjects,omitempty"`
-	ImageVerification ImageVerifyOption   `json:"imageVerification,omitempty"`
+	commonOption `json:""`
+	verifyOption `json:""`
+	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
 	Provenance          bool   `json:"-"`
 	CheckDryRunForApply bool   `json:"-"`
@@ -80,13 +86,6 @@ func (o *VerifyManifestOption) SetAnnotationIgnoreFields() {
 		return
 	}
 	o.verifyOption = o.verifyOption.setAnnotationKeyToIgnoreField(o.AnnotationConfig)
-}
-
-type ImageVerifyOption struct {
-	Enabled       bool               `json:"enabled,omitempty"`
-	KeyPath       string             `json:"keyPath"`
-	InScopeImages ImageReferenceList `json:"inScopeImages,omitempty"` // if empty, match all
-	Signers       SignerList         `json:"signers,omitempty"`       // if emprt, match all
 }
 
 // common options for verify functions

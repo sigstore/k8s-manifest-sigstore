@@ -232,17 +232,23 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if keyPath != "" {
 		vo.KeyPath = keyPath
 	}
-	if imageVerify {
-		vo.ImageVerification.Enabled = imageVerify
-	}
-	if imageKeyPath != "" {
-		vo.ImageVerification.KeyPath = imageKeyPath
-	}
 	if provenance {
 		vo.Provenance = true
 	}
 	if provResRef != "" {
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
+	}
+
+	var io *k8smanifest.VerifyImageOption
+	if imageVerify {
+		if imageKeyPath == "" && keyPath != "" {
+			imageKeyPath = keyPath
+		}
+		io = &k8smanifest.VerifyImageOption{
+			KeyPath:       imageKeyPath,
+			InScopeImages: nil, //TODO: load from config
+			Signers:       nil, //TODO: load from config
+		}
 	}
 
 	imagesToBeused := getAllImagesToBeUsed(vo.ImageRef, objs, vo.AnnotationConfig, vo.Provenance)
@@ -311,6 +317,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	eg2 := errgroup.Group{}
 	mutex := sync.Mutex{}
 	results := []resourceResult{}
+	imgResults := []imageResult{}
 	for i := range objs {
 		obj := objs[i]
 		sem.Acquire(context.Background(), 1)
@@ -329,6 +336,19 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 			mutex.Lock()
 			results = append(results, r)
 			mutex.Unlock()
+
+			if imageVerify {
+				iResult, iErr := k8smanifest.VerifyImage(obj, io)
+				ir := imageResult{
+					Object: obj,
+					Result: iResult,
+					Error:  iErr,
+				}
+				log.Debug("image result: ", ir)
+				mutex.Lock()
+				imgResults = append(imgResults, ir)
+				mutex.Unlock()
+			}
 
 			sem.Release(1)
 			return nil
@@ -380,7 +400,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	var resultBytes []byte
 	summarizedResult := NewVerifyResourceResult(results, vo.Provenance)
 	if outputFormat == "" {
-		resultBytes = makeResultTable(summarizedResult, vo.ImageVerification.Enabled, vo.Provenance)
+		resultBytes = makeResultTable(summarizedResult, vo.Provenance, imageVerify, imgResults)
 	} else if outputFormat == "json" {
 		resultBytes, _ = json.MarshalIndent(summarizedResult, "", "    ") // pretty print json as well as kubectl get -o json
 	} else if outputFormat == "yaml" {
@@ -721,7 +741,7 @@ func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string
 }
 
 // generate result bytes in a table which will be shown in output
-func makeResultTable(result VerifyResourceResult, imageVerifyEnabled, provenanceEnabled bool) []byte {
+func makeResultTable(result VerifyResourceResult, provenanceEnabled, imageVerifyEnabled bool, imgResults []imageResult) []byte {
 	if result.Summary.Total == 0 {
 		return []byte("No resources found")
 	}
@@ -731,7 +751,7 @@ func makeResultTable(result VerifyResourceResult, imageVerifyEnabled, provenance
 	if sigRefFound {
 		manifestTable = makeManifestResultTable(result, provenanceEnabled)
 	}
-	resourceTable := makeResourceResultTable(result, imageVerifyEnabled, provenanceEnabled)
+	resourceTable := makeResourceResultTable(result, provenanceEnabled, imageVerifyEnabled, imgResults)
 
 	var provenanceTable []byte
 	if provenanceEnabled {
@@ -825,7 +845,7 @@ func makeManifestResultTable(result VerifyResourceResult, provenanceEnabled bool
 }
 
 // generate resource result table which will be shown in output
-func makeResourceResultTable(result VerifyResourceResult, imageVerifyEnabled, provenanceEnabled bool) []byte {
+func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled, imageVerifyEnabled bool, imgResults []imageResult) []byte {
 	mutipleManifestsFound := len(result.Manifests) >= 2
 
 	var resourceTableResult string
@@ -904,20 +924,24 @@ func makeResourceResultTable(result VerifyResourceResult, imageVerifyEnabled, pr
 			signed := ""
 			signerName := ""
 			if imageVerifyEnabled {
-
-				for _, resResult := range result.Resources {
-					for _, imageResult := range resResult.Result.ImageVerifyResults {
-						if ci.PodName == imageResult.ImageObject.PodName &&
-							ci.ContainerName == imageResult.ImageObject.ContainerName &&
-							ci.ImageRef == imageResult.ImageObject.ImageRef {
-							signed = strconv.FormatBool(imageResult.Verified)
-							if !imageResult.InScope {
+				resultFound := false
+				for _, imgResultForObj := range imgResults {
+					if resultFound {
+						break
+					}
+					for _, singleImgResult := range imgResultForObj.Result.Images {
+						if ci.PodName == singleImgResult.ImageObject.PodName &&
+							ci.ContainerName == singleImgResult.ImageObject.ContainerName &&
+							ci.ImageRef == singleImgResult.ImageObject.ImageRef {
+							signed = strconv.FormatBool(singleImgResult.Verified)
+							if !singleImgResult.InScope {
 								signed = "N/A"
 							}
-							signerName = imageResult.Signer
-							if imageResult.Verified && signerName == "" {
+							signerName = singleImgResult.Signer
+							if singleImgResult.Verified && signerName == "" {
 								signerName = "N/A"
 							}
+							resultFound = true
 							break
 						}
 					}
@@ -1083,6 +1107,12 @@ type resourceResult struct {
 	Object unstructured.Unstructured         `json:"-"`
 	Result *k8smanifest.VerifyResourceResult `json:"result"`
 	Error  error                             `json:"-"`
+}
+
+type imageResult struct {
+	Object unstructured.Unstructured      `json:"-"`
+	Result *k8smanifest.VerifyImageResult `json:"result"`
+	Error  error                          `json:"-"`
 }
 
 type provenanceSummary struct {

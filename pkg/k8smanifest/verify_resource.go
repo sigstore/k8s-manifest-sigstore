@@ -33,23 +33,14 @@ import (
 const defaultDryRunNamespace = "default"
 
 type VerifyResourceResult struct {
-	Verified           bool                   `json:"verified"`
-	InScope            bool                   `json:"inScope"`
-	Signer             string                 `json:"signer"`
-	SignedTime         *time.Time             `json:"signedTime"`
-	SigRef             string                 `json:"sigRef"`
-	Diff               *mapnode.DiffResult    `json:"diff"`
-	ContainerImages    []kubeutil.ImageObject `json:"containerImages"`
-	ImageVerifyResults []ImageResult          `json:"imageResults"`
-	Provenances        []*Provenance          `json:"provenances,omitempty"`
-}
-
-type ImageResult struct {
-	kubeutil.ImageObject `json:""`
-	Verified             bool       `json:"verified"`
-	InScope              bool       `json:"inScope"`
-	Signer               string     `json:"signer"`
-	SignedTime           *time.Time `json:"signedTime"`
+	Verified        bool                   `json:"verified"`
+	InScope         bool                   `json:"inScope"`
+	Signer          string                 `json:"signer"`
+	SignedTime      *time.Time             `json:"signedTime"`
+	SigRef          string                 `json:"sigRef"`
+	Diff            *mapnode.DiffResult    `json:"diff"`
+	ContainerImages []kubeutil.ImageObject `json:"containerImages"`
+	Provenances     []*Provenance          `json:"provenances,omitempty"`
 }
 
 func (r *VerifyResourceResult) String() string {
@@ -57,6 +48,8 @@ func (r *VerifyResourceResult) String() string {
 	return string(rB)
 }
 
+// verify a specified kubernetes resource
+// signature must be provided for verification in some way like OCI image registry, annotations in the object or signature resource
 func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*VerifyResourceResult, error) {
 	objBytes, _ := yaml.Marshal(obj.Object)
 
@@ -153,34 +146,6 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		return nil, errors.Wrap(err, "failed to get container images")
 	}
 
-	imgSigResult := []ImageResult{}
-	if vo.ImageVerification.Enabled {
-		var imgKeyPath *string
-		if vo.ImageVerification.KeyPath != "" {
-			imgKeyPath = &(vo.ImageVerification.KeyPath)
-		} else if vo.KeyPath != "" {
-			imgKeyPath = &(vo.KeyPath)
-		}
-		for _, cimage := range containerImages {
-			inScope := vo.ImageVerification.InScopeImages.Match(cimage.ImageRef)
-			optionBytes, _ := json.Marshal(vo.ImageVerification.InScopeImages)
-			log.Debugf("[DEBUG] imageRef: %s, inScope: %v, option: %s", cimage.ImageRef, inScope, string(optionBytes))
-			imgSigVerified, imgSignerName, imgSignedTimestamp, err := NewSignatureVerifier(nil, cimage.ImageRef, imgKeyPath, vo.AnnotationConfig).Verify()
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to verify image signature")
-			}
-			imgVerified := imgSigVerified && vo.ImageVerification.Signers.Match(imgSignerName)
-			tmpResult := ImageResult{
-				ImageObject: cimage,
-				Verified:    imgVerified,
-				InScope:     inScope,
-				Signer:      imgSignerName,
-				SignedTime:  getTime(imgSignedTimestamp),
-			}
-			imgSigResult = append(imgSigResult, tmpResult)
-		}
-	}
-
 	provenances := []*Provenance{}
 	if vo.Provenance {
 		provenances, err = NewProvenanceGetter(&obj, sigRef, "", vo.ProvenanceResourceRef).Get()
@@ -190,15 +155,14 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	return &VerifyResourceResult{
-		Verified:           verified,
-		InScope:            inScope,
-		Signer:             signerName,
-		SignedTime:         getTime(signedTimestamp),
-		SigRef:             sigRef,
-		Diff:               diff,
-		ContainerImages:    containerImages,
-		ImageVerifyResults: imgSigResult,
-		Provenances:        provenances,
+		Verified:        verified,
+		InScope:         inScope,
+		Signer:          signerName,
+		SignedTime:      getTime(signedTimestamp),
+		SigRef:          sigRef,
+		Diff:            diff,
+		ContainerImages: containerImages,
+		Provenances:     provenances,
 	}, nil
 }
 
