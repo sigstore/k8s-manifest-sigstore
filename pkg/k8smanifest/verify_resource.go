@@ -99,7 +99,6 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		}
 	}
 
-	preManifestFetch := time.Now().UTC()
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
 	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
@@ -131,14 +130,12 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		keyPath = &(vo.KeyPath)
 	}
 
-	preSignatureVerify := time.Now().UTC()
 	var sigVerified bool
 	log.Debug("verifying signature...")
 	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath, vo.AnnotationConfig).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to verify signature")
 	}
-	postSignatureVerify := time.Now().UTC()
 
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
@@ -154,14 +151,6 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 			return nil, errors.Wrap(err, "failed to get provenance")
 		}
 	}
-
-	finish := time.Now().UTC()
-	log.Infof("VR for obj kind: %s, name: %s, total time: %vs", obj.GetKind(), obj.GetName(), finish.Sub(start).Seconds())
-	log.Infof("VR for obj kind: %s, name: %s,   initialize: %vs", obj.GetKind(), obj.GetName(), preManifestFetch.Sub(start).Seconds())
-	log.Infof("VR for obj kind: %s, name: %s,   manifest-fetch: %vs", obj.GetKind(), obj.GetName(), preManifestMatch.Sub(preManifestFetch).Seconds())
-	log.Infof("VR for obj kind: %s, name: %s,   manifest-match: %vs", obj.GetKind(), obj.GetName(), preSignatureVerify.Sub(preManifestMatch).Seconds())
-	log.Infof("VR for obj kind: %s, name: %s,   signature-verify: %vs", obj.GetKind(), obj.GetName(), postSignatureVerify.Sub(preSignatureVerify).Seconds())
-	log.Infof("VR for obj kind: %s, name: %s,   provenance(if available): %vs", obj.GetKind(), obj.GetName(), finish.Sub(postSignatureVerify).Seconds())
 
 	return &VerifyResourceResult{
 		Verified:        verified,

@@ -295,6 +295,10 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		return false, errors.Wrap(err, "error in executing preparaction for verify-resource")
 	}
 
+	if outputFormat == "" {
+		log.Info("verifying the resources.")
+	}
+	// execute verify-resource by using prepared cache
 	preVerifyResource := time.Now().UTC()
 	eg2 := errgroup.Group{}
 	mutex := sync.Mutex{}
