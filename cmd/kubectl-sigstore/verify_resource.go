@@ -157,7 +157,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
 	cmd.PersistentFlags().BoolVar(&imageVerify, "image-verify", false, "if true, verify images of the specified resources")
 	cmd.PersistentFlags().StringVar(&imageKeyPath, "image-key", "", "a comma-separated list of paths to public keys for images (if empty, do key-less verification)")
-	cmd.PersistentFlags().Int64Var(&concurrencyNum, "concurrency", -1, "number of concurrency for verifying multiple resources. If negative, use num of CPU cores.")
+	cmd.PersistentFlags().Int64Var(&concurrencyNum, "max-concurrency", 4, "number of concurrency for verifying multiple resources. If negative, use num of CPU cores.")
 	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
 	cmd.PersistentFlags().StringVar(&manifestBundleResRef, "manifest-bundle-resource", "", "a comma-separated list of configmaps that contains signature, message, attestation, sbom")
@@ -199,6 +199,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	// add signature/message/others annotations to ignore fields
 	vo.SetAnnotationIgnoreFields()
 
+	if outputFormat == "" {
+		log.Info("identifying target resources.")
+	}
 	objs := []unstructured.Unstructured{}
 	if configType == configTypeConstraint {
 		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint, concurrencyNum)
@@ -234,11 +237,16 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
 
-	imagesToBeVerified := getAllImagesToBeVerified(vo.ImageRef, objs, vo.AnnotationConfig, vo.ImageVerification.Enabled)
+	imagesToBeused := getAllImagesToBeUsed(vo.ImageRef, objs, vo.AnnotationConfig, vo.Provenance)
 
+	if outputFormat == "" {
+		log.Info("loading some required data.")
+	}
+	// register functions to connect remote registry or server
 	prepareFuncs := []reflect.Value{}
-	for i := range imagesToBeVerified {
-		img := imagesToBeVerified[i]
+	for i := range imagesToBeused {
+		img := imagesToBeused[i]
+		// manifest fetch functions
 		if img.imageType == k8smanifest.ArtifactManifestImage {
 			manifestFetcher := k8smanifest.NewManifestFetcher(img.ImageRef, "", vo.AnnotationConfig, nil, 0)
 			if fetcher, ok := manifestFetcher.(*k8smanifest.ImageManifestFetcher); ok {
@@ -250,12 +258,14 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		if vo.KeyPath != "" {
 			keyPath = &(vo.KeyPath)
 		}
+		// signature verification functions
 		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ImageRef, keyPath, vo.AnnotationConfig)
 		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
 			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
 		}
 
 		if vo.Provenance {
+			// provenance functions
 			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
 			if getter, ok := provGetter.(*k8smanifest.ImageProvenanceGetter); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(getter.Get))
@@ -263,6 +273,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		}
 	}
 
+	// execute image pull and prepate cache for them
 	eg1 := errgroup.Group{}
 	if concurrencyNum < 1 {
 		concurrencyNum = int64(runtime.NumCPU())
@@ -284,6 +295,10 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		return false, errors.Wrap(err, "error in executing preparaction for verify-resource")
 	}
 
+	if outputFormat == "" {
+		log.Info("verifying the resources.")
+	}
+	// execute verify-resource by using prepared cache
 	preVerifyResource := time.Now().UTC()
 	eg2 := errgroup.Group{}
 	mutex := sync.Mutex{}
@@ -332,10 +347,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	allVerified := summarizedResult.Summary.Total == summarizedResult.Summary.Valid
 	finish := time.Now().UTC()
 
-	log.Infof("total time: %vs", finish.Sub(start).Seconds())
-	log.Infof("  initialize: %vs", preVerifyResource.Sub(start).Seconds())
-	log.Infof("  verify-resource: %vs", postVerifyResource.Sub(preVerifyResource).Seconds())
-	log.Infof("  finalize: %vs", finish.Sub(postVerifyResource).Seconds())
+	if outputFormat == "" {
+		log.Infof("Total elapsed time: %vs (initialize: %vs, verify: %vs, print: %vs)", finish.Sub(start).Seconds(), preVerifyResource.Sub(start).Seconds(), postVerifyResource.Sub(preVerifyResource).Seconds(), finish.Sub(postVerifyResource).Seconds())
+	}
 	return allVerified, nil
 }
 
@@ -1213,30 +1227,30 @@ func validateConfigMapRef(cmRefString string) string {
 	return strings.Join(validatedParts, ",")
 }
 
-type imageToBeVerified struct {
+type imageToBeUsed struct {
 	kubeutil.ImageObject
 	imageType k8smanifest.ArtifactType
 }
 
-// list all images to be verified
-func getAllImagesToBeVerified(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, imageVerify bool) []imageToBeVerified {
-	images := []imageToBeVerified{}
+// list all images to be used for manifest matching, signature verification and provenance search
+func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled bool) []imageToBeUsed {
+	images := []imageToBeUsed{}
 	if imageRef == "" {
 		imageAnnotationKey := annotationConfig.ImageRefAnnotationKey()
 		for _, obj := range objs {
 			annt := obj.GetAnnotations()
 			if img, ok := annt[imageAnnotationKey]; ok {
-				images = append(images, imageToBeVerified{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
 			}
 		}
 	} else {
 		imageRefList := k8ssigutil.SplitCommaSeparatedString(imageRef)
 		for _, img := range imageRefList {
-			images = append(images, imageToBeVerified{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+			images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
 		}
 	}
 
-	if imageVerify {
+	if provenanceEnabled {
 		for i := range objs {
 			obj := objs[i]
 			imageObjects, err := kubeutil.GetAllImagesFromObject(&obj)
@@ -1245,7 +1259,7 @@ func getAllImagesToBeVerified(imageRef string, objs []unstructured.Unstructured,
 				continue
 			}
 			for _, img := range imageObjects {
-				images = append(images, imageToBeVerified{imageType: k8smanifest.ArtifactContainerImage, ImageObject: img})
+				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactContainerImage, ImageObject: img})
 			}
 		}
 	}
