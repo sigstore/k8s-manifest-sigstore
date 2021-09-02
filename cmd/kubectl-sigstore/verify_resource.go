@@ -251,7 +251,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		}
 	}
 
-	imagesToBeused := getAllImagesToBeUsed(vo.ImageRef, objs, vo.AnnotationConfig, vo.Provenance)
+	imagesToBeused := getAllImagesToBeUsed(vo.ImageRef, objs, vo.AnnotationConfig, vo.Provenance, imageVerify)
 
 	if outputFormat == "" {
 		log.Info("loading some required data.")
@@ -260,26 +260,29 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	prepareFuncs := []reflect.Value{}
 	for i := range imagesToBeused {
 		img := imagesToBeused[i]
+
 		// manifest fetch functions
-		if img.imageType == k8smanifest.ArtifactManifestImage {
+		if img.manifest {
 			manifestFetcher := k8smanifest.NewManifestFetcher(img.ImageRef, "", vo.AnnotationConfig, nil, 0)
 			if fetcher, ok := manifestFetcher.(*k8smanifest.ImageManifestFetcher); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(fetcher.FetchAll))
 			}
 		}
 
-		var keyPath *string
-		if vo.KeyPath != "" {
-			keyPath = &(vo.KeyPath)
-		}
 		// signature verification functions
-		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ImageRef, keyPath, vo.AnnotationConfig)
-		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
-			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
+		if img.verify {
+			var keyPath *string
+			if vo.KeyPath != "" {
+				keyPath = &(vo.KeyPath)
+			}
+			sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ImageRef, keyPath, vo.AnnotationConfig)
+			if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
+				prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
+			}
 		}
 
-		if vo.Provenance {
-			// provenance functions
+		// provenance functions
+		if img.provenance {
 			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
 			if getter, ok := provGetter.(*k8smanifest.ImageProvenanceGetter); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(getter.Get))
@@ -1336,28 +1339,30 @@ func validateConfigMapRef(cmRefString string) string {
 
 type imageToBeUsed struct {
 	kubeutil.ImageObject
-	imageType k8smanifest.ArtifactType
+	manifest   bool
+	verify     bool
+	provenance bool
 }
 
 // list all images to be used for manifest matching, signature verification and provenance search
-func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled bool) []imageToBeUsed {
+func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled, imageVerifyEnabled bool) []imageToBeUsed {
 	images := []imageToBeUsed{}
 	if imageRef == "" {
 		imageAnnotationKey := annotationConfig.ImageRefAnnotationKey()
 		for _, obj := range objs {
 			annt := obj.GetAnnotations()
 			if img, ok := annt[imageAnnotationKey]; ok {
-				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+				images = append(images, imageToBeUsed{ImageObject: kubeutil.ImageObject{ImageRef: img}, manifest: true, verify: true, provenance: provenanceEnabled})
 			}
 		}
 	} else {
 		imageRefList := k8ssigutil.SplitCommaSeparatedString(imageRef)
 		for _, img := range imageRefList {
-			images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+			images = append(images, imageToBeUsed{ImageObject: kubeutil.ImageObject{ImageRef: img}, manifest: true, verify: true, provenance: provenanceEnabled})
 		}
 	}
 
-	if provenanceEnabled {
+	if provenanceEnabled || imageVerifyEnabled {
 		for i := range objs {
 			obj := objs[i]
 			imageObjects, err := kubeutil.GetAllImagesFromObject(&obj)
@@ -1366,7 +1371,7 @@ func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, ann
 				continue
 			}
 			for _, img := range imageObjects {
-				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactContainerImage, ImageObject: img})
+				images = append(images, imageToBeUsed{ImageObject: img, manifest: false, verify: imageVerifyEnabled, provenance: provenanceEnabled})
 			}
 		}
 	}

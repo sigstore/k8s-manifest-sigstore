@@ -17,12 +17,12 @@
 package k8smanifest
 
 import (
+	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/pkg/errors"
-	"github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 )
 
@@ -65,7 +65,16 @@ func VerifyImage(obj unstructured.Unstructured, vo *VerifyImageOption) (*VerifyI
 			results = append(results, r)
 			continue
 		}
-		sigVerified, signerName, _, err := cosign.VerifyImage(img.ImageRef, vo.KeyPath)
+		var keyPath *string
+		if vo.KeyPath != "" {
+			keyPath = &(vo.KeyPath)
+		}
+		verifier := NewSignatureVerifier(nil, img.ImageRef, keyPath, AnnotationConfig{})
+		imageVerifier, ok := verifier.(*ImageSignatureVerifier)
+		if !ok {
+			return nil, fmt.Errorf("failed to initialize image verifier for %s", img.ImageRef)
+		}
+		sigVerified, signerName, _, err := imageVerifier.Verify()
 		failedReason := ""
 		if !sigVerified && err != nil {
 			failedReason = err.Error()
