@@ -285,3 +285,11 @@ func IsDir(path string) (bool, error) {
 	}
 	return fi.IsDir(), nil
 }
+
+func GetHomeDir() string {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		dir = "/root"
+	}
+	return dir
+}
