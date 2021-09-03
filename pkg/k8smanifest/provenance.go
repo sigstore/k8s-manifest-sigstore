@@ -303,7 +303,13 @@ func (g *ImageProvenanceGetter) getAttestation() ([]byte, *int, error) {
 				}
 			}
 			if results[2] != nil {
-				err = results[2].(error)
+				var ok bool
+				if err, ok = results[2].(error); !ok {
+					errMap := results[2].(map[string]interface{})
+					if errBytes, mErr := json.Marshal(errMap); mErr == nil {
+						err = errors.New(string(errBytes))
+					}
+				}
 			}
 		} else {
 			log.Debug("attestation cache not found for image: ", g.imageRef, ", hash: ", g.imageHash)
