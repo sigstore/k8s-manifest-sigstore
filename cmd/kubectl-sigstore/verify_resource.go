@@ -279,7 +279,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	sem := semaphore.NewWeighted(concurrencyNum)
 	for i := range prepareFuncs {
 		pf := prepareFuncs[i]
-		sem.Acquire(context.Background(), 1)
+		_ = sem.Acquire(context.Background(), 1)
 		eg1.Go(func() error {
 			if pf.Type().Kind() != reflect.Func {
 				return fmt.Errorf("failed to call preparation function; this is not a function, but %s", pf.Type().Kind().String())
@@ -303,7 +303,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	results := []resourceResult{}
 	for i := range objs {
 		obj := objs[i]
-		sem.Acquire(context.Background(), 1)
+		_ = sem.Acquire(context.Background(), 1)
 		eg2.Go(func() error {
 			log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
 			vResult, err := k8smanifest.VerifyResource(obj, vo)
@@ -570,7 +570,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 		nsName := kindNamespaces[i][1]
 		kindResource := kinds[kindName]
 		nsObj := namespaces[nsName]
-		sem.Acquire(context.Background(), 1)
+		_ = sem.Acquire(context.Background(), 1)
 		eg1.Go(func() error {
 			tmpObjList, err := kubeutil.ListResources("", kindName, nsName)
 			if err != nil {

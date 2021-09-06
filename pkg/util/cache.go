@@ -120,7 +120,7 @@ type LocalFileCache struct {
 
 func (c *LocalFileCache) Set(key string, value ...interface{}) error {
 	if !c.baseDirExists() {
-		c.initBaseDir()
+		_ = c.initBaseDir()
 	}
 	if c.mem == nil {
 		c.mem = c.initMem()
@@ -144,12 +144,12 @@ func (c *LocalFileCache) Set(key string, value ...interface{}) error {
 
 func (c *LocalFileCache) Get(key string) ([]interface{}, error) {
 	if !c.baseDirExists() {
-		c.initBaseDir()
+		_ = c.initBaseDir()
 	}
 	if c.mem == nil {
 		c.mem = c.initMem()
 	}
-	c.clearExpiredData()
+	_ = c.clearExpiredData()
 
 	value1, err := c.mem.Get(key)
 	if err == nil {
