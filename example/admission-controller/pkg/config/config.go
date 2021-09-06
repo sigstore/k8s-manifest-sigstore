@@ -37,12 +37,12 @@ import (
 const configKeyInConfigMap = "config.yaml"
 
 type ManifestIntegrityConfig struct {
-	k8smanifest.VerifyOption `json:""`
-	InScopeObjects           k8smanifest.ObjectReferenceList `json:"inScopeObjects,omitempty"`
-	SkipUsers                ObjectUserBindingList           `json:"skipUsers,omitempty"`
-	KeySecertName            string                          `json:"keySecretName,omitempty"`
-	KeySecertNamespace       string                          `json:"keySecretNamespace,omitempty"`
-	ImageRef                 string                          `json:"imageRef,omitempty"`
+	k8smanifest.VerifyResourceOption `json:""`
+	InScopeObjects                   k8smanifest.ObjectReferenceList `json:"inScopeObjects,omitempty"`
+	SkipUsers                        ObjectUserBindingList           `json:"skipUsers,omitempty"`
+	KeySecertName                    string                          `json:"keySecretName,omitempty"`
+	KeySecertNamespace               string                          `json:"keySecretNamespace,omitempty"`
+	ImageRef                         string                          `json:"imageRef,omitempty"`
 }
 
 type ObjectUserBindingList []ObjectUserBinding

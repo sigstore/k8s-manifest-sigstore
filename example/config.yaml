@@ -1,7 +1,9 @@
+# skip verification for this object
 skipObjects:
 - kind: ConfigMap
   name: kube-root-ca.crt
 
+# ignore `data.key2` field changes in `sample-cm` ConfigMap
 ignoreFields:
   - objects:
     - kind: ConfigMap
@@ -9,5 +11,6 @@ ignoreFields:
     fields:
     - data.key2
 
+# only a signer with this name is allowed (in case of keyless)
 signers:
 - sample-signer@gmail.com

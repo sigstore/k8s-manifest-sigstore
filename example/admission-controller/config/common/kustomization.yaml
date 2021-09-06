@@ -1,6 +1,7 @@
 resources:
 - namespace.yaml
 - deployment.yaml
+- configmap.yaml
 
 configurations:
 - kustomizeconfig.yaml
