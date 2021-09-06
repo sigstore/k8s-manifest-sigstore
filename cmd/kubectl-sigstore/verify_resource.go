@@ -522,7 +522,15 @@ func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, insco
 	}
 	if cacheFound {
 		if results[0] != nil {
-			objs = results[0].([]unstructured.Unstructured)
+			var ok bool
+			if objs, ok = results[0].([]unstructured.Unstructured); !ok {
+				tmpObjIfs := results[0].([]interface{})
+				objs = []unstructured.Unstructured{}
+				for _, tmpObjIf := range tmpObjIfs {
+					tmpObj := tmpObjIf.(unstructured.Unstructured)
+					objs = append(objs, tmpObj)
+				}
+			}
 		}
 		if results[1] != nil {
 			err = results[1].(error)
