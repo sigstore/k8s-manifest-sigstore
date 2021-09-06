@@ -25,9 +25,17 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
+
+var localCacheEnvKey = "K8S_MANIFEST_LOCAL_FILE_CACHE"
+
+var globalCache Cache
+
+var defaultLocalFileCacheTTL time.Duration = 180
+var defaultOnMemoryCacheTTL time.Duration = 30
 
 // ensure these implement Cache interface
 var _ Cache = &OnMemoryCache{}
@@ -215,4 +223,25 @@ func (c *LocalFileCache) initMem() *OnMemoryCache {
 
 func GetCacheBaseDir() string {
 	return filepath.Join(GetHomeDir(), ".sigstore", "k8smanifest", "cache")
+}
+
+func IsLocalCacheEnabeld() bool {
+	enabled, _ := strconv.ParseBool(os.Getenv(localCacheEnvKey))
+	return enabled
+}
+
+func initGlobalCache() {
+	if IsLocalCacheEnabeld() {
+		globalCache = &LocalFileCache{TTL: defaultLocalFileCacheTTL * time.Second}
+	} else {
+		globalCache = &OnMemoryCache{TTL: defaultOnMemoryCacheTTL * time.Second}
+	}
+}
+
+func SetCache(key string, value ...interface{}) error {
+	return globalCache.Set(key, value...)
+}
+
+func GetCache(key string) ([]interface{}, error) {
+	return globalCache.Get(key)
 }

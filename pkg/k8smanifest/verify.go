@@ -20,10 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	k8smnfcosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
@@ -38,20 +35,6 @@ import (
 )
 
 const SigRefEmbeddedInAnnotation = "__embedded_in_annotation__"
-
-var cacheForVerifyResource k8smnfutil.Cache
-var localCacheEnvKey = "K8S_MANIFEST_LOCAL_FILE_CACHE"
-
-func init() {
-	localFileCache, _ := strconv.ParseBool(os.Getenv(localCacheEnvKey))
-	if localFileCache {
-		cacheForVerifyResource = &k8smnfutil.LocalFileCache{TTL: 180 * time.Second}
-		cacheForProvenance = &k8smnfutil.LocalFileCache{TTL: 180 * time.Second}
-	} else {
-		cacheForVerifyResource = &k8smnfutil.OnMemoryCache{TTL: 30 * time.Second}
-		cacheForProvenance = &k8smnfutil.OnMemoryCache{TTL: 30 * time.Second}
-	}
-}
 
 type SignatureVerifier interface {
 	Verify() (bool, string, *int64, error)
@@ -158,7 +141,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 func (v *ImageSignatureVerifier) getResultFromCache(imageRef, pubkey string) (bool, bool, string, *int64, error) {
 	key := fmt.Sprintf("cache/verify-image/%s/%s", imageRef, pubkey)
 	resultNum := 4
-	result, err := cacheForVerifyResource.Get(key)
+	result, err := k8smnfutil.GetCache(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
 		return false, false, "", nil, nil
@@ -186,7 +169,7 @@ func (v *ImageSignatureVerifier) getResultFromCache(imageRef, pubkey string) (bo
 
 func (v *ImageSignatureVerifier) setResultToCache(imageRef, pubkey string, verified bool, signerName string, signedTimestamp *int64, err error) {
 	key := fmt.Sprintf("cache/verify-image/%s/%s", imageRef, pubkey)
-	setErr := cacheForVerifyResource.Set(key, verified, signerName, signedTimestamp, err)
+	setErr := k8smnfutil.SetCache(key, verified, signerName, signedTimestamp, err)
 	if setErr != nil {
 		log.Warn("cache set error: ", setErr.Error())
 	}
@@ -393,7 +376,7 @@ func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byt
 func (f *ImageManifestFetcher) getManifestFromCache(imageRef string) (bool, []byte, error) {
 	key := fmt.Sprintf("cache/fetch-manifest/%s", imageRef)
 	resultNum := 2
-	result, err := cacheForVerifyResource.Get(key)
+	result, err := k8smnfutil.GetCache(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
 		return false, nil, nil
@@ -419,7 +402,7 @@ func (f *ImageManifestFetcher) getManifestFromCache(imageRef string) (bool, []by
 
 func (f *ImageManifestFetcher) setManifestToCache(imageRef string, concatYAMLbytes []byte, err error) {
 	key := fmt.Sprintf("cache/fetch-manifest/%s", imageRef)
-	setErr := cacheForVerifyResource.Set(key, concatYAMLbytes, err)
+	setErr := k8smnfutil.SetCache(key, concatYAMLbytes, err)
 	if setErr != nil {
 		log.Warn("cache set error: ", setErr.Error())
 	}

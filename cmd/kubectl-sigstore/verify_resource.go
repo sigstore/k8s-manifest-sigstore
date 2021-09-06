@@ -190,7 +190,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 
 	objs := []unstructured.Unstructured{}
 	if configType == configTypeConstraint {
-		objs, err = getObjsByConstraintMatchCondition(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
+		objs, err = getObjsByConstraintMatchConditionWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
 	} else if len(kubeGetArgs) > 0 {
 		objs, err = kubectlOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
@@ -505,6 +505,37 @@ func getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField s
 	}
 
 	return objs, nil
+}
+
+func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+	var objs []unstructured.Unstructured
+	var err error
+	cacheKey := fmt.Sprintf("targetObjects/constraint/%s", constraintRef)
+	resultNum := 2
+	results, err := k8ssigutil.GetCache(cacheKey)
+	cacheFound := false
+	if err == nil {
+		if len(results) != resultNum {
+			return nil, fmt.Errorf("cache has inconsistent data: a length of results must be %v, but got %v", resultNum, len(results))
+		}
+		cacheFound = true
+	}
+	if cacheFound {
+		if results[0] != nil {
+			objs = results[0].([]unstructured.Unstructured)
+		}
+		if results[1] != nil {
+			err = results[1].(error)
+		}
+		return objs, err
+	} else {
+		objs, err = getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField)
+		cErr := k8ssigutil.SetCache(cacheKey, objs, err)
+		if cErr != nil {
+			log.Warnf("failed to save cache: %s", cErr.Error())
+		}
+		return objs, err
+	}
 }
 
 // generate result bytes in a table which will be shown in output
