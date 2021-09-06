@@ -155,8 +155,6 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configNamespace, "config-namespace", "", "a namespace of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
 	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
-	cmd.PersistentFlags().BoolVar(&imageVerify, "image-verify", false, "if true, verify images of the specified resources")
-	cmd.PersistentFlags().StringVar(&imageKeyPath, "image-key", "", "a comma-separated list of paths to public keys for images (if empty, do key-less verification)")
 	cmd.PersistentFlags().Int64Var(&concurrencyNum, "max-concurrency", 4, "number of concurrency for verifying multiple resources. If negative, use num of CPU cores.")
 	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
@@ -165,7 +163,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, imageVerify bool, imageKeyPath string, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
 	var err error
 	start := time.Now().UTC()
 	if outputFormat != "" {
@@ -481,7 +479,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get api resources")
 	}
-	log.Debug("[DEBUG] step1 done")
 	// step 2
 	// list kinds in the match condition and check its scope
 	kinds := map[string]metav1.APIResource{}
@@ -508,7 +505,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 			}
 		}
 	}
-	log.Debug("[DEBUG] step2 done")
 	// step 3
 	// get all namespaces in a cluster and extract some of them that match the match condition
 	namespaces := map[string]*corev1.Namespace{}
@@ -537,7 +533,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 			}
 		}
 	}
-	log.Debug("[DEBUG] step3 done")
 	// step 4
 	// check ExcludeNamespace conditions if exist
 	if len(constraintMatch.ExcludedNamespaces) > 0 {
@@ -555,7 +550,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 		kind      metav1.APIResource
 		namespace *corev1.Namespace
 	}
-	log.Debug("[DEBUG] step4 done")
 	// step 5
 	// list existing resources by kind in a namespace. do this for all selected kinds and namespaces
 	eg1 := errgroup.Group{}
@@ -619,7 +613,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 			objs = append(objs, *od.obj)
 		}
 	}
-	log.Debug("[DEBUG] step5 done")
 	// step 6
 	// check inScopeOpject condition if exists
 	if inScopeObjectCondition != nil {
@@ -635,7 +628,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 	return objs, nil
 }
 
-func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string, concurrencyNum int64) ([]unstructured.Unstructured, error) {
 	var objs []unstructured.Unstructured
 	var err error
 	cacheKey := fmt.Sprintf("getObjsByConstraint/%s", constraintRef)
