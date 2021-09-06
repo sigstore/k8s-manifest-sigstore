@@ -18,18 +18,24 @@ package main
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ghodss/yaml"
 	gkmatch "github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
@@ -96,6 +102,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var provenance bool
 	var provResRef string
 	var manifestBundleResRef string
+	var concurrencyNum int64
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -126,7 +133,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat, concurrencyNum)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -148,6 +155,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&configNamespace, "config-namespace", "", "a namespace of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
 	cmd.PersistentFlags().StringVar(&configField, "config-field", "", "field of config data (e.g. `data.\"config.yaml\"` in a ConfigMap, `spec.parameters` in a constraint)")
 	cmd.PersistentFlags().BoolVar(&disableDefaultConfig, "disable-default-config", false, "if true, disable default ignore fields configuration (default to false)")
+	cmd.PersistentFlags().Int64Var(&concurrencyNum, "max-concurrency", 4, "number of concurrency for verifying multiple resources. If negative, use num of CPU cores.")
 	cmd.PersistentFlags().BoolVar(&provenance, "provenance", false, "if true, show provenance data (default to false)")
 	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
 	cmd.PersistentFlags().StringVar(&manifestBundleResRef, "manifest-bundle-resource", "", "a comma-separated list of configmaps that contains signature, message, attestation, sbom")
@@ -155,8 +163,9 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
 	var err error
+	start := time.Now().UTC()
 	if outputFormat != "" {
 		if !supportedOutputFormat[outputFormat] {
 			return false, fmt.Errorf("output format `%s` is not supported", outputFormat)
@@ -188,9 +197,12 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	// add signature/message/others annotations to ignore fields
 	vo.SetAnnotationIgnoreFields()
 
+	if outputFormat == "" {
+		log.Info("identifying target resources.")
+	}
 	objs := []unstructured.Unstructured{}
 	if configType == configTypeConstraint {
-		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
+		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint, concurrencyNum)
 	} else if len(kubeGetArgs) > 0 {
 		objs, err = kubectlOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
@@ -223,21 +235,100 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
 
-	results := []resourceResult{}
-	for _, obj := range objs {
-		log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
-		vResult, err := k8smanifest.VerifyResource(obj, vo)
-		r := resourceResult{
-			Object: obj,
-		}
-		if err == nil {
-			r.Result = vResult
-		} else {
-			r.Error = err
-		}
-		log.Debug("result: ", r)
-		results = append(results, r)
+	imagesToBeused := getAllImagesToBeUsed(vo.ImageRef, objs, vo.AnnotationConfig, vo.Provenance)
+
+	if outputFormat == "" {
+		log.Info("loading some required data.")
 	}
+	// register functions to connect remote registry or server
+	prepareFuncs := []reflect.Value{}
+	for i := range imagesToBeused {
+		img := imagesToBeused[i]
+		// manifest fetch functions
+		if img.imageType == k8smanifest.ArtifactManifestImage {
+			manifestFetcher := k8smanifest.NewManifestFetcher(img.ImageRef, "", vo.AnnotationConfig, nil, 0)
+			if fetcher, ok := manifestFetcher.(*k8smanifest.ImageManifestFetcher); ok {
+				prepareFuncs = append(prepareFuncs, reflect.ValueOf(fetcher.FetchAll))
+			}
+		}
+
+		var keyPath *string
+		if vo.KeyPath != "" {
+			keyPath = &(vo.KeyPath)
+		}
+		// signature verification functions
+		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ImageRef, keyPath, vo.AnnotationConfig)
+		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
+			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
+		}
+
+		if vo.Provenance {
+			// provenance functions
+			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
+			if getter, ok := provGetter.(*k8smanifest.ImageProvenanceGetter); ok {
+				prepareFuncs = append(prepareFuncs, reflect.ValueOf(getter.Get))
+			}
+		}
+	}
+
+	// execute image pull and prepate cache for them
+	eg1 := errgroup.Group{}
+	if concurrencyNum < 1 {
+		concurrencyNum = int64(runtime.NumCPU())
+	}
+	sem := semaphore.NewWeighted(concurrencyNum)
+	for i := range prepareFuncs {
+		pf := prepareFuncs[i]
+		_ = sem.Acquire(context.Background(), 1)
+		eg1.Go(func() error {
+			if pf.Type().Kind() != reflect.Func {
+				return fmt.Errorf("failed to call preparation function; this is not a function, but %s", pf.Type().Kind().String())
+			}
+			_ = pf.Call(nil)
+			sem.Release(1)
+			return nil
+		})
+	}
+	if err = eg1.Wait(); err != nil {
+		return false, errors.Wrap(err, "error in executing preparaction for verify-resource")
+	}
+
+	if outputFormat == "" {
+		log.Info("verifying the resources.")
+	}
+	// execute verify-resource by using prepared cache
+	preVerifyResource := time.Now().UTC()
+	eg2 := errgroup.Group{}
+	mutex := sync.Mutex{}
+	results := []resourceResult{}
+	for i := range objs {
+		obj := objs[i]
+		_ = sem.Acquire(context.Background(), 1)
+		eg2.Go(func() error {
+			log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
+			vResult, err := k8smanifest.VerifyResource(obj, vo)
+			r := resourceResult{
+				Object: obj,
+			}
+			if err == nil {
+				r.Result = vResult
+			} else {
+				r.Error = err
+			}
+			log.Debug("result: ", r)
+			mutex.Lock()
+			results = append(results, r)
+			mutex.Unlock()
+
+			sem.Release(1)
+			return nil
+		})
+
+	}
+	if err = eg2.Wait(); err != nil {
+		return false, errors.Wrap(err, "error in executing verify-resource")
+	}
+	postVerifyResource := time.Now().UTC()
 
 	var resultBytes []byte
 	summarizedResult := NewVerifyResourceResult(results, vo.Provenance)
@@ -252,6 +343,11 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	fmt.Println(string(resultBytes))
 
 	allVerified := summarizedResult.Summary.Total == summarizedResult.Summary.Valid
+	finish := time.Now().UTC()
+
+	if outputFormat == "" {
+		log.Infof("Total elapsed time: %vs (initialize: %vs, verify: %vs, print: %vs)", finish.Sub(start).Seconds(), preVerifyResource.Sub(start).Seconds(), postVerifyResource.Sub(preVerifyResource).Seconds(), finish.Sub(postVerifyResource).Seconds())
+	}
 	return allVerified, nil
 }
 
@@ -372,7 +468,7 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 // 4. check ExcludeNamespace conditions if exist
 // 5. list existing resources by kind in a namespace. do this for all selected kinds and namespaces
 // 6. check inScopeOpject condition if exists
-func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurrencyNum int64) ([]unstructured.Unstructured, error) {
 	// step 1
 	// get Constraint resource from cluster and extract its gatekeeper match condition and `inScopeObjects` in parameters
 	constraintMatch, inScopeObjectCondition, err := k8smanifest.GetMatchConditionFromConfigResource(constraintRef, matchField, inscopeField)
@@ -409,7 +505,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 			}
 		}
 	}
-
 	// step 3
 	// get all namespaces in a cluster and extract some of them that match the match condition
 	namespaces := map[string]*corev1.Namespace{}
@@ -455,30 +550,57 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 		kind      metav1.APIResource
 		namespace *corev1.Namespace
 	}
-
 	// step 5
 	// list existing resources by kind in a namespace. do this for all selected kinds and namespaces
+	eg1 := errgroup.Group{}
+	if concurrencyNum < 1 {
+		concurrencyNum = int64(runtime.NumCPU())
+	}
+	sem := semaphore.NewWeighted(concurrencyNum)
+	mutex := sync.Mutex{}
 	objDataList := []objData{}
-	for kindName, kindResource := range kinds {
-		for nsName, nsObj := range namespaces {
+	kindNamespaces := [][2]string{}
+	for kindName := range kinds {
+		for nsName := range namespaces {
+			kindNamespaces = append(kindNamespaces, [2]string{kindName, nsName})
+		}
+	}
+	for i := range kindNamespaces {
+		kindName := kindNamespaces[i][0]
+		nsName := kindNamespaces[i][1]
+		kindResource := kinds[kindName]
+		nsObj := namespaces[nsName]
+		_ = sem.Acquire(context.Background(), 1)
+		eg1.Go(func() error {
 			tmpObjList, err := kubeutil.ListResources("", kindName, nsName)
 			if err != nil {
-				return nil, errors.Wrapf(err, "failed to list %s in %s namespace", kindName, nsName)
+				return errors.Wrapf(err, "failed to list %s in %s namespace", kindName, nsName)
 			}
 			if len(tmpObjList) > 0 {
 				var nsForThis *corev1.Namespace
 				if kindResource.Namespaced {
 					nsForThis = nsObj
 				}
+				tmpObjDataList := []objData{}
 				for _, obj := range tmpObjList {
-					objDataList = append(objDataList, objData{
+
+					tmpObjDataList = append(tmpObjDataList, objData{
 						obj:       obj,
 						kind:      kindResource,
 						namespace: nsForThis, // must be nil for cluster scope resource
 					})
 				}
+				mutex.Lock()
+				objDataList = append(objDataList, tmpObjDataList...)
+				mutex.Unlock()
 			}
-		}
+			sem.Release(1)
+			return nil
+		})
+	}
+
+	if err = eg1.Wait(); err != nil {
+		return nil, errors.Wrap(err, "error in listing object by kind and namespace in constraint")
 	}
 
 	objs := []unstructured.Unstructured{}
@@ -491,7 +613,6 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 			objs = append(objs, *od.obj)
 		}
 	}
-
 	// step 6
 	// check inScopeOpject condition if exists
 	if inScopeObjectCondition != nil {
@@ -507,7 +628,7 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unst
 	return objs, nil
 }
 
-func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string, concurrencyNum int64) ([]unstructured.Unstructured, error) {
 	var objs []unstructured.Unstructured
 	var err error
 	cacheKey := fmt.Sprintf("getObjsByConstraint/%s", constraintRef)
@@ -540,7 +661,7 @@ func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string
 	if cacheFound {
 		return objs, err
 	} else {
-		objs, err = getObjsByConstraint(constraintRef, matchField, inscopeField)
+		objs, err = getObjsByConstraint(constraintRef, matchField, inscopeField, concurrencyNum)
 		cErr := k8ssigutil.SetCache(cacheKey, objs, err)
 		if cErr != nil {
 			log.Warnf("failed to save cache: %s", cErr.Error())
@@ -1097,4 +1218,43 @@ func validateConfigMapRef(cmRefString string) string {
 		validatedParts = append(validatedParts, validP)
 	}
 	return strings.Join(validatedParts, ",")
+}
+
+type imageToBeUsed struct {
+	kubeutil.ImageObject
+	imageType k8smanifest.ArtifactType
+}
+
+// list all images to be used for manifest matching, signature verification and provenance search
+func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled bool) []imageToBeUsed {
+	images := []imageToBeUsed{}
+	if imageRef == "" {
+		imageAnnotationKey := annotationConfig.ImageRefAnnotationKey()
+		for _, obj := range objs {
+			annt := obj.GetAnnotations()
+			if img, ok := annt[imageAnnotationKey]; ok {
+				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+			}
+		}
+	} else {
+		imageRefList := k8ssigutil.SplitCommaSeparatedString(imageRef)
+		for _, img := range imageRefList {
+			images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+		}
+	}
+
+	if provenanceEnabled {
+		for i := range objs {
+			obj := objs[i]
+			imageObjects, err := kubeutil.GetAllImagesFromObject(&obj)
+			if err != nil {
+				log.Warn(err)
+				continue
+			}
+			for _, img := range imageObjects {
+				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactContainerImage, ImageObject: img})
+			}
+		}
+	}
+	return images
 }

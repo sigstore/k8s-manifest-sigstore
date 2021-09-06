@@ -49,7 +49,6 @@ func (r *VerifyResourceResult) String() string {
 }
 
 func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*VerifyResourceResult, error) {
-
 	objBytes, _ := yaml.Marshal(obj.Object)
 
 	verified := false
@@ -106,7 +105,6 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}
-
 	log.Debug("matching object with manifest...")
 	var mnfMatched bool
 	var diff *mapnode.DiffResult

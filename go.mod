@@ -24,6 +24,7 @@ require (
 	github.com/tektoncd/chains v0.3.0
 	github.com/theupdateframework/go-tuf v0.0.0-20210722233521-90e262754396
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.21.3
 	k8s.io/apimachinery v0.21.3
