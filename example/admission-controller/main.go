@@ -111,7 +111,7 @@ func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) 
 		if keyPath != "" {
 			vo.KeyPath = keyPath
 		}
-		// TODO: need to add default config somehow
+		vo = k8smanifest.AddDefaultConfig(vo)
 		result, err := k8smanifest.VerifyResource(obj, vo)
 		if err != nil {
 			log.Errorf("failed to check a requested resource; %s", err.Error())
