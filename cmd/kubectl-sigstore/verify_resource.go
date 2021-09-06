@@ -518,9 +518,6 @@ func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, insco
 		if len(results) != resultNum {
 			return nil, fmt.Errorf("cache has inconsistent data: a length of results must be %v, but got %v", resultNum, len(results))
 		}
-		cacheFound = true
-	}
-	if cacheFound {
 		if results[0] != nil {
 			var ok bool
 			if objs, ok = results[0].([]unstructured.Unstructured); !ok {
@@ -528,12 +525,19 @@ func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, insco
 				var tmpObjs []unstructured.Unstructured
 				if err = json.Unmarshal(objsBytes, &tmpObjs); err != nil {
 					objs = tmpObjs
+				} else {
+					log.Warnf("failed to unmarshal target object cache: %s", err.Error())
 				}
 			}
 		}
 		if results[1] != nil {
 			err = results[1].(error)
 		}
+		if objs != nil || err != nil {
+			cacheFound = true
+		}
+	}
+	if cacheFound {
 		return objs, err
 	} else {
 		objs, err = getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField)
