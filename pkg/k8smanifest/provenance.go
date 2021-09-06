@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -68,8 +67,6 @@ const (
 	AttestationDataKeyName = "attestation"
 	SBOMDataKeyName        = "sbom"
 )
-
-var onMemoryCacheForProvenance k8smnfutil.Cache = &k8smnfutil.OnMemoryCache{TTL: 30 * time.Second}
 
 type Provenance struct {
 	ResourceName *resourceName `json:"resource"`
@@ -199,7 +196,7 @@ func (g *RecursiveImageProvenanceGetter) imageDigest(imageRef string) (string, e
 	var err error
 	if g.cacheEnabled {
 
-		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
+		results, cacheErr := k8smnfutil.GetCache(cacheKey)
 		cacheFound := false
 		if len(results) != resultsNum && cacheErr == nil {
 			return "", fmt.Errorf("the number of results is wrong, GetImageDigest() should return %v, got %v", resultsNum, len(results))
@@ -217,7 +214,7 @@ func (g *RecursiveImageProvenanceGetter) imageDigest(imageRef string) (string, e
 		} else {
 			log.Debug("image digest cache not found for image: ", imageRef)
 			digest, err = k8smnfutil.GetImageDigest(g.manifestImageRef)
-			err = onMemoryCacheForProvenance.Set(cacheKey, digest, err)
+			err = k8smnfutil.SetCache(cacheKey, digest, err)
 			if err != nil {
 				log.Debug("failed to set image digest cache")
 			}
@@ -277,7 +274,7 @@ func (g *ImageProvenanceGetter) getAttestation() ([]byte, *int, error) {
 	if g.cacheEnabled {
 		cacheKey := fmt.Sprintf("ImageProvenanceGetter/getAttestationEntry/%s", g.imageHash)
 		resultsNum := 3
-		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
+		results, cacheErr := k8smnfutil.GetCache(cacheKey)
 		cacheFound := false
 		if len(results) != resultsNum && cacheErr == nil {
 			return nil, nil, fmt.Errorf("the number of results is wrong, getAttestationEntry() should return %v, got %v", resultsNum, len(results))
@@ -287,18 +284,35 @@ func (g *ImageProvenanceGetter) getAttestation() ([]byte, *int, error) {
 
 		if cacheFound {
 			if results[0] != nil {
-				attestationBytes = results[0].([]byte)
+				var ok bool
+				if attestationBytes, ok = results[0].([]byte); !ok {
+					attestationStr := results[0].(string)
+					if tmpBytes, err := base64.StdEncoding.DecodeString(attestationStr); err == nil {
+						attestationBytes = tmpBytes
+					}
+				}
 			}
 			if results[1] != nil {
-				attestationLogIndex = results[1].(*int)
+				var ok bool
+				if attestationLogIndex, ok = results[1].(*int); !ok {
+					attestationLogFloat := results[1].(float64)
+					attestationLogInt := int(attestationLogFloat)
+					attestationLogIndex = &attestationLogInt
+				}
 			}
 			if results[2] != nil {
-				err = results[2].(error)
+				var ok bool
+				if err, ok = results[2].(error); !ok {
+					errMap := results[2].(map[string]interface{})
+					if errBytes, mErr := json.Marshal(errMap); mErr == nil {
+						err = errors.New(string(errBytes))
+					}
+				}
 			}
 		} else {
 			log.Debug("attestation cache not found for image: ", g.imageRef, ", hash: ", g.imageHash)
 			attestationBytes, attestationLogIndex, err = getAttestationEntry(g.imageHash)
-			err = onMemoryCacheForProvenance.Set(cacheKey, attestationBytes, attestationLogIndex, err)
+			err = k8smnfutil.SetCache(cacheKey, attestationBytes, attestationLogIndex, err)
 			if err != nil {
 				log.Debug("failed to set attestation cache")
 			}
@@ -318,7 +332,7 @@ func (g *ImageProvenanceGetter) getSBOM() (string, error) {
 	if g.cacheEnabled {
 		cacheKey := fmt.Sprintf("ImageProvenanceGetter/getSBOMRef/%s", g.imageRef)
 		resultsNum := 2
-		results, cacheErr := onMemoryCacheForProvenance.Get(cacheKey)
+		results, cacheErr := k8smnfutil.GetCache(cacheKey)
 		cacheFound := false
 		if len(results) != resultsNum && cacheErr == nil {
 			return "", fmt.Errorf("the number of results is wrong, getSBOMRef() should return %v, got %v", resultsNum, len(results))
@@ -331,12 +345,18 @@ func (g *ImageProvenanceGetter) getSBOM() (string, error) {
 				sbomRef = results[0].(string)
 			}
 			if results[1] != nil {
-				err = results[1].(error)
+				var ok bool
+				if err, ok = results[1].(error); !ok {
+					errMap := results[1].(map[string]interface{})
+					if errBytes, mErr := json.Marshal(errMap); mErr == nil {
+						err = errors.New(string(errBytes))
+					}
+				}
 			}
 		} else {
 			log.Debug("sbom reference cache not found for image: ", g.imageRef)
 			sbomRef, err = g.getSBOMRef(g.imageRef)
-			err = onMemoryCacheForProvenance.Set(cacheKey, sbomRef, err)
+			err = k8smnfutil.SetCache(cacheKey, sbomRef, err)
 			if err != nil {
 				log.Debug("failed to set sbom reference cache")
 			}

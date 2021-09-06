@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	k8smnfcosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
@@ -36,12 +35,6 @@ import (
 )
 
 const SigRefEmbeddedInAnnotation = "__embedded_in_annotation__"
-
-var onMemoryCacheForVerifyResource *k8smnfutil.OnMemoryCache
-
-func init() {
-	onMemoryCacheForVerifyResource = &k8smnfutil.OnMemoryCache{TTL: 30 * time.Second}
-}
 
 type SignatureVerifier interface {
 	Verify() (bool, string, *int64, error)
@@ -106,8 +99,8 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 		allErrs := []string{}
 		for i := range pubkeys {
 			pubkey := pubkeys[i]
-			// try getting result from on-memory cache
-			cacheFound, verified, signerName, signedTimestamp, err = v.getResultFromMemCache(imageRef, pubkey)
+			// try getting result from cache
+			cacheFound, verified, signerName, signedTimestamp, err = v.getResultFromCache(imageRef, pubkey)
 			// if found and verified true, return it
 			if cacheFound {
 				cacheFoundCount += 1
@@ -132,8 +125,8 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(imageRef, pubkey)
 
 		if v.onMemoryCacheEnabled {
-			// set the result to on-memory cache
-			v.setResultToMemCache(imageRef, pubkey, verified, signerName, signedTimestamp, err)
+			// set the result to cache
+			v.setResultToCache(imageRef, pubkey, verified, signerName, signedTimestamp, err)
 		}
 
 		if verified {
@@ -145,10 +138,10 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	return false, "", nil, fmt.Errorf("signature verification failed: %s", strings.Join(allErrs, "; "))
 }
 
-func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef, pubkey string) (bool, bool, string, *int64, error) {
+func (v *ImageSignatureVerifier) getResultFromCache(imageRef, pubkey string) (bool, bool, string, *int64, error) {
 	key := fmt.Sprintf("cache/verify-image/%s/%s", imageRef, pubkey)
 	resultNum := 4
-	result, err := onMemoryCacheForVerifyResource.Get(key)
+	result, err := k8smnfutil.GetCache(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
 		return false, false, "", nil, nil
@@ -174,9 +167,12 @@ func (v *ImageSignatureVerifier) getResultFromMemCache(imageRef, pubkey string) 
 	return true, verified, signerName, signedTimestamp, err
 }
 
-func (v *ImageSignatureVerifier) setResultToMemCache(imageRef, pubkey string, verified bool, signerName string, signedTimestamp *int64, err error) {
+func (v *ImageSignatureVerifier) setResultToCache(imageRef, pubkey string, verified bool, signerName string, signedTimestamp *int64, err error) {
 	key := fmt.Sprintf("cache/verify-image/%s/%s", imageRef, pubkey)
-	_ = onMemoryCacheForVerifyResource.Set(key, verified, signerName, signedTimestamp, err)
+	setErr := k8smnfutil.SetCache(key, verified, signerName, signedTimestamp, err)
+	if setErr != nil {
+		log.Warn("cache set error: ", setErr.Error())
+	}
 }
 
 type BlobSignatureVerifier struct {
@@ -275,7 +271,7 @@ type ManifestFetcher interface {
 // `ignoreFields` and `maxResourceManifestNum` are used inside manifest detection logic.
 func NewManifestFetcher(imageRef, resourceRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
 	if imageRef != "" {
-		return &ImageManifestFetcher{imageRefString: imageRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, onMemoryCacheEnabled: true}
+		return &ImageManifestFetcher{imageRefString: imageRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, cacheEnabled: true}
 	} else {
 		return &BlobManifestFetcher{AnnotationConfig: annotationConfig, resourceRefString: resourceRef, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	}
@@ -287,7 +283,7 @@ type ImageManifestFetcher struct {
 	AnnotationConfig       AnnotationConfig
 	ignoreFields           []string // used by ManifestSearchByValue()
 	maxResourceManifestNum int      // used by ManifestSearchByValue()
-	onMemoryCacheEnabled   bool
+	cacheEnabled           bool
 }
 
 func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
@@ -325,18 +321,18 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleImageRef string) ([]byte, error) {
 	var concatYAMLbytes []byte
 	var err error
-	if f.onMemoryCacheEnabled {
+	if f.cacheEnabled {
 		cacheFound := false
-		// try getting YAML manifests from on-memory cache
-		cacheFound, concatYAMLbytes, err = f.getManifestFromMemCache(singleImageRef)
+		// try getting YAML manifests from cache
+		cacheFound, concatYAMLbytes, err = f.getManifestFromCache(singleImageRef)
 		// if cache not found, do fetch and set the result to cache
 		if !cacheFound {
 			log.Debug("image manifest cache not found")
 			// fetch YAML manifests from actual image
 			concatYAMLbytes, err = f.getConcatYAMLFromImageRef(singleImageRef)
 			if err == nil {
-				// set the result to on-memory cache
-				f.setManifestToMemCache(singleImageRef, concatYAMLbytes, err)
+				// set the result to cache
+				f.setManifestToCache(singleImageRef, concatYAMLbytes, err)
 			}
 		}
 	} else {
@@ -377,10 +373,10 @@ func (f *ImageManifestFetcher) getConcatYAMLFromImageRef(imageRef string) ([]byt
 	return concatYAMLbytes, nil
 }
 
-func (f *ImageManifestFetcher) getManifestFromMemCache(imageRef string) (bool, []byte, error) {
+func (f *ImageManifestFetcher) getManifestFromCache(imageRef string) (bool, []byte, error) {
 	key := fmt.Sprintf("cache/fetch-manifest/%s", imageRef)
 	resultNum := 2
-	result, err := onMemoryCacheForVerifyResource.Get(key)
+	result, err := k8smnfutil.GetCache(key)
 	if err != nil {
 		// OnMemoryCache.Get() returns an error only when the key was not found
 		return false, nil, nil
@@ -390,7 +386,13 @@ func (f *ImageManifestFetcher) getManifestFromMemCache(imageRef string) (bool, [
 	}
 	var concatYAMLbytes []byte
 	if result[0] != nil {
-		concatYAMLbytes = result[0].([]byte)
+		var ok bool
+		if concatYAMLbytes, ok = result[0].([]byte); !ok {
+			concatYAMLStr := result[0].(string)
+			if tmpYAMLbytes, err := base64.StdEncoding.DecodeString(concatYAMLStr); err == nil {
+				concatYAMLbytes = tmpYAMLbytes
+			}
+		}
 	}
 	if result[1] != nil {
 		err = result[1].(error)
@@ -398,9 +400,12 @@ func (f *ImageManifestFetcher) getManifestFromMemCache(imageRef string) (bool, [
 	return true, concatYAMLbytes, err
 }
 
-func (f *ImageManifestFetcher) setManifestToMemCache(imageRef string, concatYAMLbytes []byte, err error) {
+func (f *ImageManifestFetcher) setManifestToCache(imageRef string, concatYAMLbytes []byte, err error) {
 	key := fmt.Sprintf("cache/fetch-manifest/%s", imageRef)
-	_ = onMemoryCacheForVerifyResource.Set(key, concatYAMLbytes, err)
+	setErr := k8smnfutil.SetCache(key, concatYAMLbytes, err)
+	if setErr != nil {
+		log.Warn("cache set error: ", setErr.Error())
+	}
 }
 
 type BlobManifestFetcher struct {
