@@ -190,7 +190,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 
 	objs := []unstructured.Unstructured{}
 	if configType == configTypeConstraint {
-		objs, err = getObjsByConstraintMatchConditionWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
+		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint)
 	} else if len(kubeGetArgs) > 0 {
 		objs, err = kubectlOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
@@ -372,7 +372,7 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 // 4. check ExcludeNamespace conditions if exist
 // 5. list existing resources by kind in a namespace. do this for all selected kinds and namespaces
 // 6. check inScopeOpject condition if exists
-func getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+func getObjsByConstraint(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
 	// step 1
 	// get Constraint resource from cluster and extract its gatekeeper match condition and `inScopeObjects` in parameters
 	constraintMatch, inScopeObjectCondition, err := k8smanifest.GetMatchConditionFromConfigResource(constraintRef, matchField, inscopeField)
@@ -507,10 +507,10 @@ func getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField s
 	return objs, nil
 }
 
-func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
+func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string) ([]unstructured.Unstructured, error) {
 	var objs []unstructured.Unstructured
 	var err error
-	cacheKey := fmt.Sprintf("targetObjects/constraint/%s", constraintRef)
+	cacheKey := fmt.Sprintf("getObjsByConstraint/%s", constraintRef)
 	resultNum := 2
 	results, err := k8ssigutil.GetCache(cacheKey)
 	cacheFound := false
@@ -523,7 +523,7 @@ func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, insco
 			if objs, ok = results[0].([]unstructured.Unstructured); !ok {
 				objsBytes, _ := json.Marshal(results[0])
 				var tmpObjs []unstructured.Unstructured
-				if err = json.Unmarshal(objsBytes, &tmpObjs); err != nil {
+				if err = json.Unmarshal(objsBytes, &tmpObjs); err == nil {
 					objs = tmpObjs
 				} else {
 					log.Warnf("failed to unmarshal target object cache: %s", err.Error())
@@ -540,7 +540,7 @@ func getObjsByConstraintMatchConditionWithCache(constraintRef, matchField, insco
 	if cacheFound {
 		return objs, err
 	} else {
-		objs, err = getObjsByConstraintMatchCondition(constraintRef, matchField, inscopeField)
+		objs, err = getObjsByConstraint(constraintRef, matchField, inscopeField)
 		cErr := k8ssigutil.SetCache(cacheKey, objs, err)
 		if cErr != nil {
 			log.Warnf("failed to save cache: %s", cErr.Error())
