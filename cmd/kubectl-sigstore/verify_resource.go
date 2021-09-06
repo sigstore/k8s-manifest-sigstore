@@ -661,7 +661,7 @@ func getObjsByConstraintWithCache(constraintRef, matchField, inscopeField string
 	if cacheFound {
 		return objs, err
 	} else {
-		objs, err = getObjsByConstraint(constraintRef, matchField, inscopeField)
+		objs, err = getObjsByConstraint(constraintRef, matchField, inscopeField, concurrencyNum)
 		cErr := k8ssigutil.SetCache(cacheKey, objs, err)
 		if cErr != nil {
 			log.Warnf("failed to save cache: %s", cErr.Error())

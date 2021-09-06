@@ -21,16 +21,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-<<<<<<< HEAD
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
-=======
 	"sync"
->>>>>>> 5ea58a8 (update xonxurrency)
 	"time"
 )
 
