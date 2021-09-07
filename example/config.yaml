@@ -13,4 +13,4 @@ ignoreFields:
 
 # only a signer with this name is allowed (in case of keyless)
 signers:
-- sample-signer@gmail.com
+- sample-signer@example.com
