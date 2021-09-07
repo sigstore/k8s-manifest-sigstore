@@ -66,14 +66,14 @@ func getPodNamespace() string {
 }
 
 func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	log.Info("[DEBUG] request: ", req.Kind, ", ", req.Name)
+	log.Info("check request: ", req.Kind, ", ", req.Name)
 
 	var obj unstructured.Unstructured
 	objectBytes := req.AdmissionRequest.Object.Raw
 	err := json.Unmarshal(objectBytes, &obj)
 	if err != nil {
 		log.Errorf("failed to Unmarshal a requested object into %T; %s", obj, err.Error())
-		return admission.Allowed("error but allow for development")
+		return admission.Denied(fmt.Sprintf("failed to Unmarshal a requested object: %s", err.Error()))
 	}
 
 	configNamespace := getPodNamespace()
@@ -81,7 +81,7 @@ func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) 
 	config, err := k8smnfconfig.LoadConfig(configNamespace, configName)
 	if err != nil {
 		log.Errorf("failed to load manifest integrity config; %s", err.Error())
-		return admission.Allowed("error but allow for development")
+		return admission.Denied(fmt.Sprintf("failed to load manifest integrity config: %s", err.Error()))
 	}
 	if config == nil {
 		config = &k8smnfconfig.ManifestIntegrityConfig{}
@@ -104,12 +104,22 @@ func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) 
 		if config.KeySecertName != "" {
 			keyPath, _ = config.LoadKeySecret()
 		}
-		vo := &(config.VerifyOption)
-		result, err := k8smanifest.VerifyResource(obj, imageRef, keyPath, vo)
+		vo := &(config.VerifyResourceOption)
+		if imageRef != "" {
+			vo.ImageRef = imageRef
+		}
+		if keyPath != "" {
+			vo.KeyPath = keyPath
+		}
+		vo = k8smanifest.AddDefaultConfig(vo)
+		result, err := k8smanifest.VerifyResource(obj, vo)
 		if err != nil {
 			log.Errorf("failed to check a requested resource; %s", err.Error())
-			return admission.Allowed("error but allow for development")
+			return admission.Denied(fmt.Sprintf("failed to verify the resource: %s", err.Error()))
 		}
+		verifyResultBytes, _ := json.Marshal(result)
+		log.Info("verify-resource result: ", string(verifyResultBytes))
+
 		if result.InScope {
 			if result.Verified {
 				allow = true
@@ -119,8 +129,7 @@ func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) 
 				message = "no signature found"
 				if result.Diff != nil && result.Diff.Size() > 0 {
 					message = fmt.Sprintf("diff found: %s", result.Diff.String())
-				}
-				if result.Signer != "" {
+				} else if result.Signer != "" {
 					message = fmt.Sprintf("signer config not matched, this is signed by %s", result.Signer)
 				}
 			}
@@ -130,7 +139,7 @@ func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) 
 		}
 	}
 
-	log.Info("[DEBUG] result:", message)
+	log.Info("check result: ", message)
 
 	if allow {
 		return admission.Allowed(message)

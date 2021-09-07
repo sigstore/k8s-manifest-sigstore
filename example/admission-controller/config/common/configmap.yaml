@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: integrity-config
+  namespace: system
+data:
+  config.yaml: |
+    # skip verification for this object
+    skipObjects:
+    - kind: ConfigMap
+      name: kube-root-ca.crt
+
+    # ignore `data.key2` field changes in `sample-cm` ConfigMap
+    ignoreFields:
+      - objects:
+        - kind: ConfigMap
+          name: sample-cm
+        fields:
+        - data.key2
+
+    # only a signer with this name is allowed (in case of keyless)
+    signers:
+    - sample-signer@gmail.com
+
+    # in case of key-ed signing, uncomment the following lines and comment out the `signers` condition
+    # keySecretName: sample-key-secret
+    # keySecretNamespace: k8s-manifest-sigstore

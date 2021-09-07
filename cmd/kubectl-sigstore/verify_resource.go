@@ -78,10 +78,6 @@ const (
 	defaultManifetBundleNamespace = "manifest-bundles"
 )
 
-// This is common ignore fields for changes by k8s system
-//go:embed resources/default-config.yaml
-var defaultConfigBytes []byte
-
 var supportedOutputFormat = map[string]bool{"json": true, "yaml": true}
 
 func NewCmdVerifyResource() *cobra.Command {
@@ -176,14 +172,14 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if configPath == "" && disableDefaultConfig {
 		vo = &k8smanifest.VerifyResourceOption{}
 	} else if configPath == "" {
-		vo = loadDefaultConfig()
+		vo = k8smanifest.LoadDefaultConfig()
 	} else if strings.HasPrefix(configPath, k8smanifest.InClusterObjectPrefix) {
 		vo, err = k8smanifest.LoadVerifyResourceConfigFromResource(configPath, configField)
 		if err != nil {
 			return false, errors.Wrapf(err, "failed to load verify-resource config from resource %s", configPath)
 		}
 		if !disableDefaultConfig {
-			vo = addDefaultConfig(vo)
+			vo = k8smanifest.AddDefaultConfig(vo)
 		}
 	} else {
 		vo, err = k8smanifest.LoadVerifyResourceConfig(configPath)
@@ -191,7 +187,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 			return false, errors.Wrapf(err, "failed to load verify-resource config from %s", configPath)
 		}
 		if !disableDefaultConfig {
-			vo = addDefaultConfig(vo)
+			vo = k8smanifest.AddDefaultConfig(vo)
 		}
 	}
 	// add signature/message/others annotations to ignore fields
@@ -1147,20 +1143,6 @@ func obj2ref(obj unstructured.Unstructured) corev1.ObjectReference {
 		APIVersion:      obj.GetAPIVersion(),
 		ResourceVersion: obj.GetResourceVersion(),
 	}
-}
-
-func loadDefaultConfig() *k8smanifest.VerifyResourceOption {
-	var defaultConfig *k8smanifest.VerifyResourceOption
-	err := yaml.Unmarshal(defaultConfigBytes, &defaultConfig)
-	if err != nil {
-		return nil
-	}
-	return defaultConfig
-}
-
-func addDefaultConfig(vo *k8smanifest.VerifyResourceOption) *k8smanifest.VerifyResourceOption {
-	dvo := loadDefaultConfig()
-	return vo.AddDefaultConfig(dvo)
 }
 
 func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field string) (string, string) {

@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -34,6 +35,10 @@ import (
 )
 
 const InClusterObjectPrefix = "k8s://"
+
+// This is common ignore fields for changes by k8s system
+//go:embed resources/default-config.yaml
+var defaultConfigBytes []byte
 
 // option for Sign()
 type SignOption struct {
@@ -457,4 +462,18 @@ func (vo *VerifyResourceOption) AddDefaultConfig(defaultConfig *VerifyResourceOp
 	ignoreFields = append(ignoreFields, []ObjectFieldBinding(defaultConfig.verifyOption.IgnoreFields)...)
 	vo.verifyOption.IgnoreFields = ignoreFields
 	return vo
+}
+
+func LoadDefaultConfig() *VerifyResourceOption {
+	var defaultConfig *VerifyResourceOption
+	err := yaml.Unmarshal(defaultConfigBytes, &defaultConfig)
+	if err != nil {
+		return nil
+	}
+	return defaultConfig
+}
+
+func AddDefaultConfig(vo *VerifyResourceOption) *VerifyResourceOption {
+	dvo := LoadDefaultConfig()
+	return vo.AddDefaultConfig(dvo)
 }

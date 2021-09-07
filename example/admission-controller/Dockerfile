@@ -1,5 +1,5 @@
 
-FROM registry.access.redhat.com/ubi7/ubi-minimal:7.8
+FROM registry.access.redhat.com/ubi8/ubi-minimal:8.3-298
 
 RUN mkdir /myapp 
 
