@@ -20,7 +20,7 @@ data:
 
     # only a signer with this name is allowed (in case of keyless)
     signers:
-    - sample-signer@gmail.com
+    - sample-signer@example.com
 
     # in case of key-ed signing, uncomment the following lines and comment out the `signers` condition
     # keySecretName: sample-key-secret

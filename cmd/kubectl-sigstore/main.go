@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(NewCmdVerifyResource())
 	rootCmd.AddCommand(NewCmdApplyAfterVerify())
 	rootCmd.AddCommand(NewCmdManifestBuild())
+	rootCmd.AddCommand(NewCmdVersion())
 
 	kubectlOptions.ConfigFlags.AddFlags(rootCmd.PersistentFlags())
 
