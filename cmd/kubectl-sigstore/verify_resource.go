@@ -366,39 +366,6 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if outputFormat == "" {
 		log.Info("verifying the resources.")
 	}
-	// execute verify-resource by using prepared cache
-	preVerifyResource := time.Now().UTC()
-	eg2 := errgroup.Group{}
-	mutex := sync.Mutex{}
-	results := []resourceResult{}
-	for i := range objs {
-		obj := objs[i]
-		_ = sem.Acquire(context.Background(), 1)
-		eg2.Go(func() error {
-			log.Debug("checking kind: ", obj.GetKind(), ", name: ", obj.GetName())
-			vResult, err := k8smanifest.VerifyResource(obj, vo)
-			r := resourceResult{
-				Object: obj,
-			}
-			if err == nil {
-				r.Result = vResult
-			} else {
-				r.Error = err
-			}
-			log.Debug("result: ", r)
-			mutex.Lock()
-			results = append(results, r)
-			mutex.Unlock()
-
-			sem.Release(1)
-			return nil
-		})
-
-	}
-	if err = eg2.Wait(); err != nil {
-		return false, errors.Wrap(err, "error in executing verify-resource")
-	}
-	postVerifyResource := time.Now().UTC()
 
 	var resultBytes []byte
 	summarizedResult := NewVerifyResourceResult(results, vo.Provenance)
