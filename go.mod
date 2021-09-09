@@ -3,10 +3,10 @@ module github.com/sigstore/k8s-manifest-sigstore
 go 1.16
 
 require (
-	github.com/cyberphone/json-canonicalization v0.0.0-20210303052042-6bc126869bf4
+	github.com/cyberphone/json-canonicalization v0.0.0-20210823021906-dc406ceaf94b
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-openapi/runtime v0.19.29
-	github.com/google/go-containerregistry v0.5.1
+	github.com/google/go-containerregistry v0.6.0
 	github.com/in-toto/in-toto-golang v0.2.1-0.20210627200632-886210ae2ab9
 	github.com/jinzhu/copier v0.3.2
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
@@ -15,14 +15,14 @@ require (
 	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
-	github.com/sigstore/cosign v1.0.1
+	github.com/sigstore/cosign v1.1.0
 	github.com/sigstore/fulcio v0.1.1
 	github.com/sigstore/rekor v0.3.0
-	github.com/sigstore/sigstore v0.0.0-20210726180807-7e34e36ecda1
+	github.com/sigstore/sigstore v0.0.0-20210729211320-56a91f560f44
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
 	github.com/tektoncd/chains v0.3.0
-	github.com/theupdateframework/go-tuf v0.0.0-20210722233521-90e262754396
+	github.com/theupdateframework/go-tuf v0.0.0-20210804171843-477a5d73800a
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	gopkg.in/yaml.v2 v2.4.0
@@ -37,7 +37,6 @@ require (
 )
 
 replace (
-	github.com/sigstore/cosign => github.com/sigstore/cosign v1.0.1
 	github.com/sigstore/k8s-manifest-sigstore => ./
 	k8s.io/kubectl => k8s.io/kubectl v0.21.2
 )

@@ -220,9 +220,7 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 		return err
 	}
 
-	files := []cremote.File{
-		{Path: fpath},
-	}
+	files := []cremote.File{cremote.FileFromFlag(fpath)}
 
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
