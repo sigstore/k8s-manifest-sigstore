@@ -67,7 +67,7 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 
 	if pubkeyPath == "" {
 		co.RekorURL = rekorSeverURL
-		co.RootCerts = fulcio.Roots
+		co.RootCerts = fulcio.GetRoots()
 	} else {
 		pubkeyVerifier, err := cli.LoadPublicKey(context.Background(), pubkeyPath)
 		if err != nil {
