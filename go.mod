@@ -34,6 +34,7 @@ require (
 	k8s.io/kubectl v0.19.4
 	sigs.k8s.io/controller-runtime v0.9.0
 	sigs.k8s.io/kustomize/api v0.9.0
+	sigs.k8s.io/kustomize/kyaml v0.11.1
 )
 
 replace (

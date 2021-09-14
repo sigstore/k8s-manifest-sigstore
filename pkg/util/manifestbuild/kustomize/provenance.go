@@ -228,9 +228,7 @@ func checkRepoInfoOfKustomizeBase(kustomizeBase string) (string, string, string,
 	}
 	rootDirInRepo = strings.TrimSuffix(rootDirInRepo, "\n")
 	relativePath := strings.TrimPrefix(absKustBase, rootDirInRepo)
-	if strings.HasPrefix(relativePath, "/") {
-		relativePath = strings.TrimPrefix(relativePath, "/")
-	}
+	relativePath = strings.TrimPrefix(relativePath, "/")
 	return url, revision, relativePath, nil
 }
 
