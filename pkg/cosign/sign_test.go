@@ -76,6 +76,11 @@ func TestSignBlob(t *testing.T) {
 		t.Error("message is not found in return values from SignBlob()")
 		return
 	}
+
+	// sigBytes := sigMap["signature"]
+	// b64SigBytes := base64.StdEncoding.EncodeToString(sigBytes)
+	// sigFileName := filepath.Join("testdata", "testsig")
+	// _ = ioutil.WriteFile(sigFileName, []byte(b64SigBytes), 0644)
 }
 
 func passFuncForTest(b bool) ([]byte, error) {

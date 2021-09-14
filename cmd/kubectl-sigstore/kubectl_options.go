@@ -45,6 +45,13 @@ type KubectlOptions struct {
 	fieldManagerForApply string
 }
 
+func (o *KubectlOptions) SetKubeConfig(fpath, namespace string) {
+	o.ConfigFlags.KubeConfig = &fpath
+	if namespace != "" {
+		o.ConfigFlags.Namespace = &namespace
+	}
+}
+
 func (o *KubectlOptions) initGet(cmd *cobra.Command) error {
 	ioStreams := genericclioptions.IOStreams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())

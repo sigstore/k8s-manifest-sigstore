@@ -18,7 +18,6 @@ package kubeutil
 
 import (
 	"io/ioutil"
-	"path/filepath"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -28,11 +27,16 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
+
+//
+// before doing test with envtest, need to install binaries for it.
+// "Envtest Binaries Manager" is a recommended way to manage these binaries.
+// https://github.com/kubernetes-sigs/controller-runtime/tree/master/tools/setup-envtest
+//
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
@@ -44,18 +48,14 @@ var schemes *runtime.Scheme
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Controller Suite")
 }
 
-var _ = BeforeSuite(func(done Done) {
+var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New())
 
 	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
-	}
+	testEnv = &envtest.Environment{}
 
 	var err error
 	cfg, err := testEnv.Start()
@@ -75,7 +75,6 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(k8sClient).ToNot(BeNil())
 
-	close(done)
 }, 60)
 
 var _ = AfterSuite(func() {

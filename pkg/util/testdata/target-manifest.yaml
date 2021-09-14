@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-deploy-2
+  annotations:
+    testanno: testanno
+  labels:
+    testlabel: testlabel
+    app: nginx2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx2
+  template:
+    metadata:
+      labels:
+        app: nginx2
+    spec:
+      hostPID: true
+      containers:
+      - name: nginx
+        securityContext:
+          privileged: true
+        image: nginx:1.14.2
+        ports:
+        - containerPort: 80
