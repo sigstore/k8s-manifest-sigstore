@@ -10,8 +10,8 @@ require (
 	github.com/in-toto/in-toto-golang v0.2.1-0.20210627200632-886210ae2ab9
 	github.com/jinzhu/copier v0.3.2
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
-	github.com/onsi/ginkgo v1.15.0
-	github.com/onsi/gomega v1.11.0
+	github.com/onsi/ginkgo v1.16.4
+	github.com/onsi/gomega v1.13.0
 	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
@@ -30,10 +30,11 @@ require (
 	k8s.io/apimachinery v0.21.3
 	k8s.io/cli-runtime v0.21.2
 	k8s.io/client-go v0.21.3
-	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
+	k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
 	k8s.io/kubectl v0.19.4
-	sigs.k8s.io/controller-runtime v0.8.3
-	sigs.k8s.io/kustomize/api v0.8.8
+	sigs.k8s.io/controller-runtime v0.9.0
+	sigs.k8s.io/kustomize/api v0.9.0
+	sigs.k8s.io/kustomize/kyaml v0.11.1
 )
 
 replace (
