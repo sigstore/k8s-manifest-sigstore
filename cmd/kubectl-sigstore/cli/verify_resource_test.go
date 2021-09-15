@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package main
+package cli
 
 import (
 	"context"
@@ -170,14 +170,14 @@ var _ = BeforeSuite(func() {
 	err = ioutil.WriteFile(kubeconfigPath, kubeconfigBytes, 0644)
 	Expect(err).NotTo(HaveOccurred())
 
-	kubectlOptions.SetKubeConfig(kubeconfigPath, "default")
+	KOptions.SetKubeConfig(kubeconfigPath, "default")
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: schemes})
 	Expect(err).ToNot(HaveOccurred())
 	Expect(k8sClient).ToNot(BeNil())
 
 	cmd := NewCmdVerifyResource()
-	err = kubectlOptions.initGet(cmd)
+	err = KOptions.InitGet(cmd)
 	Expect(err).ToNot(HaveOccurred())
 
 	testpubBytes, err := base64.StdEncoding.DecodeString(string(b64EncodedTestPubKey))

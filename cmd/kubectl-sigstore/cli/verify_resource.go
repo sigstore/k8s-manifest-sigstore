@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package main
+package cli
 
 import (
 	"bytes"
@@ -80,6 +80,8 @@ const (
 
 var supportedOutputFormat = map[string]bool{"json": true, "yaml": true}
 
+var OSExit = os.Exit
+
 func NewCmdVerifyResource() *cobra.Command {
 
 	var filename string
@@ -105,7 +107,7 @@ func NewCmdVerifyResource() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			kubeGetArgs := args
-			err = kubectlOptions.initGet(cmd)
+			err = KOptions.InitGet(cmd)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource initialization: %s", err.Error())
 			}
@@ -134,7 +136,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
 			if !allVerified {
-				os.Exit(1)
+				OSExit(1)
 			}
 			return nil
 		},
@@ -156,6 +158,8 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&provResRef, "provenance-resource", "", "a comma-separated list of configmaps that contains attestation, sbom")
 	cmd.PersistentFlags().StringVar(&manifestBundleResRef, "manifest-bundle-resource", "", "a comma-separated list of configmaps that contains signature, message, attestation, sbom")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
+
+	KOptions.ConfigFlags.AddFlags(cmd.PersistentFlags())
 	return cmd
 }
 
@@ -200,7 +204,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 	if configType == configTypeConstraint {
 		objs, err = getObjsByConstraintWithCache(configPath, defaultMatchFieldPathConstraint, defaultInScopeObjectParameterFieldPathConstraint, concurrencyNum)
 	} else if len(kubeGetArgs) > 0 {
-		objs, err = kubectlOptions.Get(kubeGetArgs, "")
+		objs, err = KOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
 	} else if imageRef != "" {
@@ -418,7 +422,7 @@ func getObjsFromManifests(yamls [][]byte, ignoreFieldConfig k8smanifest.ObjectFi
 		if !ok {
 			args := []string{kind}
 			// if ns is empty, use a namespace of kubeconfig context
-			tmpObjs, err := kubectlOptions.Get(args, namespaceInManifest)
+			tmpObjs, err := KOptions.Get(args, namespaceInManifest)
 			if err != nil {
 				allErrs = append(allErrs, err.Error())
 				continue

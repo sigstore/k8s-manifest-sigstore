@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package main
+package cli
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 		Short: "A command to apply Kubernetes YAML manifests only after verifying signature",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-			err = kubectlOptions.initApply(cmd, filename)
+			err = KOptions.InitApply(cmd, filename)
 			if err != nil {
 				return errors.Wrap(err, "failed to initialize a configuration for kubectl apply command")
 			}
@@ -61,11 +61,12 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 
-	kubectlOptions.PrintFlags.AddFlags(cmd)
+	KOptions.ConfigFlags.AddFlags(cmd.PersistentFlags())
+	KOptions.PrintFlags.AddFlags(cmd)
 	cmdutil.AddValidateFlags(cmd)
 	cmdutil.AddDryRunFlag(cmd)
 	cmdutil.AddServerSideApplyFlags(cmd)
-	cmdutil.AddFieldManagerFlagVar(cmd, &kubectlOptions.fieldManagerForApply, cmdapply.FieldManagerClientSideApply)
+	cmdutil.AddFieldManagerFlagVar(cmd, &KOptions.fieldManagerForApply, cmdapply.FieldManagerClientSideApply)
 
 	return cmd
 }
@@ -140,7 +141,7 @@ func applyAfterVerify(filename, imageRef, keyPath, configPath string) error {
 		} else {
 			log.Infof("verifed: %s, signerName: %s", strconv.FormatBool(verified), signerName)
 		}
-		err := kubectlOptions.Apply(filename)
+		err := KOptions.Apply(filename)
 		if err != nil {
 			log.Fatalf("error from kubectl apply: %s", err.Error())
 		}

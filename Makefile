@@ -1,7 +1,9 @@
 
 VERSION_PKG ?= github.com/sigstore/k8s-manifest-sigstore/pkg/util
 
-.PHONY: build
+TEST_OPTIONS ?= COSIGN_EXPERIMENTAL=0 KUBEBUILDER_ASSETS=$$(test/setup-envtest.sh)
+
+.PHONY: build test e2e-test
 
 build:
 	@echo building binary for cli
@@ -17,3 +19,11 @@ build:
 		-X $(VERSION_PKG).gitTreeState=$$git_tree_state \
 		-X $(VERSION_PKG).gitVersion=$$(git describe --tags --abbrev=0 || echo develop)" \
 		-a -o kubectl-sigstore ./cmd/kubectl-sigstore
+
+test:
+	@echo doing unit test
+	$(TEST_OPTIONS) go test -v ./...
+
+e2e-test:
+	@echo doing e2e test
+	$(TEST_OPTIONS) test/e2e/e2e_test.sh

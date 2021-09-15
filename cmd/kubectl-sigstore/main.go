@@ -19,55 +19,11 @@ package main
 import (
 	"os"
 
-	log "github.com/sirupsen/logrus"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/kubectl/pkg/scheme"
+	"github.com/sigstore/k8s-manifest-sigstore/cmd/kubectl-sigstore/cli"
 )
 
-const logLevelEnvKey = "K8S_MANIFEST_SIGSTORE_LOG_LEVEL"
-
-var logLevelMap = map[string]log.Level{
-	"panic": log.PanicLevel,
-	"fatal": log.FatalLevel,
-	"error": log.ErrorLevel,
-	"warn":  log.WarnLevel,
-	"info":  log.InfoLevel,
-	"debug": log.DebugLevel,
-	"trace": log.TraceLevel,
-}
-
-var kubectlOptions KubectlOptions
-
-func init() {
-	kubectlOptions = KubectlOptions{
-		// generic options
-		ConfigFlags: genericclioptions.NewConfigFlags(true),
-		PrintFlags:  genericclioptions.NewPrintFlags("created").WithTypeSetter(scheme.Scheme),
-	}
-
-	rootCmd.AddCommand(NewCmdSign())
-	rootCmd.AddCommand(NewCmdVerify())
-	rootCmd.AddCommand(NewCmdVerifyResource())
-	rootCmd.AddCommand(NewCmdApplyAfterVerify())
-	rootCmd.AddCommand(NewCmdManifestBuild())
-	rootCmd.AddCommand(NewCmdVersion())
-
-	kubectlOptions.ConfigFlags.AddFlags(rootCmd.PersistentFlags())
-
-	logLevelStr := os.Getenv(logLevelEnvKey)
-	if logLevelStr == "" {
-		logLevelStr = "info"
-	}
-	logLevel, ok := logLevelMap[logLevelStr]
-	if !ok {
-		logLevel = log.InfoLevel
-	}
-
-	log.SetLevel(logLevel)
-}
-
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := cli.RootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)

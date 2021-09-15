@@ -1,0 +1,3 @@
+# only a signer with this name is allowed (in case of keyless)
+signers:
+- test-signer@example.com
