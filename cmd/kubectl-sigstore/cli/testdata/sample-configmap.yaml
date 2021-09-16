@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sample-cm
+data:
+  key1: val1
+  key4: val4

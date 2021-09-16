@@ -1,0 +1,8 @@
+# ignore `data.key2` field changes in `sample-cm-modified` ConfigMap
+ignoreFields:
+  - objects:
+    - kind: ConfigMap
+      name: sample-cm-modified
+    fields:
+    - data.key2
+

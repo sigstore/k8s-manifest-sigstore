@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package main
+package cli
 
 import (
 	"fmt"
@@ -52,7 +52,7 @@ func (o *KubectlOptions) SetKubeConfig(fpath, namespace string) {
 	}
 }
 
-func (o *KubectlOptions) initGet(cmd *cobra.Command) error {
+func (o *KubectlOptions) InitGet(cmd *cobra.Command) error {
 	ioStreams := genericclioptions.IOStreams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
@@ -116,7 +116,7 @@ func (o *KubectlOptions) Get(args []string, overrideNamespace string) ([]unstruc
 	return objs, nil
 }
 
-func (o *KubectlOptions) initApply(cmd *cobra.Command, filename string) error {
+func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	ioStreams := genericclioptions.IOStreams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), ErrOut: cmd.ErrOrStderr()}
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
