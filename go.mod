@@ -28,16 +28,13 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.22.1
 	k8s.io/apimachinery v0.22.1
-	k8s.io/cli-runtime v0.21.2
+	k8s.io/cli-runtime v0.22.1
 	k8s.io/client-go v0.22.1
 	k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
-	k8s.io/kubectl v0.19.4
+	k8s.io/kubectl v0.22.1
 	sigs.k8s.io/controller-runtime v0.9.0
 	sigs.k8s.io/kustomize/api v0.9.0
 	sigs.k8s.io/kustomize/kyaml v0.11.1
 )
 
-replace (
-	github.com/sigstore/k8s-manifest-sigstore => ./
-	k8s.io/kubectl => k8s.io/kubectl v0.21.2
-)
+replace github.com/sigstore/k8s-manifest-sigstore => ./
