@@ -643,7 +643,7 @@ func ParseAttestation(attestationStr string) (*intoto.Statement, interface{}, []
 				materials = append(materials, ProvenanceMaterial{URI: m.URI, Digest: DigestSet(digest)})
 			}
 		}
-	} else if attestation.PredicateType == intoto.PredicateProvenanceV01 {
+	} else if attestation.PredicateType == intoto.PredicateSLSAProvenanceV01 {
 		predicateBytes, _ := json.Marshal(attestation.Predicate)
 		var tmpPred intoto.ProvenancePredicate
 		err := json.Unmarshal(predicateBytes, &tmpPred)

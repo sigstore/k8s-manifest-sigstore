@@ -69,11 +69,11 @@ func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, f
 	it := &intoto.Statement{
 		StatementHeader: intoto.StatementHeader{
 			Type:          intoto.StatementInTotoV01,
-			PredicateType: intoto.PredicateProvenanceV01,
+			PredicateType: intoto.PredicateSLSAProvenanceV01,
 			Subject:       subjects,
 		},
 		Predicate: intoto.ProvenancePredicate{
-			Metadata: intoto.ProvenanceMetadata{
+			Metadata: &intoto.ProvenanceMetadata{
 				Reproducible:    true,
 				BuildStartedOn:  &startTime,
 				BuildFinishedOn: &finishTime,
