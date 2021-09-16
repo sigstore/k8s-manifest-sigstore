@@ -80,7 +80,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 		certPathStr = *certPath
 	}
 
-	return cosigncli.SignCmd(context.Background(), opt, imageAnnotations, imageRef, certPathStr, true, "", false, false)
+	return cosigncli.SignCmd(context.Background(), opt, imageAnnotations, []string{imageRef}, certPathStr, true, "", false, false, "")
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {
