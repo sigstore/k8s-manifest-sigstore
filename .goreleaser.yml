@@ -2,7 +2,7 @@ project_name: k8s-manifest-sigstore
 
 env:
   - GO111MODULE=on
-  - CGO_ENABLED=1
+  - CGO_ENABLED=0
 
 # Prevents parallel builds from stepping on eachothers toes downloading modules
 before:
@@ -20,15 +20,10 @@ builds:
     - amd64
   ldflags:
     - "{{ .Env.LDFLAGS }}"
-  env:
-    - CGO_ENABLED=0
 
 - id: darwin-amd64
   binary: kubectl-sigstore-darwin-amd64
   no_unique_dist_dir: true
-  env:
-    - CC=o64-clang
-    - CXX=o64-clang++
   main: ./cmd/kubectl-sigstore
   goos:
     - darwin
@@ -40,9 +35,6 @@ builds:
 - id: darwin-arm64
   binary: kubectl-sigstore-darwin-arm64
   no_unique_dist_dir: true
-  env:
-    - CC=aarch64-apple-darwin20.2-clang
-    - CXX=aarch64-apple-darwin20.2-clang++
   main: ./cmd/kubectl-sigstore
   goos:
     - darwin
@@ -54,9 +46,6 @@ builds:
 - id: windows-amd64
   binary: kubectl-sigstore-windows-amd64
   no_unique_dist_dir: true
-  env:
-    - CC=x86_64-w64-mingw32-gcc
-    - CXX=x86_64-w64-mingw32-g++
   main: ./cmd/kubectl-sigstore
   goos:
     - windows
