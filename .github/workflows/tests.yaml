@@ -73,7 +73,7 @@ jobs:
   #         addlicense -l apache -c 'The Sigstore Authors' -v *
   #         git diff --exit-code
   golangci:
-    name: lint
+    name: Run lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
