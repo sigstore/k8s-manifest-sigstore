@@ -21,24 +21,30 @@ endif
 
 LDFLAGS="-X $(VERSION_PKG).gitVersion=$(GIT_VERSION) -X $(VERSION_PKG).gitCommit=$(GIT_HASH) -X $(VERSION_PKG).gitTreeState=$(GIT_TREESTATE) -X $(VERSION_PKG).buildDate=$(BUILD_DATE)"
 
-
-
-.PHONY: build lint test e2e-test
-
+.PHONY: build
 build:
 	@echo building binary for cli
 	go mod tidy
 	CGO_ENABLED=0 GOARCH=amd64 GO111MODULE=on go build -ldflags $(LDFLAGS) -a -o kubectl-sigstore ./cmd/kubectl-sigstore
 
+.PHONY: kubectl-sigstore
 kubectl-sigstore: build
 
+.PHONY: lint
 lint:
 	golangci-lint run
 
+.PHONY: test
 test:
 	@echo doing unit test
 	$(TEST_OPTIONS) go test -v ./...
 
+.PHONY: e2e-test
 e2e-test:
 	@echo doing e2e test
 	$(TEST_OPTIONS) test/e2e/e2e_test.sh
+
+# basically used only by github action for releasing
+.PHONY: release
+release:
+	LDFLAGS=$(LDFLAGS) goreleaser release
