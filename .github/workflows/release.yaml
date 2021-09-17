@@ -1,7 +1,9 @@
 on:
   push:
     tags:
-      - '*'
+      # available only for tags like `v1.2.3` or `v1.2.3-rc1`
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 name: Release Draft
 permissions:
@@ -25,3 +27,7 @@ jobs:
           install-only: true
       - name: Create a Release Draft
         run: make release
+        env:
+          # this token is requried to create a release in the repository
+          # For more detail, refer to https://docs.github.com/en/actions/reference/authentication-in-a-workflow
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
