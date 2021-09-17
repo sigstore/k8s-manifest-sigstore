@@ -5,7 +5,7 @@ on:
       - release-*
   pull_request:
 
-name: Cross
+name: Cross Platfrom Build
 jobs:
   sanity-build:
     name: build-1.16
