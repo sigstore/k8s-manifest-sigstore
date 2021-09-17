@@ -23,10 +23,14 @@ import (
 	"os"
 	"path/filepath"
 
+	// package golang.org/x/crypto/openpgp is deprecated: this package is unmaintained except for security fixes.
+	// New applications should consider a more focused, modern alternative to OpenPGP for their specific task.
+	// If you are required to interoperate with OpenPGP systems and need a maintained package, consider a community fork.
+	// See https://golang.org/issue/44226.
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/pkg/errors"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/openpgp"
 )
 
 // Verify `sigBytes` and `msgBytes` with public key at `pubkeyPathString`.
@@ -49,7 +53,7 @@ func VerifyBlob(msgBytes, sigBytes []byte, pubkeyPathString *string) (bool, stri
 
 	msgReader := bytes.NewReader(rawMsg)
 	sigReader := bytes.NewReader(rawSig)
-	signer, err := openpgp.CheckArmoredDetachedSignature(keyRing, msgReader, sigReader)
+	signer, err := openpgp.CheckArmoredDetachedSignature(keyRing, msgReader, sigReader, nil)
 	if signer == nil {
 		if err != nil {
 			return false, "", nil, errors.Wrap(err, "failed to verify signature")
