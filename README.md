@@ -12,7 +12,14 @@ This kubectl subcommand plugin enables developer to sign k8s manifest yaml files
 
 The plugin is a standalone executable file `kubectl-sigstore`. 
 
-To build this file, run the following. 
+You can install it just by a single command.
+```
+$ go install github.com/sigstore/k8s-manifest-sigstore/cmd/kubectl-sigstore@latest
+```
+
+Or you can find the pre-built executables in the release page too.
+
+To build it from source codes, run the following. 
 ```
 git clone git@github.com:sigstore/k8s-manifest-sigstore.git
 cd k8s-manifest-sigstore

@@ -72,11 +72,11 @@ release:
   prerelease: auto
   draft: true # If true, create a release draft
 
-  # `github` defines a repo in which the release will be created.
+  # `github` defines a repo in which the release (or draft) will be created.
   # Default is extracted from the origin remote URL or empty if its private hosted.
-  # github:
-  #   owner: sigstore
-  #   name: k8s-manifest-sigstore
+  github:
+    owner: sigstore
+    name: k8s-manifest-sigstore
 
   footer: |
     ### Thanks for all contributors!
