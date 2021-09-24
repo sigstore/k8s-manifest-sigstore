@@ -14,7 +14,7 @@ The plugin is a standalone executable file `kubectl-sigstore`.
 
 You can install it just by a single command.
 ```
-$ go install github.com/sigstore/k8s-manifest-sigstore/cmd/kubectl-sigstore@latest
+go install github.com/sigstore/k8s-manifest-sigstore/cmd/kubectl-sigstore@latest
 ```
 
 Or you can find the pre-built executables in the release page too.
