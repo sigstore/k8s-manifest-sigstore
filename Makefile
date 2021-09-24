@@ -19,7 +19,7 @@ ifeq ($(DIFF), 1)
     GIT_TREESTATE = "dirty"
 endif
 
-LDFLAGS="-X $(VERSION_PKG).gitVersion=$(GIT_VERSION) -X $(VERSION_PKG).gitCommit=$(GIT_HASH) -X $(VERSION_PKG).gitTreeState=$(GIT_TREESTATE) -X $(VERSION_PKG).buildDate=$(BUILD_DATE)"
+LDFLAGS="-X $(VERSION_PKG).GitVersion=$(GIT_VERSION) -X $(VERSION_PKG).gitCommit=$(GIT_HASH) -X $(VERSION_PKG).gitTreeState=$(GIT_TREESTATE) -X $(VERSION_PKG).buildDate=$(BUILD_DATE)"
 
 .PHONY: build
 build:
