@@ -31,3 +31,6 @@ jobs:
           # this token is requried to create a release in the repository
           # For more detail, refer to https://docs.github.com/en/actions/reference/authentication-in-a-workflow
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check Binary
+        run: |
+          ./dist/kubectl-sigstore-linux-amd64 version

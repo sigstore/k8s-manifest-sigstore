@@ -57,21 +57,22 @@ jobs:
       - name: Run end-to-end tests
         run: make e2e-test
 
-  # license-check:
-  #   name: license boilerplate check
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: actions/setup-go@v2
-  #       with:
-  #         go-version: '1.17.x'
-  #     - name: Install addlicense
-  #       run: go install github.com/google/addlicense@latest
-  #     - name: Check license headers
-  #       run: |
-  #         set -e
-  #         addlicense -l apache -c 'The Sigstore Authors' -v *
-  #         git diff --exit-code
+  license-check:
+    name: license boilerplate check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.17.x'
+      - name: Install addlicense
+        run: go install github.com/google/addlicense@latest
+      - name: Check license headers
+        run: |
+          set -e
+          addlicense -l apache -c 'The Sigstore Authors' -ignore "**/*.yaml" -ignore "**/Dockerfile" -v *
+          git diff --exit-code
+
   golangci:
     name: Run lint
     runs-on: ubuntu-latest
