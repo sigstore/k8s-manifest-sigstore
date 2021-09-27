@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	gitVersion   = "develop" // major and minor version are obtained by parsing this (e.g. v1.2.3 -> major: 1, minor: 2)
+	GitVersion   = "develop" // major and minor version are obtained by parsing this (e.g. v1.2.3 -> major: 1, minor: 2)
 	gitCommit    = "unknown"
 	gitTreeState = "unknown"
 	buildDate    = "unknown" // Build date in ISO8601 format by doing $(date -u +'%Y-%m-%dT%H:%M:%SZ')
@@ -42,11 +42,11 @@ type VersionInfo struct {
 }
 
 func GetVersionInfo() *VersionInfo {
-	gitMajor, gitMinor := parseGitVersion(gitVersion)
+	gitMajor, gitMinor := parseGitVersion(GitVersion)
 	return &VersionInfo{
 		Major:        gitMajor,
 		Minor:        gitMinor,
-		GitVersion:   gitVersion,
+		GitVersion:   GitVersion,
 		GitCommit:    gitCommit,
 		GitTreeState: gitTreeState,
 		BuildDate:    buildDate,

@@ -1,0 +1,83 @@
+project_name: k8s-manifest-sigstore
+
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=0
+
+# Prevents parallel builds from stepping on eachothers toes downloading modules
+before:
+  hooks:
+  - go mod tidy
+
+builds:
+- id: linux
+  binary: kubectl-sigstore-linux-{{ .Arch }}
+  no_unique_dist_dir: true
+  main: ./cmd/kubectl-sigstore
+  goos:
+    - linux
+  goarch:
+    - amd64
+  ldflags:
+    - "{{ .Env.LDFLAGS }}"
+
+- id: darwin-amd64
+  binary: kubectl-sigstore-darwin-amd64
+  no_unique_dist_dir: true
+  main: ./cmd/kubectl-sigstore
+  goos:
+    - darwin
+  goarch:
+    - amd64
+  ldflags:
+    - "{{ .Env.LDFLAGS }}"
+
+- id: darwin-arm64
+  binary: kubectl-sigstore-darwin-arm64
+  no_unique_dist_dir: true
+  main: ./cmd/kubectl-sigstore
+  goos:
+    - darwin
+  goarch:
+    - arm64
+  ldflags:
+    - "{{.Env.LDFLAGS}}"
+
+- id: windows-amd64
+  binary: kubectl-sigstore-windows-amd64
+  no_unique_dist_dir: true
+  main: ./cmd/kubectl-sigstore
+  goos:
+    - windows
+  goarch:
+    - amd64
+  ldflags:
+    - -buildmode=exe
+    - "{{ .Env.LDFLAGS }}"
+
+archives:
+- format: binary
+  name_template: "{{ .Binary }}"
+  allow_different_binary_count: true
+
+checksum:
+  name_template: "{{ .ProjectName }}_checksums.txt"
+
+snapshot:
+  name_template: SNAPSHOT-{{.ShortCommit}}
+
+release:
+  # auto means that it sets prerelease by checking tag
+  # e.g) v0.1.0-rc1 --> prerelease, v0.1.0 --> normal
+  prerelease: auto
+  draft: true # If true, create a release draft
+
+  # `github` defines a repo in which the release (or draft) will be created.
+  # Default is extracted from the origin remote URL or empty if its private hosted.
+  github:
+    owner: sigstore
+    name: k8s-manifest-sigstore
+
+  footer: |
+    ### Thanks for all contributors!
+

@@ -37,4 +37,6 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.11.1
 )
 
-replace github.com/sigstore/k8s-manifest-sigstore => ./
+// `go install` only works with a project which has no replace for main module in go.mod.
+// So please uncomment the below manually if you are working on a fork repo and if you want to test your local changes.
+// replace github.com/sigstore/k8s-manifest-sigstore => ./

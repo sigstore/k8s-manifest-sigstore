@@ -1,0 +1,68 @@
+on:
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request:
+
+name: Cross Platfrom Build
+jobs:
+  sanity-build:
+    name: build-1.16
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.16.x'
+      - name: compile
+        run: |
+          make build
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: macos-latest
+            TARGET: kubectl-sigstore-darwin-amd64
+            # COSIGN_PASSWORD: COSIGN_PASSWORD
+          - os: ubuntu-latest
+            TARGET: kubectl-sigstore-linux-amd64
+            # COSIGN_PASSWORD: COSIGN_PASSWORD
+          - os: windows-latest
+            TARGET: kubectl-sigstore-windows-amd64.exe
+            # COSIGN_PASSWORD: COSIGN_PASSWORD
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.17.x'
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Build
+        run: make build && mv ./kubectl-sigstore ./${{matrix.TARGET}}
+      - name: Print Info
+        shell: pwsh
+        run: |
+          $hash=Get-FileHash -Path ./${{matrix.TARGET}}
+          Write-Output $($hash.Hash + " " + $(([io.fileinfo]$hash.path).basename)) | Tee-Object -Path ${{matrix.TARGET}}.sha256
+      # - name: Sign
+      #   shell: bash
+      #   env:
+      #     COSIGN_PASSWORD: ${{secrets[matrix.COSIGN_PASSWORD]}}
+      #   if: github.event_name != 'pull_request'
+      #   run: |
+      #     ./${{matrix.TARGET}} sign-blob -key ./.github/workflows/cosign.key ./${{matrix.TARGET}} > ${{matrix.TARGET}}.sig
+      # - name: Verify
+      #   if: github.event_name != 'pull_request'
+      #   run: ./${{matrix.TARGET}} verify-blob -key ./.github/workflows/cosign.pub -signature ${{matrix.TARGET}}.sig ./${{matrix.TARGET}}
+      - name: Upload artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v2
+        with:
+          name: artifacts
+          path: |
+            kubectl-sigstore-*
+            kubectl-sigstore-*.sha256
+          # kubectl-sigstore-*.sig
