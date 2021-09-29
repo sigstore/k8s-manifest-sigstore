@@ -32,7 +32,10 @@ $ kubectl sigstore sign -f sample-configmap.yaml
 ```
 
 Then your web browser should open the web page like this. You can choose your OIDC account to do keyless signing with.
+<!--
 ![keyless-ui](images/sigstore-keyless-ui.png?)
+-->
+<img src="images/sigstore-keyless-ui.png" alt="keyless-ui" width="500"/>
 
 A signature is embedded into the YAML manifest, and it generates a new YAML manifest which is named like `<original-name>.yaml.signed` by default.
 
