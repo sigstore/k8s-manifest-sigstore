@@ -54,6 +54,7 @@ $ kubectl sigstore verify-resource cm -n sample-ns sample-configmap -k cosign.pu
 
 For verify-resource command, you can use the same arguments as `kubectl` get command.
 
+### Using OCI registry
 
 The image below describes how signing against a sort of YAMl manifests works and how the manifests and signature are stored in OCI registry.
 
