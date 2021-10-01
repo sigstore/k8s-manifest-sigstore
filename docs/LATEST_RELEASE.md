@@ -22,10 +22,10 @@ Once installed, you can use it as a kubectl subcommand like `kubectl sigstore si
 To sign your YAML manifest, there are 2 options about how to store a signature.
 
 1. self-contained manifest
-  - signature is embedded into YAML annotation
+    - signature is embedded into YAML annotation
 
 2. OCI registry
-  - manifest is uploaded to OCI registry as image, and a signature is attached to the image
+    - manifest is uploaded to OCI registry as image, and a signature is attached to the image
 
 ### self-contained manifest
 
