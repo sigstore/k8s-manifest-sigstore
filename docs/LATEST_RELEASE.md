@@ -3,167 +3,86 @@
 
 This is the first release of the project!
 
-This project provides a kubectl subcommand plugin, which is for signing specification of Kubernetes YAML manifests and for verifying YAML manifest files on local file system / Kubernetes resources on a cluster.
+In this release, a kubectl subcommand plugin is ready, which can be used for signing and verifying Kubernetes YAML manifests and resources.
 
-## Easy Install & Setup
+The overview of this kubectl subcommand plugin is like the below. An application developer can sign their YAML manifest, and its user (=deployer) can verify it in local environment, and also they can verify the Kubernetes resource which is deployed with a signed YAML manifest.
+
+<img src="images/overview.png" alt="overview" width="700"/>
+
+## Easy install & simple use
 You can install it by a single command.
 ```
 $ go install github.com/sigstore/k8s-manifest-sigstore/cmd/kubectl-sigstore@latest
 ```
 
-Here, please setup your cosign key pair by `cosign generate-key-pair` if you want to sign YAML manifests with it.
+Once installed, you can use it as a kubectl subcommand like `kubectl sigstore sign`.
 
-Otherwise, you can sign manifests by keyless signing. To enable it, please do this beforehand.
+## Sign and verify Kubernetes YAML manifests & resources
 
-```
-$ export COSIGN_EXPERIMENTAL=1
-```
+To sign your YAML manifest, there are 2 options about how to store a signature.
 
-In this document, keyless signing case is described.
+1. self-contained manifest
+  - signature is embedded into YAML annotation
 
-## Sign Kubernetes YAML manifest specification
+2. OCI registry
+  - manifest is uploaded to OCI registry as image, and a signature is attached to the image
 
-Now it's ready for signing!
+### self-contained manifest
 
-The manifest information is canonicalized before signing, and it checks matching of all specification in YAML manifests at the time of verification. In other words, this signing feature is not just a blob signing.
+The image below describes how signing works against YAML manifest and how the generated self-contained manifest and its resource  can be verified.
 
-```
-$ kubectl sigstore sign -f sample-configmap.yaml
-```
+<img src="images/self-contained-flow.png" alt="self-contained-flow" width="700"/>
 
-Then your web browser should open the web page like this. You can choose your OIDC account to do keyless signing with.
-<!--
-![keyless-ui](images/sigstore-keyless-ui.png?)
--->
-<img src="images/sigstore-keyless-ui.png" alt="keyless-ui" width="500"/>
-
-A signature is embedded into the YAML manifest, and it generates a new YAML manifest which is named like `<original-name>.yaml.signed` by default.
-
-To check the embedded signature, you can do it by this command.
+The command to sign a YAML manifest is like this.
 
 ```
-$ cat sample-deployment.yaml.signed | grep signature
-    cosign.sigstore.dev/signature: MEQCI ... vww==
+$ kubectl sigstore sign -f sample-manifest.yaml -k cosign.key
 ```
 
+This command generates a self-contained manifest at `sample-manifest.yaml.signed`.
 
-You can sign a directory which contains multiple YAML files.
-
+To verify it, you can do this command.
 ```
-$ tree yamls/
-yamls
-|-- sample-configmap.yaml
-`-- sample-deployment.yaml
-
-$ kubectl sigstore sign -f yamls/ -i sample-registry/sample-manifest:dev
+$ kubectl sigstore verify -f sample-manifest.yaml.signed -k cosign.pub
 ```
 
-Also, in this example, a signature is not embedded to a manifest file, but uploaded to OCI registry.
-
-This uploaded image is called "manifest bundle image".
-
-## Verify Local YAML manifest files
-
-To verify specification of local YAML manifest file, you can execute this command.
+After deploying resource with the manifest, you can verify it like this.
 
 ```
-$ kubectl sigstore verify -f sample-deployment.yaml.signed
-INFO[0000] verifed: true, signerName: sample-signer@example.com
+$ kubectl sigstore verify-resource cm -n sample-ns sample-configmap -k cosign.pub
 ```
 
-If specification in the YAML file has been changed after signing, the verification fails.
+For verify-resource command, you can use the same arguments as `kubectl` get command.
+
+
+The image below describes how signing against a sort of YAMl manifests works and how the manifests and signature are stored in OCI registry.
+
+<img src="images/oci-image-flow.png" alt="oci-image-flow" width="700"/>
+
+The command to sign multiple YAML manifests is like this. This exmaple is singing `./yamls/` directory in which manifests are contained.
 
 ```
-$ kubectl sigstore verify -f sample-deployment.yaml.signed
-FATA[0000] verifed: false, error: Diff found in Deployment sample-deployment, diffs:{"items":[{"key":"spec.template.spec.containers.0.image","values":{"after":"ubuntu:18.04","before":"ubuntu:20.04"}}]}
+$ kubectl sigstore sign -f ./yamls/ -k cosign.key -i sample-registry/sample-manifest:dev
 ```
 
-## Verify Kubernetes resources on a cluster
+The difference from self-contained case is `-i` option, users can specify a name of image which contains manifests and which is signed by this command.
 
-Also, you can verify a Kuberentes resource which is deployed from signed YAML manifest.
-
-To specify resources, you can use the same arguments as `kubectl get` command. 
+You can verify the manifests and resources with `-i` or `--image` option.
 
 ```
-$ kubectl create -n default -f sample-deployment.yaml.signed
-deployment.apps/sample-deployment created
+# for local manifests
+$ kubectl sigstore verify -f ./yamls/ -k cosign.pub -i sample-registry/sample-manifest:dev
 
-$ kubectl sigstore verify-resource deploy -n default sample-deployment
-INFO[0000] identifying target resources.
-INFO[0000] loading some required data.
-INFO[0000] verifying the resources.
-[SUMMARY]
-TOTAL   VALID   INVALID
-1       1       0
-
-[RESOURCES]
-KIND         NAME                VALID   ERROR   AGE
-Deployment   sample-deployment   true            105s
-
-INFO[0010] Total elapsed time: 4.202231s (initialize: 0.046577s, verify: 4.154735s, print: 0.000919s)
+# for resources on a cluster
+$ kubectl sigstore verify-resource -n sample-ns -i sample-registry/sample-manifest:dev
 ```
 
-If you have signed the manifest with `-i` / `--image` option, you don't need to specify resources manually. 
-
-By specifying a manifest bundle image, the target resources are automatically selected.
-
-```
-$ kubectl sigstore verify-resource deploy -n default -i sample-registry/sample-manifest:dev
-```
-
-## Configuration
-
-You can customize a configuration for verification.
-
-A sample configuration file is at `example/config.yaml`, so please refer to it.
-
-For example, if you want to ignore some fields on verification, you can write a config file like this.
-```
-ignoreFields:
-  - objects:
-    - kind: Deployment
-      name: sample-deployment
-    fields:
-    - spec.replicas
-```
-
-The field `spec.replicas` is ignored on verification with `-c` / `--config` option like below.
-
-```
-$ kubectl scale deploy -n default sample-deployment --replicas=2
-deployment.apps/sample-deployment scaled
-
-$ kubectl sigstore verify-resource deployment -n default sample-deployment -c config.yaml
-INFO[0000] identifying target resources.
-INFO[0000] loading some required data.
-INFO[0000] verifying the resources.
-[SUMMARY]
-TOTAL   VALID   INVALID
-1       1       0
-
-[RESOURCES]
-KIND         NAME                VALID   ERROR   AGE
-Deployment   sample-deployment   true            4m
-
-INFO[0010] Total elapsed time: 4.183395s (initialize: 0.035943s, verify: 4.147402s, print: 5e-05s)
-```
-
-Also, if you want to specify signers, the config file will be like this.
-
-```
-signers:
-- sample-signer@example.com
-```
-
-If the signer of signature does not match this configuration, the verification fails.
-
+About verify-resource command above, it automatically find the target resources to be verified in `sample-ns`, so you don need to specify K8s kind or resource names.
 
 ## Example of admission controller implementation
 
-The verification feature can be invoked at the time of a resource admission.
+A reference impletementation of admission controller with verify-resource feature is inside [example/admission-controller](example/admission-controller) directory.
 
-This project has a simple implementation of admission controller, which is in `example/admission-controller` directory.
-
-Additionally, one example of more full-featured admission controller is [integrity-shield project](https://github.com/IBM/integrity-shield).
+For more comprehensive admission controller implementation which uses this project, you can try [Integrity Shield](https://github.com/open-cluster-management/integrity-shield).
 
 
