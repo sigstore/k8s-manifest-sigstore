@@ -7,7 +7,7 @@ In this release, a kubectl subcommand plugin is ready, which can be used for sig
 
 The overview of this kubectl subcommand plugin is like the below. An application developer can sign their YAML manifest, and its user (=deployer) can verify it in local environment, and also they can verify the Kubernetes resource which is deployed with a signed YAML manifest.
 
-<img src="images/overview.png" alt="overview" width="700"/>
+<img src="images/overview.png" alt="overview" width="800"/>
 
 ## Easy install & simple use
 You can install it by a single command.
@@ -31,7 +31,7 @@ To sign your YAML manifest, there are 2 options about how to store a signature.
 
 The image below describes how signing works against YAML manifest and how the generated self-contained manifest and its resource  can be verified.
 
-<img src="images/self-contained-flow.png" alt="self-contained-flow" width="700"/>
+<img src="images/self-contained-flow.png" alt="self-contained-flow" width="800"/>
 
 The command to sign a YAML manifest is like this.
 
@@ -58,7 +58,7 @@ For verify-resource command, you can use the same arguments as `kubectl` get com
 
 The image below describes how signing against a sort of YAMl manifests works and how the manifests and signature are stored in OCI registry.
 
-<img src="images/oci-image-flow.png" alt="oci-image-flow" width="700"/>
+<img src="images/oci-image-flow.png" alt="oci-image-flow" width="800"/>
 
 The command to sign multiple YAML manifests is like this. This exmaple is singing `./yamls/` directory in which manifests are contained.
 
