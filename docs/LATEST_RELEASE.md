@@ -78,11 +78,11 @@ $ kubectl sigstore verify -f ./yamls/ -k cosign.pub -i sample-registry/sample-ma
 $ kubectl sigstore verify-resource -n sample-ns -i sample-registry/sample-manifest:dev
 ```
 
-About verify-resource command above, it automatically find the target resources to be verified in `sample-ns`, so you don need to specify K8s kind or resource names.
+About verify-resource command above, it automatically find the target resources to be verified in `sample-ns`, so you don't need to specify K8s kind or resource names.
 
 ## Example of admission controller implementation
 
-A reference impletementation of admission controller with verify-resource feature is inside [example/admission-controller](example/admission-controller) directory.
+A reference impletementation of admission controller with verify-resource feature is inside [example/admission-controller](../example/admission-controller) directory.
 
 For more comprehensive admission controller implementation which uses this project, you can try [Integrity Shield](https://github.com/open-cluster-management/integrity-shield).
 
