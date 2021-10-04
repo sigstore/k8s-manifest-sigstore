@@ -31,9 +31,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
-	"github.com/in-toto/in-toto-golang/pkg/ssl"
 	"github.com/theupdateframework/go-tuf/encrypted"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -89,7 +89,7 @@ func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, f
 // generate a rekor entry data by signing a specified provenance with private key
 // the output data contains a base64 encoded provenance and its signature.
 // it can be used in `rekor-cli upload --artifact xxxxx`.
-func GenerateAttestation(provPath, privKeyPath string) (*ssl.Envelope, error) {
+func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 	b, err := ioutil.ReadFile(provPath)
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func GenerateAttestation(provPath, privKeyPath string) (*ssl.Envelope, error) {
 		return nil, err
 	}
 
-	signer, err := ssl.NewEnvelopeSigner(&IntotoSigner{
+	signer, err := dsse.NewEnvelopeSigner(&IntotoSigner{
 		priv: priv.(*ecdsa.PrivateKey),
 	})
 	if err != nil {

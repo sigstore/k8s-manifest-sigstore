@@ -8,7 +8,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-openapi/runtime v0.19.31
 	github.com/google/go-containerregistry v0.6.0
-	github.com/in-toto/in-toto-golang v0.2.1-0.20210806133539-f50646681592
+	github.com/in-toto/in-toto-golang v0.3.1
 	github.com/jinzhu/copier v0.3.2
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/onsi/ginkgo v1.16.4
@@ -16,6 +16,7 @@ require (
 	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
+	github.com/secure-systems-lab/go-securesystemslib v0.1.0
 	github.com/sigstore/cosign v1.2.0
 	github.com/sigstore/fulcio v0.1.2-0.20210831152525-42f7422734bb
 	github.com/sigstore/rekor v0.3.0
