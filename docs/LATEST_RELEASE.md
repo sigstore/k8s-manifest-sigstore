@@ -51,10 +51,9 @@ The overall flow is described as the image below. `kubectl sigstore sign` comman
 
 For verification, `kubectl sigstore verify` and `verify-resource` commands will pull the manifest image, and check the signature of it.
 
-<img src="images/oci-registry.png" alt="oci-registry" width="1200"/>
-
 Also, this mode is useful to sign multiple YAML manifests at once. In the case, resources that are deployed by the manifests can be verified by a single verification.
 
+<img src="images/oci-registry.png" alt="oci-registry" width="1200"/>
 
 The command to sign (multiple) YAML manifests by using OCI registry is something like this. This exmaple is singing `./yamls/` directory and uploading it as an image `sample-registry/sample-manifest:dev`.
 
