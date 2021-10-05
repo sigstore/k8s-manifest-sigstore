@@ -7,7 +7,7 @@ In this release, a kubectl subcommand plugin is ready, which can be used for sig
 
 This plugin has 3 major operations around singing and verification as below.
 
-<img src="images/overview.png" alt="overview" width="800"/>
+<img src="images/overview.png" alt="overview" width="1000"/>
 
 - `kubectl sigstore sign` generates signature data ("SIG" in the figure) and attach it to a YAML manifest.
 - `kubectl sigstore verify` verifies the signature in the signed YAML manifest, and checks equivalence of an input YAML manifest and encoded manfiest data in "SIG".
@@ -51,7 +51,7 @@ The overall flow is described as the image below. `kubectl sigstore sign` comman
 
 For verification, `kubectl sigstore verify` and `verify-resource` commands will pull the manifest image, and check the signature of it.
 
-<img src="images/oci-registry.png" alt="oci-registry" width="900"/>
+<img src="images/oci-registry.png" alt="oci-registry" width="1200"/>
 
 Also, this mode is useful to sign multiple YAML manifests at once. In the case, resources that are deployed by the manifests can be verified by a single verification.
 
