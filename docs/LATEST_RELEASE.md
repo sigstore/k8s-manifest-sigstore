@@ -84,14 +84,12 @@ For working with multiple YAML manifests, the commands are like the following.
 # sign multiple YAML manifests at once ("yamls" is a directory for them)
 $ kubectl sigstore sign -f ./yamls/ -k cosign.key -i sample-registry/sample-manifest:dev
 
-# verify local manifests
-$ kubectl sigstore verify -f ./yamls/ -k cosign.pub -i sample-registry/sample-manifest:dev
+# verify a local manifest
+$ kubectl sigstore verify -f ./yamls/sample-manifest.yaml -k cosign.pub -i sample-registry/sample-manifest:dev
 
-# verify resources on a cluster
+# verify resources on a cluster at once
 $ kubectl sigstore verify-resource -n sample-ns -i sample-registry/sample-manifest:dev
 ```
-
-About the verify-resource command above, it automatically finds the target resources to be verified in `sample-ns`, so you don't need to specify K8s kind or resource names.
 
 
 ## Example of admission controller implementation
