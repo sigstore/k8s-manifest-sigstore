@@ -136,8 +136,8 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			fpath := filepath.Join(dir, header.Name)
-			if err := os.Mkdir(fpath, 0755); err != nil {
-				return nil, errors.Wrap(err, "os.Mkdir() failed while decompressing tar gz")
+			if err := os.MkdirAll(fpath, 0755); err != nil {
+				return nil, errors.Wrap(err, "os.MkdirAll() failed while decompressing tar gz")
 			}
 		case tar.TypeReg:
 			fpath := filepath.Join(dir, header.Name)
