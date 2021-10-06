@@ -3,7 +3,7 @@
 
 This is the first release of the project!
 
-In this release, a kubectl subcommand plugin is ready, which can be used for signing and verifying Kubernetes YAML manifests and resources.
+In this release, a kubectl subcommand plugin is ready, which can be used for signing and verifying Kubernetes (K8s) YAML manifests and resources.
 
 This plugin has 3 major operations around singing and verification as below.
 
@@ -49,11 +49,35 @@ Additionally, another way to store signature is supported in this release. It us
 
 The overall flow is described as the image below. `kubectl sigstore sign` command creates "manifest image" which contains a YAML manifest inside, and push it to OCI registry, and then sign the manifest image. This mode does not require any change in the original YAML manifest.
 
-For verification, `kubectl sigstore verify` and `verify-resource` commands will pull the manifest image, and check the signature of it.
-
-Also, this mode is useful to sign multiple YAML manifests at once. In the case, resources that are deployed by the manifests can be verified by a single verification.
+For verification, `kubectl sigstore verify` and `verify-resource` commands pull the specified manifest image, and check the signature of it.
 
 <img src="images/oci-registry.png" alt="oci-registry" width="1200"/>
+
+To sign a YAML manifest using OCI registry, you can use this command. This command uploads a manifest as an image `sample-registry/sample-manifest:dev`, and signs the image.
+
+```
+$ kubectl sigstore sign -f sample-manifest.yaml -k cosign.key -i sample-registry/sample-manifest:dev
+```
+
+This way of signing does not requires changes in a YAML manifest, so you can verify the original YAML manifest like this.
+
+```
+$ kubectl sigstore verify -f sample-manifest.yaml -k cosign.pub -i sample-registry/sample-manifest:dev
+```
+
+Then a resource created from this YAML manifest also can be verified.
+
+In this case, target resourecs that should be verified are automatically selected by checking YAML manifest in image, so you don't need to specify resource information other than namespace.
+
+## TODO HERE!!
+
+```
+$ kubectl sigstore verify-resource -n sample-ns -k cosign.pub -i sample-registry/sample-manifest:dev
+```
+
+Also, this mode (using OCI registry) is useful to sign multiple YAML manifests at once. In the case, resources that are deployed by the manifests can be verified by a single verification. Ths signing part against multiple YAMLs is explained as below.
+
+<img src="images/multi-yamls.png" alt="multi-yamls" width="600"/>
 
 The command to sign (multiple) YAML manifests by using OCI registry is something like this. This exmaple is singing `./yamls/` directory and uploading it as an image `sample-registry/sample-manifest:dev`.
 
