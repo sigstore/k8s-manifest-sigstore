@@ -65,33 +65,29 @@ This way of signing does not requires changes in a YAML manifest, so you can ver
 $ kubectl sigstore verify -f sample-manifest.yaml -k cosign.pub -i sample-registry/sample-manifest:dev
 ```
 
-Then a resource created from this YAML manifest also can be verified.
+A resource created from this YAML manifest also can be verified.
 
-In this case, target resourecs that should be verified are automatically selected by checking YAML manifest in image, so you don't need to specify resource information other than namespace.
+In this case, a target resource of verification is automatically selected by checking a manifest in image, so you don't need to specify resource information other than namespace.
 
-## TODO HERE!!
 
 ```
 $ kubectl sigstore verify-resource -n sample-ns -k cosign.pub -i sample-registry/sample-manifest:dev
 ```
 
-Also, this mode (using OCI registry) is useful to sign multiple YAML manifests at once. In the case, resources that are deployed by the manifests can be verified by a single verification. Ths signing part against multiple YAMLs is explained as below.
+Also, this mode (using OCI registry) is useful to sign multiple YAML manifests at once. In the case, the corresponding resources to manifests can be verified by a single verification. Ths signing part against multiple YAMLs is explained as below.
 
 <img src="images/multi-yamls.png" alt="multi-yamls" width="600"/>
 
-The command to sign (multiple) YAML manifests by using OCI registry is something like this. This exmaple is singing `./yamls/` directory and uploading it as an image `sample-registry/sample-manifest:dev`.
+For working with multiple YAML manifests, the commands are like the following.
 
 ```
+# sign multiple YAML manifests at once ("yamls" is a directory for them)
 $ kubectl sigstore sign -f ./yamls/ -k cosign.key -i sample-registry/sample-manifest:dev
-```
 
-You can verify the manifests and resources with `-i` or `--image` option.
-
-```
-# for local manifests
+# verify local manifests
 $ kubectl sigstore verify -f ./yamls/ -k cosign.pub -i sample-registry/sample-manifest:dev
 
-# for resources on a cluster
+# verify resources on a cluster
 $ kubectl sigstore verify-resource -n sample-ns -i sample-registry/sample-manifest:dev
 ```
 
