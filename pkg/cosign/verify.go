@@ -27,16 +27,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/sigstore/cosign/cmd/cosign/cli"
 	"github.com/sigstore/cosign/cmd/cosign/cli/fulcio"
+	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
+	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
+	cliverify "github.com/sigstore/cosign/cmd/cosign/cli/verify"
 	"github.com/sigstore/cosign/pkg/cosign"
-	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
+	"github.com/sigstore/cosign/pkg/cosign/pkcs11key"
+	cosignoci "github.com/sigstore/cosign/pkg/oci"
+	sigs "github.com/sigstore/cosign/pkg/signature"
 	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	k8ssigx509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
@@ -57,44 +60,58 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 
 	rekorSeverURL := GetRekorServerURL()
 
+	regOpt := &cliopt.RegistryOptions{}
+	reqCliOpt, err := regOpt.ClientOpts(context.Background())
+	if err != nil {
+		return false, "", nil, fmt.Errorf("failed to get registry client option; %s", err.Error())
+	}
+
 	co := &cosign.CheckOpts{
-		ClaimVerifier: cosign.SimpleClaimVerifier,
-		RegistryClientOpts: []remote.Option{
-			remote.WithAuthFromKeychain(authn.DefaultKeychain),
-			remote.WithContext(context.Background()),
-		},
+		ClaimVerifier:      cosign.SimpleClaimVerifier,
+		RegistryClientOpts: reqCliOpt,
 	}
 
 	if pubkeyPath == "" {
 		co.RekorURL = rekorSeverURL
 		co.RootCerts = fulcio.GetRoots()
 	} else {
-		pubkeyVerifier, err := cli.LoadPublicKey(context.Background(), pubkeyPath)
+		pubKeyVerifier, err := sigs.PublicKeyFromKeyRef(context.Background(), pubkeyPath)
 		if err != nil {
-			return false, "", nil, fmt.Errorf("error loading public key; %s", err.Error())
+			return false, "", nil, fmt.Errorf("failed to load public key; %s", err.Error())
 		}
-		co.SigVerifier = pubkeyVerifier
+		pkcs11Key, ok := pubKeyVerifier.(*pkcs11key.Key)
+		if ok {
+			defer pkcs11Key.Close()
+		}
+		co.SigVerifier = pubKeyVerifier
 	}
 
-	verified, err := cosign.Verify(context.Background(), ref, co)
+	checkedSigs, _, err := cosign.VerifyImageSignatures(context.Background(), ref, co)
 	if err != nil {
 		return false, "", nil, fmt.Errorf("error occured while verifying image `%s`; %s", imageRef, err.Error())
 	}
-	if len(verified) == 0 {
+	if len(checkedSigs) == 0 {
 		return false, "", nil, fmt.Errorf("no verified signatures in the image `%s`; %s", imageRef, err.Error())
 	}
 	var cert *x509.Certificate
 	var signedTimestamp *int64
-	for _, vp := range verified {
+	for _, s := range checkedSigs {
+		payloadBytes, err := s.Payload()
+		if err != nil {
+			continue
+		}
 		ss := payload.SimpleContainerImage{}
-		err := json.Unmarshal(vp.Payload, &ss)
+		err = json.Unmarshal(payloadBytes, &ss)
 		if err != nil {
 			continue
 		}
 		// if tstamp, err := getSignedTimestamp(rekorSever, vp, co); err == nil {
 		// 	signedTimestamp = tstamp
 		// }
-		cert = vp.Cert
+		cert, err = s.Cert()
+		if err != nil {
+			continue
+		}
 		break
 	}
 	signerName := "" // singerName could be empty in case of key-used verification
@@ -133,7 +150,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	if bundleBytes != nil {
 		gzipBundle, _ := base64.StdEncoding.DecodeString(string(bundleBytes))
 		rawBundle := k8smnfutil.GzipDecompress(gzipBundle)
-		verified, signerName, signedTimestamp, err := verifyBundle(rawMsg, sigBytes, rawCert, rawBundle)
+		verified, signerName, signedTimestamp, err := verifyBundle(sigBytes, rawCert, rawBundle)
 		log.Debugf("verifyBundle() results: verified: %v, signerName: %s, err: %s", verified, signerName, err)
 		if verified {
 			log.Debug("Verified by bundle information")
@@ -149,7 +166,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioclient.SigstorePublicServerURL
 
-	opt := cli.KeyOpts{
+	opt := clisign.KeyOpts{
 		Sk:           sk,
 		IDToken:      idToken,
 		RekorURL:     rekorSeverURL,
@@ -163,7 +180,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	}
 
 	returnValNum := 1
-	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cli.VerifyBlobCmd, context.Background(), opt, certFile, sigFile, msgFile)
+	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cliverify.VerifyBlobCmd, context.Background(), opt, certFile, sigFile, msgFile)
 
 	log.Debug(stdoutAndErr) // show cosign.VerifyBlobCmd() logs
 
@@ -241,29 +258,56 @@ func loadCertificate(pemBytes []byte) (*x509.Certificate, error) {
 // 	return nil, errors.New("empty response")
 // }
 
-func verifyBundle(rawMsg, b64Sig, rawCert, rawBundle []byte) (bool, string, *int64, error) {
-	cert, err := loadCertificate(rawCert)
-	if err != nil {
-		return false, "", nil, errors.Wrap(err, "loading certificate")
+func verifyBundle(b64Sig, rawCert, rawBundle []byte) (bool, string, *int64, error) {
+	sig := &cosignBundleSignature{
+		base64Signature: b64Sig,
+		cert:            rawCert,
+		bundle:          rawBundle,
 	}
-	var bundleObj *cremote.Bundle
-	err = json.Unmarshal(rawBundle, &bundleObj)
-	if err != nil {
-		return false, "", nil, errors.Wrap(err, "unmarshaling bundleObj")
-	}
-	sp := &cosign.SignedPayload{
-		Base64Signature: string(b64Sig),
-		Payload:         rawMsg, // not sure if this is correct, but payload is not used in VerifyBundle()
-		Cert:            cert,
-		Bundle:          bundleObj,
-	}
-	verified, err := sp.VerifyBundle()
+	verified, err := cosign.VerifyBundle(sig)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "verifying bundle")
 	}
 	var signerName string
 	if verified {
+		cert, _ := sig.Cert()
 		signerName = k8ssigx509.GetNameInfoFromX509Cert(cert)
 	}
 	return verified, signerName, nil, nil
+}
+
+type cosignBundleSignature struct {
+	v1.Layer
+	base64Signature []byte
+	cert            []byte
+	bundle          []byte
+}
+
+func (s *cosignBundleSignature) Annotations() (map[string]string, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *cosignBundleSignature) Payload() ([]byte, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *cosignBundleSignature) Base64Signature() (string, error) {
+	return string(s.base64Signature), nil
+}
+
+func (s *cosignBundleSignature) Cert() (*x509.Certificate, error) {
+	return loadCertificate(s.cert)
+}
+
+func (s *cosignBundleSignature) Chain() ([]*x509.Certificate, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *cosignBundleSignature) Bundle() (*cosignoci.Bundle, error) {
+	var b *cosignoci.Bundle
+	err := json.Unmarshal(s.bundle, &b)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to Unamrshal() bundle")
+	}
+	return b, nil
 }

@@ -27,11 +27,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
-	cosigncli "github.com/sigstore/cosign/cmd/cosign/cli"
+	cligen "github.com/sigstore/cosign/cmd/cosign/cli/generate"
+	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
+	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
 	"github.com/sigstore/cosign/pkg/cosign"
-	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekor "github.com/sigstore/rekor/pkg/client"
@@ -41,11 +43,12 @@ import (
 )
 
 const (
-	rekorServerEnvKey     = "REKOR_SERVER"
-	defaultRekorServerURL = "https://rekor.sigstore.dev"
-	defaultOIDCIssuer     = "https://oauth2.sigstore.dev/auth"
-	defaultOIDCClientID   = "sigstore"
-	cosignPasswordEnvKey  = "COSIGN_PASSWORD"
+	rekorServerEnvKey        = "REKOR_SERVER"
+	defaultRekorServerURL    = "https://rekor.sigstore.dev"
+	defaultOIDCIssuer        = "https://oauth2.sigstore.dev/auth"
+	defaultOIDCClientID      = "sigstore"
+	cosignPasswordEnvKey     = "COSIGN_PASSWORD"
+	defaultTlogUploadTimeout = 3
 )
 
 const signBlobTlogIndexLineIdentifier = "tlog entry created with index:"
@@ -58,7 +61,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioclient.SigstorePublicServerURL
 
-	opt := cosigncli.KeyOpts{
+	opt := clisign.KeyOpts{
 		Sk:           sk,
 		IDToken:      idToken,
 		RekorURL:     rekorSeverURL,
@@ -67,7 +70,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 		OIDCClientID: defaultOIDCClientID,
 	}
 	if pf == nil {
-		opt.PassFunc = cosigncli.GetPass
+		opt.PassFunc = cligen.GetPass
 	} else {
 		opt.PassFunc = pf
 	}
@@ -75,12 +78,15 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	if keyPath != nil {
 		opt.KeyRef = *keyPath
 	}
+
+	regOpt := cliopt.RegistryOptions{}
+
 	certPathStr := ""
 	if certPath != nil {
 		certPathStr = *certPath
 	}
 
-	return cosigncli.SignCmd(context.Background(), opt, imageAnnotations, []string{imageRef}, certPathStr, true, "", false, false, "")
+	return clisign.SignCmd(context.Background(), opt, regOpt, imageAnnotations, []string{imageRef}, certPathStr, true, "", false, false, "")
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {
@@ -91,7 +97,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioclient.SigstorePublicServerURL
 
-	opt := cosigncli.KeyOpts{
+	opt := clisign.KeyOpts{
 		Sk:           sk,
 		IDToken:      idToken,
 		RekorURL:     rekorSeverURL,
@@ -101,7 +107,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	}
 
 	if pf == nil {
-		opt.PassFunc = cosigncli.GetPass
+		opt.PassFunc = cligen.GetPass
 	} else {
 		opt.PassFunc = pf
 	}
@@ -123,6 +129,8 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		}
 	}
 
+	regOpt := cliopt.RegistryOptions{}
+
 	m := map[string][]byte{}
 	rawMsg, err := ioutil.ReadFile(blobPath)
 	if err != nil {
@@ -132,8 +140,10 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	base64Msg := []byte(base64.StdEncoding.EncodeToString(gzipMsg))
 	m["message"] = base64Msg
 
+	tlogUploadTimeout := defaultTlogUploadTimeout * time.Second
+
 	returnValNum := 2
-	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cosigncli.SignBlobCmd, context.Background(), opt, blobPath, false, "")
+	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(clisign.SignBlobCmd, context.Background(), opt, regOpt, blobPath, false, "", tlogUploadTimeout)
 
 	log.Info(stdoutAndErr) // show cosign.SignBlobCmd() logs
 
@@ -154,7 +164,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	b64Sig := []byte(base64.StdEncoding.EncodeToString(rawSig))
 	m["signature"] = b64Sig
 
-	uploadTlog := cosigncli.EnableExperimental()
+	uploadTlog := cliopt.EnableExperimental()
 
 	var rawCert []byte
 	var rawBundle []byte
@@ -168,7 +178,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find transparency log entry index %v", logIndex)
 		}
-		bundleObj := bundle(tlogEntry)
+		bundleObj := clisign.Bundle(tlogEntry)
 		rawBundle, err = json.Marshal(bundleObj)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create a bundle from a tlog entry index %v", logIndex)
@@ -283,21 +293,6 @@ func getTlogEntryByIndex(rekorServerURL, logIndex string) (*models.LogEntryAnon,
 		return logEntry, nil
 	}
 	return nil, errors.New("empty response")
-}
-
-func bundle(entry *models.LogEntryAnon) *cremote.Bundle {
-	if entry.Verification == nil {
-		return nil
-	}
-	return &cremote.Bundle{
-		SignedEntryTimestamp: entry.Verification.SignedEntryTimestamp,
-		Payload: cremote.BundlePayload{
-			Body:           entry.Body,
-			IntegratedTime: *entry.IntegratedTime,
-			LogIndex:       *entry.LogIndex,
-			LogID:          *entry.LogID,
-		},
-	}
 }
 
 func GetRekorServerURL() string {

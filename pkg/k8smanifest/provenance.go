@@ -33,7 +33,8 @@ import (
 
 	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 	"github.com/go-openapi/runtime"
-	"github.com/sigstore/cosign/pkg/cosign"
+	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
+	cremote "github.com/sigstore/cosign/pkg/oci/remote"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -375,17 +376,14 @@ func (g *ImageProvenanceGetter) getSBOMRef(imageRef string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	auth := remote.WithAuthFromKeychain(authn.DefaultKeychain)
-
-	img, err := remote.Get(ref, auth)
+	regOpt := &cliopt.RegistryOptions{}
+	reqCliOpt := regOpt.GetRegistryClientOpts(context.Background())
+	dstRef, err := cremote.SBOMTag(ref, cremote.WithRemoteOptions(reqCliOpt...))
 	if err != nil {
 		return "", err
 	}
-	imgDigest := img.Digest
 
-	repo := ref.Context()
-	dstRef := cosign.AttachedImageTag(repo, imgDigest, cosign.SBOMTagSuffix)
+	auth := remote.WithAuthFromKeychain(authn.DefaultKeychain)
 	_, err = remote.Get(dstRef, auth)
 	if err != nil {
 		return "", err
