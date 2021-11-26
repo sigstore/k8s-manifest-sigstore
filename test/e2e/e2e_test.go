@@ -14,7 +14,8 @@
 // limitations under the License.
 //
 
-//+build e2e_test
+//go:build e2e_test
+// +build e2e_test
 
 package test
 
@@ -152,6 +153,7 @@ var _ = Describe("E2e Test for Kubectl Sigstore Commands", func() {
 	It("Sign Test", func() {
 		var timeout int = 10
 		Eventually(func() error {
+			os.Setenv("COSIGN_PASSWORD", "")
 			err := sign(inPath, outPath, keyPath)
 			if err != nil {
 				return err
