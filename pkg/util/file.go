@@ -20,13 +20,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -153,14 +151,6 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 	return nil
 }
 
-// check for path traversal and correct forward slashes
-func validRelPath(p string) bool {
-	if p == "" || strings.Contains(p, `\`) || strings.HasPrefix(p, "/") || strings.Contains(p, "../") {
-		return false
-	}
-	return true
-}
-
 func TarGzDecompress(src io.Reader, dst string) error {
 	// ungzip
 	zr, err := gzip.NewReader(src)
@@ -180,11 +170,6 @@ func TarGzDecompress(src io.Reader, dst string) error {
 			return err
 		}
 
-		// validate name against path traversal
-		if !validRelPath(header.Name) {
-			return fmt.Errorf("tar contained invalid name error %q\n", header.Name)
-		}
-
 		// add dst + re-format slashes according to system
 		target := filepath.Join(dst, header.Name)
 		// if no join is needed, replace with ToSlash:
@@ -202,6 +187,11 @@ func TarGzDecompress(src io.Reader, dst string) error {
 			}
 		// if it's a file create it (with same permission)
 		case tar.TypeReg:
+			targetDir := filepath.Dir(target)
+			err := os.MkdirAll(targetDir, 0755)
+			if err != nil {
+				return errors.Wrap(err, "os.MkdirAll() failed while decompressing tar gz")
+			}
 			fileToWrite, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
 			if err != nil {
 				return err

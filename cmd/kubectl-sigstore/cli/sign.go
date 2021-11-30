@@ -74,9 +74,13 @@ func sign(inputDir, imageRef, keyPath, output string, applySignatureConfigMap, u
 		}
 	}
 
-	anntns, err := parseAnnotations(annotations)
-	if err != nil {
-		return err
+	var anntns map[string]interface{}
+	var err error
+	if len(annotations) > 0 {
+		anntns, err = parseAnnotations(annotations)
+		if err != nil {
+			return err
+		}
 	}
 
 	so := &k8smanifest.SignOption{
