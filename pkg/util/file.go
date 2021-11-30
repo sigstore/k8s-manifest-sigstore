@@ -20,11 +20,13 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -168,6 +170,9 @@ func TarGzDecompress(src io.Reader, dst string) error {
 		}
 		if err != nil {
 			return err
+		}
+		if strings.Contains(header.Name, "..") {
+			return fmt.Errorf("a file contains \"..\" in its path cannot be decompressed, but `%s` has been found", header.Name)
 		}
 
 		// add dst + re-format slashes according to system
