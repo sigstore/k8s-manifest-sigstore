@@ -316,25 +316,38 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 }
 
 func embedAnnotation(yamlBytes []byte, annotationMap map[string]interface{}) ([]byte, error) {
-	orgNode, err := mapnode.NewFromYamlBytes(yamlBytes)
-	if err != nil {
-		return nil, err
+	yamls := [][]byte{}
+	if k8ssigutil.IsConcatYAMLs(yamlBytes) {
+		yamls = k8ssigutil.SplitConcatYAMLs(yamlBytes)
+	} else {
+		yamls = append(yamls, yamlBytes)
 	}
-	metadataMap := map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"annotations": annotationMap,
-		},
+
+	embedYAMLs := [][]byte{}
+	for _, yaml := range yamls {
+		orgNode, err := mapnode.NewFromYamlBytes(yaml)
+		if err != nil {
+			return nil, err
+		}
+		metadataMap := map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"annotations": annotationMap,
+			},
+		}
+		annotationNode, err := mapnode.NewFromMap(metadataMap)
+		if err != nil {
+			return nil, err
+		}
+		embedNode, err := orgNode.Merge(annotationNode)
+		if err != nil {
+			return nil, err
+		}
+		embedYamlBytes := embedNode.ToYaml()
+		embedYAMLs = append(embedYAMLs, []byte(embedYamlBytes))
 	}
-	annotationNode, err := mapnode.NewFromMap(metadataMap)
-	if err != nil {
-		return nil, err
-	}
-	embedNode, err := orgNode.Merge(annotationNode)
-	if err != nil {
-		return nil, err
-	}
-	embedYamlBytes := embedNode.ToYaml()
-	return []byte(embedYamlBytes), nil
+	embedConcatYAMLs := k8ssigutil.ConcatenateYAMLs(embedYAMLs)
+
+	return embedConcatYAMLs, nil
 }
 
 func applySignatureConfigMap(configMapRef string, newCM *corev1.ConfigMap) ([]byte, error) {

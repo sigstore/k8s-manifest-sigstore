@@ -16,12 +16,19 @@
 package cli
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/base64"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/pkg/errors"
+
+	"github.com/ghodss/yaml"
+	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // files for test cases
@@ -58,6 +65,52 @@ func TestSign(t *testing.T) {
 		return
 	}
 	t.Logf("signed YAML file: %s", string(outBytes))
+
+	fpath2 := "testdata/sample-configmap-concat.yaml"
+	outPath2 := filepath.Join(tmpDir, "sample-configmap-concat.yaml.signed")
+	err = sign(fpath2, "", keyPath, outPath2, false, true, nil)
+	if err != nil {
+		t.Errorf("failed to sign the test file: %s", err.Error())
+		return
+	}
+	outBytes2, err := ioutil.ReadFile(outPath2)
+	if err != nil {
+		t.Errorf("failed to read the signed file: %s", err.Error())
+		return
+	}
+	yamls := k8smnfutil.SplitConcatYAMLs(outBytes2)
+	if len(yamls) != 2 {
+		t.Errorf("signed YAML must be a concatenated YAML if the original is a concatenated one")
+		return
+	}
+	var obj *unstructured.Unstructured
+	err = yaml.Unmarshal(yamls[0], &obj)
+	if err != nil {
+		t.Errorf("failed to unmarshal the signed YAML manifest: %s", err.Error())
+		return
+	}
+	annt := obj.GetAnnotations()
+	defaultMessageAnnotationKey := "cosign.sigstore.dev/message"
+	msgInAnnotations, ok := annt[defaultMessageAnnotationKey]
+	if !ok {
+		t.Errorf("`%s` not found in annotations in the singed YAML manifest", defaultMessageAnnotationKey)
+		return
+	}
+
+	t.Logf("signed YAML file2: %s", string(outBytes2))
+
+	manifestInAnnotations, err := getManifestInMessage([]byte(msgInAnnotations))
+	if err != nil {
+		t.Errorf("failed to get YAML manifest in message annotations: %s", err.Error())
+		return
+	}
+	yamlsInMsgAnnotations := k8smnfutil.SplitConcatYAMLs(manifestInAnnotations)
+	if len(yamlsInMsgAnnotations) != 2 {
+		t.Errorf("a manifest in message annotation must be a concatenated YAML if the original is a concatenated one")
+		return
+	}
+
+	t.Logf("manifest in message annotations: %s", string(manifestInAnnotations))
 }
 
 func initSingleTestFile(b64EncodedData []byte, fpath string) error {
@@ -70,4 +123,29 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 		return err
 	}
 	return nil
+}
+
+func getManifestInMessage(msgBytes []byte) ([]byte, error) {
+	dir, err := ioutil.TempDir("", "kubectl-sigstore-sign-test-temp-dir")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create temp directory")
+	}
+	defer os.RemoveAll(dir)
+
+	gzipMsg, _ := base64.StdEncoding.DecodeString(string(msgBytes))
+	rawMsg := k8smnfutil.GzipDecompress(gzipMsg)
+	rawMsgReader := bytes.NewReader(rawMsg)
+
+	err = k8smnfutil.TarGzDecompress(rawMsgReader, dir)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to decompress an input file/dir")
+	}
+
+	yamls, err := k8smnfutil.FindYAMLsInDir(dir)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to find yamls in decompressed message tar gz file")
+	}
+
+	manifest := k8smnfutil.ConcatenateYAMLs(yamls)
+	return manifest, nil
 }
