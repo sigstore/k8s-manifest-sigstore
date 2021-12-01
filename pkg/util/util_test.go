@@ -17,7 +17,6 @@ package util
 
 import (
 	_ "embed"
-	"fmt"
 	"testing"
 )
 
@@ -51,8 +50,4 @@ func TestYAML(t *testing.T) {
 	for i, cand := range candidates {
 		t.Logf("found YAML %v: %s", i+1, string(cand))
 	}
-}
-
-func sampleFunc(in string) {
-	fmt.Printf("this is input: %s", in)
 }
