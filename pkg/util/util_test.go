@@ -53,15 +53,6 @@ func TestYAML(t *testing.T) {
 	}
 }
 
-func TestExec(t *testing.T) {
-	_, out := SilentExecFunc(sampleFunc, "abcd")
-	outExpected := "this is input: abcd"
-	if out != outExpected {
-		t.Errorf("expect: \"%s\", actual: \"%s\"", outExpected, out)
-		return
-	}
-}
-
 func sampleFunc(in string) {
 	fmt.Printf("this is input: %s", in)
 }

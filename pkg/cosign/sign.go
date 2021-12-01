@@ -17,16 +17,12 @@
 package cosign
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -36,8 +32,7 @@ import (
 	"github.com/sigstore/cosign/pkg/cosign"
 	fulcioclient "github.com/sigstore/fulcio/pkg/client"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
-	rekor "github.com/sigstore/rekor/pkg/client"
-	"github.com/sigstore/rekor/pkg/generated/client/entries"
+	rekorclient "github.com/sigstore/rekor/pkg/client"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	log "github.com/sirupsen/logrus"
 )
@@ -142,21 +137,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 
 	tlogUploadTimeout := defaultTlogUploadTimeout * time.Second
 
-	returnValNum := 2
-	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(clisign.SignBlobCmd, context.Background(), opt, regOpt, blobPath, false, "", tlogUploadTimeout)
-
-	log.Info(stdoutAndErr) // show cosign.SignBlobCmd() logs
-
-	if len(returnValArray) != returnValNum {
-		return nil, fmt.Errorf("cosign.SignBlobCmd() must return %v values as output, but got %v values", returnValNum, len(returnValArray))
-	}
-	var rawSig []byte
-	if returnValArray[0] != nil {
-		rawSig = returnValArray[0].([]byte)
-	}
-	if returnValArray[1] != nil {
-		err = returnValArray[1].(error)
-	}
+	rawSig, err := clisign.SignBlobCmd(context.Background(), opt, regOpt, blobPath, false, "", tlogUploadTimeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
@@ -168,20 +149,31 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 
 	var rawCert []byte
 	var rawBundle []byte
-	if uploadTlog && certPath == nil && keyPath == nil {
-		logIndex, err := findTlogIndexFromSignBlobOutput(stdoutAndErr)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to find transparency log index from cosign.SignBlobCmd() output")
-		}
 
-		tlogEntry, err := getTlogEntryByIndex(rekorSeverURL, logIndex)
+	if uploadTlog && certPath == nil {
+		rClient, err := rekorclient.GetRekorClient(opt.RekorURL)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to find transparency log entry index %v", logIndex)
+			return nil, errors.Wrap(err, "failed to get rekor client")
+		}
+		blobBytes, err := ioutil.ReadFile(blobPath)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to read blob file")
+		}
+		uuids, err := cosign.FindTLogEntriesByPayload(rClient, blobBytes)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to find tlog entry")
+		}
+		if len(uuids) == 0 {
+			return nil, errors.New("could not find a tlog entry for provided blob")
+		}
+		tlogEntry, err := cosign.GetTlogEntry(rClient, uuids[0])
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to find transparency log entry with uuid %s", uuids[0])
 		}
 		bundleObj := clisign.Bundle(tlogEntry)
 		rawBundle, err = json.Marshal(bundleObj)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create a bundle from a tlog entry index %v", logIndex)
+			return nil, errors.Wrapf(err, "failed to create a bundle from a tlog entry with uuid %s", uuids[0])
 		}
 
 		var rekord *models.Rekord
@@ -245,54 +237,6 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	}
 
 	return m, nil
-}
-
-func findTlogIndexFromSignBlobOutput(stdoutAndErr string) (string, error) {
-	reader := bytes.NewReader([]byte(stdoutAndErr))
-	scanner := bufio.NewScanner(reader)
-	index := ""
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, signBlobTlogIndexLineIdentifier) {
-			tmp := strings.TrimPrefix(line, signBlobTlogIndexLineIdentifier)
-			index = strings.TrimSpace(tmp)
-		}
-	}
-	if index != "" {
-		return index, nil
-	}
-	if err := scanner.Err(); err != nil {
-		return "", err
-	} else {
-		return "", fmt.Errorf("failed to find tlog index info")
-	}
-}
-
-func getTlogEntryByIndex(rekorServerURL, logIndex string) (*models.LogEntryAnon, error) {
-	rekorClient, err := rekor.GetRekorClient(rekorServerURL)
-	if err != nil {
-		return nil, err
-	}
-	params := entries.NewGetLogEntryByIndexParams()
-	logIndexInt, err := strconv.ParseInt(logIndex, 10, 0)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing --log-index: %w", err)
-	}
-	params.LogIndex = logIndexInt
-
-	resp, err := rekorClient.Entries.GetLogEntryByIndex(params)
-	if err != nil {
-		return nil, err
-	}
-	var logEntry *models.LogEntryAnon
-	for uuid := range resp.Payload {
-		tmpEntry := resp.Payload[uuid]
-		logEntry = &tmpEntry
-	}
-	if logEntry != nil {
-		return logEntry, nil
-	}
-	return nil, errors.New("empty response")
 }
 
 func GetRekorServerURL() string {
