@@ -18,11 +18,7 @@ package util
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"os/exec"
-	"reflect"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -39,69 +35,4 @@ func CmdExec(baseCmd string, args ...string) (string, error) {
 	}
 	out := stdout.String()
 	return out, nil
-}
-
-func SilentExecFunc(f interface{}, i ...interface{}) ([]interface{}, string) {
-	// if f is not a function, exit this
-	if reflect.ValueOf(f).Type().Kind() != reflect.Func {
-		return nil, ""
-	}
-
-	// create virtual output
-	rStdout, wStdout, _ := os.Pipe()
-	rStderr, wStderr, _ := os.Pipe()
-	channel := make(chan string)
-
-	// backup all output
-	backupStdout := os.Stdout
-	backupStderr := os.Stderr
-
-	// overwrite output configuration with virtual output
-	os.Stdout = wStdout
-	os.Stderr = wStderr
-
-	// set a channel as a stdout buffer
-	go func(out chan string, readerStdout *os.File, readerStderr *os.File) {
-		var bufStdout bytes.Buffer
-		_, _ = io.Copy(&bufStdout, readerStdout)
-		if bufStdout.Len() > 0 {
-			out <- bufStdout.String()
-		}
-
-		var bufStderr bytes.Buffer
-		_, _ = io.Copy(&bufStderr, readerStderr)
-		if bufStderr.Len() > 0 {
-			out <- bufStderr.String()
-		}
-	}(channel, rStdout, rStderr)
-
-	// configure channel so that all recevied string would be inserted into vStdout
-	vStdout := ""
-	go func() {
-		for {
-			out := <-channel
-			vStdout += out
-		}
-	}()
-
-	// call the function
-	in := []reflect.Value{}
-	for _, ii := range i {
-		in = append(in, reflect.ValueOf(ii))
-	}
-	o := []interface{}{}
-	out := reflect.ValueOf(f).Call(in)
-	for _, oi := range out {
-		o = append(o, oi.Interface())
-	}
-
-	// close vitual output
-	_ = wStdout.Close()
-	_ = wStderr.Close()
-	time.Sleep(10 * time.Millisecond)
-
-	// restore original output configuration
-	os.Stdout = backupStdout
-	os.Stderr = backupStderr
-	return o, vStdout
 }

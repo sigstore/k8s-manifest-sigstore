@@ -17,7 +17,6 @@ package util
 
 import (
 	_ "embed"
-	"fmt"
 	"testing"
 )
 
@@ -51,17 +50,4 @@ func TestYAML(t *testing.T) {
 	for i, cand := range candidates {
 		t.Logf("found YAML %v: %s", i+1, string(cand))
 	}
-}
-
-func TestExec(t *testing.T) {
-	_, out := SilentExecFunc(sampleFunc, "abcd")
-	outExpected := "this is input: abcd"
-	if out != outExpected {
-		t.Errorf("expect: \"%s\", actual: \"%s\"", outExpected, out)
-		return
-	}
-}
-
-func sampleFunc(in string) {
-	fmt.Printf("this is input: %s", in)
 }

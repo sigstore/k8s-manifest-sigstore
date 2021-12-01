@@ -179,19 +179,8 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		opt.KeyRef = *pubkeyPath
 	}
 
-	returnValNum := 1
-	returnValArray, stdoutAndErr := k8smnfutil.SilentExecFunc(cliverify.VerifyBlobCmd, context.Background(), opt, certFile, sigFile, msgFile)
-
-	log.Debug(stdoutAndErr) // show cosign.VerifyBlobCmd() logs
-
-	if len(returnValArray) != returnValNum {
-		return false, "", nil, fmt.Errorf("cosign.VerifyBlobCmd() must return %v values as output, but got %v values", returnValNum, len(returnValArray))
-	}
-	if returnValArray[0] != nil {
-		err = returnValArray[0].(error)
-	}
+	err = cliverify.VerifyBlobCmd(context.Background(), opt, certFile, sigFile, msgFile)
 	if err != nil {
-		err = fmt.Errorf("error: %s, detail logs during cosign.VerifyBlobCmd(): %s", err.Error(), stdoutAndErr)
 		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
 	}
 	verified := false
