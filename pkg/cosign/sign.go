@@ -46,8 +46,6 @@ const (
 	defaultTlogUploadTimeout = 3
 )
 
-const signBlobTlogIndexLineIdentifier = "tlog entry created with index:"
-
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
