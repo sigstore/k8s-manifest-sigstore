@@ -44,7 +44,7 @@ const (
 	defaultOIDCIssuer        = "https://oauth2.sigstore.dev/auth"
 	defaultOIDCClientID      = "sigstore"
 	cosignPasswordEnvKey     = "COSIGN_PASSWORD"
-	defaultTlogUploadTimeout = 3
+	defaultTlogUploadTimeout = 0
 )
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
@@ -188,7 +188,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 			return nil, errors.Wrapf(err, "failed to create a bundle from a tlog entry with uuid %s", uuids[0])
 		}
 
-		var rekord *models.Rekord
+		var rekord *models.Hashedrekord
 		if b64EntryStr, ok := tlogEntry.Body.(string); ok {
 			log.Debug("found entry: ", b64EntryStr)
 			rawEntryBytes, err := base64.StdEncoding.DecodeString(b64EntryStr)
@@ -208,10 +208,10 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		log.Debug("rekord object: ", string(rekordBytes))
 		rekordSpecBytes, _ := json.Marshal(rekord.Spec)
 
-		var rekordContent *models.RekordV001Schema
+		var rekordContent *models.HashedrekordV001Schema
 		err = json.Unmarshal(rekordSpecBytes, &rekordContent)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to unmarshal rekord.Spec into *models.RekordV001Schema")
+			return nil, errors.Wrap(err, "failed to unmarshal rekord.Spec into *models.HashedrekordV001Schema")
 		}
 
 		var b64SigInTlog string

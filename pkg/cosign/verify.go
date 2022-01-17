@@ -155,7 +155,8 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	if bundleBytes != nil {
 		gzipBundle, _ := base64.StdEncoding.DecodeString(string(bundleBytes))
 		rawBundle := k8smnfutil.GzipDecompress(gzipBundle)
-		verified, signerName, signedTimestamp, err := verifyBundle(sigBytes, rawCert, rawBundle)
+		b64Bundle := base64.StdEncoding.EncodeToString(rawBundle)
+		verified, signerName, signedTimestamp, err := verifyBundle(rawMsg, sigBytes, rawCert, []byte(b64Bundle))
 		log.Debugf("verifyBundle() results: verified: %v, signerName: %s, err: %s", verified, signerName, err)
 		if verified {
 			log.Debug("Verified by bundle information")
@@ -252,11 +253,12 @@ func loadCertificate(pemBytes []byte) (*x509.Certificate, error) {
 // 	return nil, errors.New("empty response")
 // }
 
-func verifyBundle(b64Sig, rawCert, rawBundle []byte) (bool, string, *int64, error) {
+func verifyBundle(rawMsg, b64Sig, rawCert, b64Bundle []byte) (bool, string, *int64, error) {
 	sig := &cosignBundleSignature{
+		message:         rawMsg,
 		base64Signature: b64Sig,
 		cert:            rawCert,
-		bundle:          rawBundle,
+		base64Bundle:    b64Bundle,
 	}
 	verified, err := cosign.VerifyBundle(context.Background(), sig)
 	if err != nil {
@@ -272,9 +274,10 @@ func verifyBundle(b64Sig, rawCert, rawBundle []byte) (bool, string, *int64, erro
 
 type cosignBundleSignature struct {
 	v1.Layer
+	message         []byte // message will be used as sig.Payload()
 	base64Signature []byte
 	cert            []byte
-	bundle          []byte
+	base64Bundle    []byte
 }
 
 func (s *cosignBundleSignature) Annotations() (map[string]string, error) {
@@ -282,7 +285,7 @@ func (s *cosignBundleSignature) Annotations() (map[string]string, error) {
 }
 
 func (s *cosignBundleSignature) Payload() ([]byte, error) {
-	return nil, errors.New("not implemented")
+	return s.message, nil
 }
 
 func (s *cosignBundleSignature) Base64Signature() (string, error) {
@@ -299,7 +302,11 @@ func (s *cosignBundleSignature) Chain() ([]*x509.Certificate, error) {
 
 func (s *cosignBundleSignature) Bundle() (*cosignoci.Bundle, error) {
 	var b *cosignoci.Bundle
-	err := json.Unmarshal(s.bundle, &b)
+	bundleStr, err := base64.StdEncoding.DecodeString(string(s.base64Bundle))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to base64-decode the bundle")
+	}
+	err = json.Unmarshal([]byte(bundleStr), &b)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Unamrshal() bundle")
 	}
