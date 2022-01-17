@@ -34,13 +34,14 @@ import (
 
 	"github.com/sigstore/cosign/cmd/cosign/cli/fulcio"
 	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
+	"github.com/sigstore/cosign/cmd/cosign/cli/rekor"
 	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
 	cliverify "github.com/sigstore/cosign/cmd/cosign/cli/verify"
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/pkcs11key"
 	cosignoci "github.com/sigstore/cosign/pkg/oci"
 	sigs "github.com/sigstore/cosign/pkg/signature"
-	fulcioclient "github.com/sigstore/fulcio/pkg/client"
+	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	k8ssigx509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
@@ -72,7 +73,11 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 	}
 
 	if pubkeyPath == "" {
-		co.RekorURL = rekorSeverURL
+		rekorClient, err := rekor.NewClient(rekorSeverURL)
+		if err != nil {
+			return false, "", nil, fmt.Errorf("failed to initialize rekor client; %s", err.Error())
+		}
+		co.RekorClient = rekorClient
 		co.RootCerts = fulcio.GetRoots()
 	} else {
 		pubKeyVerifier, err := sigs.PublicKeyFromKeyRef(context.Background(), pubkeyPath)
@@ -164,7 +169,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	idToken := ""
 
 	rekorSeverURL := GetRekorServerURL()
-	fulcioServerURL := fulcioclient.SigstorePublicServerURL
+	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	opt := clisign.KeyOpts{
 		Sk:           sk,
@@ -253,7 +258,7 @@ func verifyBundle(b64Sig, rawCert, rawBundle []byte) (bool, string, *int64, erro
 		cert:            rawCert,
 		bundle:          rawBundle,
 	}
-	verified, err := cosign.VerifyBundle(sig)
+	verified, err := cosign.VerifyBundle(context.Background(), sig)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "verifying bundle")
 	}
