@@ -41,6 +41,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
+	intotoprov02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
@@ -641,9 +642,9 @@ func ParseAttestation(attestationStr string) (*intoto.Statement, interface{}, []
 				materials = append(materials, ProvenanceMaterial{URI: m.URI, Digest: DigestSet(digest)})
 			}
 		}
-	} else if attestation.PredicateType == intoto.PredicateSLSAProvenanceV01 {
+	} else if attestation.PredicateType == intotoprov02.PredicateSLSAProvenance {
 		predicateBytes, _ := json.Marshal(attestation.Predicate)
-		var tmpPred intoto.ProvenancePredicate
+		var tmpPred intotoprov02.ProvenancePredicate
 		err := json.Unmarshal(predicateBytes, &tmpPred)
 		if err == nil {
 			predicate = &tmpPred

@@ -121,9 +121,11 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
 
-	o.ApplyOptions = cmdapply.NewApplyOptions(ioStreams)
-
-	var err error
+	options, err := cmdapply.NewApplyFlags(f, ioStreams).ToOptions(cmd, "kubectl sigstore", []string{})
+	if err != nil {
+		return err
+	}
+	o.ApplyOptions = options
 
 	o.ApplyOptions.ServerSideApply = cmdutil.GetServerSideApplyFlag(cmd)
 	o.ApplyOptions.ForceConflicts = cmdutil.GetForceConflictsFlag(cmd)

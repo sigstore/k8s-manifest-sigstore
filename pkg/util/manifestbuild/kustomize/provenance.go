@@ -34,6 +34,7 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
+	intotoprov02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	"github.com/theupdateframework/go-tuf/encrypted"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -50,7 +51,7 @@ func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, f
 	subjects := []intoto.Subject{}
 	subjects = append(subjects, intoto.Subject{
 		Name: artifactName,
-		Digest: intoto.DigestSet{
+		Digest: intotoprov02.DigestSet{
 			"sha256": digest,
 		},
 	})
@@ -62,25 +63,25 @@ func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, f
 
 	// TODO: set recipe command dynamically or somthing
 	entryPoint := recipeCmd[0]
-	recipe := intoto.ProvenanceRecipe{
-		EntryPoint: entryPoint,
-		Arguments:  recipeCmd[1:],
+	invocation := intotoprov02.ProvenanceInvocation{
+		ConfigSource: intotoprov02.ConfigSource{EntryPoint: entryPoint},
+		Parameters:   recipeCmd[1:],
 	}
 	it := &intoto.Statement{
 		StatementHeader: intoto.StatementHeader{
 			Type:          intoto.StatementInTotoV01,
-			PredicateType: intoto.PredicateSLSAProvenanceV01,
+			PredicateType: intotoprov02.PredicateSLSAProvenance,
 			Subject:       subjects,
 		},
-		Predicate: intoto.ProvenancePredicate{
-			Metadata: &intoto.ProvenanceMetadata{
+		Predicate: intotoprov02.ProvenancePredicate{
+			Metadata: &intotoprov02.ProvenanceMetadata{
 				Reproducible:    true,
 				BuildStartedOn:  &startTime,
 				BuildFinishedOn: &finishTime,
 			},
 
-			Materials: materials,
-			Recipe:    recipe,
+			Materials:  materials,
+			Invocation: invocation,
 		},
 	}
 	return it, nil
@@ -159,7 +160,7 @@ func OverwriteArtifactInProvenance(provPath, overwriteArtifact string) (string, 
 	}
 	subj := intoto.Subject{
 		Name: overwriteArtifact,
-		Digest: intoto.DigestSet{
+		Digest: intotoprov02.DigestSet{
 			"sha256": digest,
 		},
 	}
@@ -182,7 +183,7 @@ func OverwriteArtifactInProvenance(provPath, overwriteArtifact string) (string, 
 	return newProvPath, nil
 }
 
-func generateMaterialsFromKustomization(kustomizeBase string) ([]intoto.ProvenanceMaterial, error) {
+func generateMaterialsFromKustomization(kustomizeBase string) ([]intotoprov02.ProvenanceMaterial, error) {
 	var resources []*KustomizationResource
 	var err error
 	repoURL, repoRevision, kustPath, err := checkRepoInfoOfKustomizeBase(kustomizeBase)
@@ -196,7 +197,7 @@ func generateMaterialsFromKustomization(kustomizeBase string) ([]intoto.Provenan
 	if err != nil {
 		return nil, err
 	}
-	materials := []intoto.ProvenanceMaterial{}
+	materials := []intotoprov02.ProvenanceMaterial{}
 	for _, r := range resources {
 		m := resourceToMaterial(r)
 		if m == nil {
@@ -232,21 +233,21 @@ func checkRepoInfoOfKustomizeBase(kustomizeBase string) (string, string, string,
 	return url, revision, relativePath, nil
 }
 
-func resourceToMaterial(kr *KustomizationResource) *intoto.ProvenanceMaterial {
+func resourceToMaterial(kr *KustomizationResource) *intotoprov02.ProvenanceMaterial {
 	if kr.File == nil && kr.GitRepo == nil {
 		return nil
 	} else if kr.File != nil {
-		m := &intoto.ProvenanceMaterial{
+		m := &intotoprov02.ProvenanceMaterial{
 			URI: kr.File.Name,
-			Digest: intoto.DigestSet{
+			Digest: intotoprov02.DigestSet{
 				"hash": kr.File.Hash,
 			},
 		}
 		return m
 	} else if kr.GitRepo != nil {
-		m := &intoto.ProvenanceMaterial{
+		m := &intotoprov02.ProvenanceMaterial{
 			URI: kr.GitRepo.URL,
-			Digest: intoto.DigestSet{
+			Digest: intotoprov02.DigestSet{
 				"commit":   kr.GitRepo.CommitID,
 				"revision": kr.GitRepo.Revision,
 				"path":     kr.GitRepo.Path,

@@ -30,7 +30,8 @@ import (
 	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
 	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
 	"github.com/sigstore/cosign/pkg/cosign"
-	fulcioclient "github.com/sigstore/fulcio/pkg/client"
+	cosignoci "github.com/sigstore/cosign/pkg/oci"
+	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekorclient "github.com/sigstore/rekor/pkg/client"
 	"github.com/sigstore/rekor/pkg/generated/models"
@@ -43,7 +44,7 @@ const (
 	defaultOIDCIssuer        = "https://oauth2.sigstore.dev/auth"
 	defaultOIDCClientID      = "sigstore"
 	cosignPasswordEnvKey     = "COSIGN_PASSWORD"
-	defaultTlogUploadTimeout = 3
+	defaultTlogUploadTimeout = 0
 )
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
@@ -52,7 +53,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	idToken := ""
 
 	rekorSeverURL := GetRekorServerURL()
-	fulcioServerURL := fulcioclient.SigstorePublicServerURL
+	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	opt := clisign.KeyOpts{
 		Sk:           sk,
@@ -79,7 +80,10 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 		certPathStr = *certPath
 	}
 
-	return clisign.SignCmd(context.Background(), opt, regOpt, imageAnnotations, []string{imageRef}, certPathStr, true, "", false, false, "")
+	outputSignaturePath := ""
+	outputCertificatePath := ""
+
+	return clisign.SignCmd(context.Background(), opt, regOpt, imageAnnotations, []string{imageRef}, certPathStr, true, "", outputSignaturePath, outputCertificatePath, false, false, "")
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {
@@ -88,7 +92,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	idToken := ""
 
 	rekorSeverURL := GetRekorServerURL()
-	fulcioServerURL := fulcioclient.SigstorePublicServerURL
+	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	opt := clisign.KeyOpts{
 		Sk:           sk,
@@ -135,7 +139,9 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 
 	tlogUploadTimeout := defaultTlogUploadTimeout * time.Second
 
-	rawSig, err := clisign.SignBlobCmd(context.Background(), opt, regOpt, blobPath, false, "", tlogUploadTimeout)
+	outputSignaturePath := ""
+	outputCertificatePath := ""
+	rawSig, err := clisign.SignBlobCmd(context.Background(), opt, regOpt, blobPath, false, outputSignaturePath, outputCertificatePath, tlogUploadTimeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
@@ -157,24 +163,32 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to read blob file")
 		}
-		uuids, err := cosign.FindTLogEntriesByPayload(rClient, blobBytes)
+		uuids, err := cosign.FindTLogEntriesByPayload(context.Background(), rClient, blobBytes)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to find tlog entry")
 		}
 		if len(uuids) == 0 {
 			return nil, errors.New("could not find a tlog entry for provided blob")
 		}
-		tlogEntry, err := cosign.GetTlogEntry(rClient, uuids[0])
+		tlogEntry, err := cosign.GetTlogEntry(context.Background(), rClient, uuids[0])
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find transparency log entry with uuid %s", uuids[0])
 		}
-		bundleObj := clisign.Bundle(tlogEntry)
+		bundleObj := &cosignoci.Bundle{
+			SignedEntryTimestamp: tlogEntry.Verification.SignedEntryTimestamp,
+			Payload: cosignoci.BundlePayload{
+				Body:           tlogEntry.Body,
+				IntegratedTime: *tlogEntry.IntegratedTime,
+				LogIndex:       *tlogEntry.LogIndex,
+				LogID:          *tlogEntry.LogID,
+			},
+		}
 		rawBundle, err = json.Marshal(bundleObj)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create a bundle from a tlog entry with uuid %s", uuids[0])
 		}
 
-		var rekord *models.Rekord
+		var rekord *models.Hashedrekord
 		if b64EntryStr, ok := tlogEntry.Body.(string); ok {
 			log.Debug("found entry: ", b64EntryStr)
 			rawEntryBytes, err := base64.StdEncoding.DecodeString(b64EntryStr)
@@ -194,10 +208,10 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		log.Debug("rekord object: ", string(rekordBytes))
 		rekordSpecBytes, _ := json.Marshal(rekord.Spec)
 
-		var rekordContent *models.RekordV001Schema
+		var rekordContent *models.HashedrekordV001Schema
 		err = json.Unmarshal(rekordSpecBytes, &rekordContent)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to unmarshal rekord.Spec into *models.RekordV001Schema")
+			return nil, errors.Wrap(err, "failed to unmarshal rekord.Spec into *models.HashedrekordV001Schema")
 		}
 
 		var b64SigInTlog string
