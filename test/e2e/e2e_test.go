@@ -64,7 +64,7 @@ import (
 const cosignExperimentalEnv = "COSIGN_EXPERIMENTAL"
 
 var testTempDir string
-var inPath, outPath, keyPath, pubkeyPath string
+var inPath, outPath, inExpPath, outExpPath, keyPath, pubkeyPath string
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
@@ -128,6 +128,8 @@ var _ = BeforeSuite(func() {
 
 	inPath = filepath.Join("testdata", "sample-configmap.yaml")
 	outPath = filepath.Join(testTempDir, "signed-configmap.yaml")
+	inExpPath = filepath.Join("testdata", "sample-configmap-exp.yaml")
+	outExpPath = filepath.Join(testTempDir, "signed-configmap-exp.yaml")
 	keyPath = filepath.Join(testTempDir, "testkey")
 	pubkeyPath = filepath.Join(testTempDir, "testpub")
 
@@ -165,6 +167,29 @@ var _ = Describe("E2e Test for Kubectl Sigstore Commands", func() {
 		var timeout int = 10
 		Eventually(func() error {
 			err := verify(outPath, pubkeyPath)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, timeout, 1).Should(BeNil())
+	})
+	It("Sign with tlog Test", func() {
+		var timeout int = 10
+		Eventually(func() error {
+			os.Setenv("COSIGN_EXPERIMENTAL", "1")
+			os.Setenv("COSIGN_PASSWORD", "")
+			err := sign(inExpPath, outExpPath, keyPath)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, timeout, 1).Should(BeNil())
+	})
+	It("Verify with tlog Test", func() {
+		var timeout int = 10
+		Eventually(func() error {
+			os.Setenv("COSIGN_EXPERIMENTAL", "1")
+			err := verify(outExpPath, pubkeyPath)
 			if err != nil {
 				return err
 			}

@@ -218,14 +218,20 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		var b64CertStr string
 		if rekordContent != nil {
 			b64SigInTlog = rekordContent.Signature.Content.String()
+			// this will be a certificate in keyless signing, and be a public key in keyed signing
+			// and if this is a public key, we don't add it to the annotations
 			b64CertStr = rekordContent.Signature.PublicKey.Content.String()
 		}
 		if b64SigInTlog != string(b64Sig) {
 			return nil, fmt.Errorf("signature found in tlog is different from original one; found: %s, original: %s", b64SigInTlog, string(b64Sig))
 		}
-		rawCert, err = base64.StdEncoding.DecodeString(b64CertStr)
+		tmpRawCert, err := base64.StdEncoding.DecodeString(b64CertStr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to decode certificate string %s", b64CertStr)
+		}
+		// rawCert is available only when the value is an actual certificate
+		if _, err = loadCertificate(tmpRawCert); err == nil {
+			rawCert = tmpRawCert
 		}
 	} else if certPath != nil {
 		certPathStr := *certPath
