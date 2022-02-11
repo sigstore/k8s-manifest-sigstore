@@ -30,7 +30,7 @@ import (
 	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
 	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
 	"github.com/sigstore/cosign/pkg/cosign"
-	cosignoci "github.com/sigstore/cosign/pkg/oci"
+	"github.com/sigstore/cosign/pkg/cosign/bundle"
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekorclient "github.com/sigstore/rekor/pkg/client"
@@ -174,9 +174,9 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find transparency log entry with uuid %s", uuids[0])
 		}
-		bundleObj := &cosignoci.Bundle{
+		bundleObj := &bundle.RekorBundle{
 			SignedEntryTimestamp: tlogEntry.Verification.SignedEntryTimestamp,
-			Payload: cosignoci.BundlePayload{
+			Payload: bundle.RekorPayload{
 				Body:           tlogEntry.Body,
 				IntegratedTime: *tlogEntry.IntegratedTime,
 				LogIndex:       *tlogEntry.LogIndex,

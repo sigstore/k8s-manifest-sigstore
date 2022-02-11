@@ -38,8 +38,9 @@ import (
 	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
 	cliverify "github.com/sigstore/cosign/cmd/cosign/cli/verify"
 	"github.com/sigstore/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign/bundle"
 	"github.com/sigstore/cosign/pkg/cosign/pkcs11key"
-	cosignoci "github.com/sigstore/cosign/pkg/oci"
+	"github.com/sigstore/cosign/pkg/cosign/tuf"
 	sigs "github.com/sigstore/cosign/pkg/signature"
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
@@ -185,7 +186,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		opt.KeyRef = *pubkeyPath
 	}
 
-	err = cliverify.VerifyBlobCmd(context.Background(), opt, certFile, sigFile, msgFile)
+	err = cliverify.VerifyBlobCmd(context.Background(), opt, certFile, "", defaultOIDCIssuer, sigFile, msgFile)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
 	}
@@ -300,8 +301,12 @@ func (s *cosignBundleSignature) Chain() ([]*x509.Certificate, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (s *cosignBundleSignature) Bundle() (*cosignoci.Bundle, error) {
-	var b *cosignoci.Bundle
+func (s *cosignBundleSignature) Timestamp() (*tuf.Timestamp, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *cosignBundleSignature) Bundle() (*bundle.RekorBundle, error) {
+	var b *bundle.RekorBundle
 	bundleStr, err := base64.StdEncoding.DecodeString(string(s.base64Bundle))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to base64-decode the bundle")
