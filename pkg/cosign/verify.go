@@ -47,6 +47,8 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
+// test
+
 const (
 	tmpMessageFile     = "k8s-manifest-sigstore-message"
 	tmpCertificateFile = "k8s-manifest-sigstore-certificate"
