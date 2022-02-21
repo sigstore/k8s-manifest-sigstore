@@ -108,7 +108,7 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 	}
 
 	signer, err := dsse.NewEnvelopeSigner(&IntotoSigner{
-		priv: priv.(*ecdsa.PrivateKey),
+		key: priv.(*ecdsa.PrivateKey),
 	})
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 	}
 
 	// Now verify
-	err = signer.Verify(envelope)
+	_, err = signer.Verify(envelope)
 	if err != nil {
 		return nil, err
 	}
@@ -277,25 +277,34 @@ func GetImageDigest(imageRef string) (string, error) {
 }
 
 type IntotoSigner struct {
-	priv *ecdsa.PrivateKey
+	key   *ecdsa.PrivateKey
+	keyID string
 }
 
 // sign a provenance data
-func (it *IntotoSigner) Sign(data []byte) ([]byte, string, error) {
+func (it *IntotoSigner) Sign(data []byte) ([]byte, error) {
 	h := sha256.Sum256(data)
-	sig, err := it.priv.Sign(rand.Reader, h[:], crypto.SHA256)
+	sig, err := it.key.Sign(rand.Reader, h[:], crypto.SHA256)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return sig, "", nil
+	return sig, nil
 }
 
 // sverify a provenance data and its signature
-func (it *IntotoSigner) Verify(_ string, data, sig []byte) error {
+func (it *IntotoSigner) Verify(data, sig []byte) error {
 	h := sha256.Sum256(data)
-	ok := ecdsa.VerifyASN1(&it.priv.PublicKey, h[:], sig)
+	ok := ecdsa.VerifyASN1(&it.key.PublicKey, h[:], sig)
 	if ok {
 		return nil
 	}
 	return errors.New("invalid signature")
+}
+
+func (es *IntotoSigner) KeyID() (string, error) {
+	return es.keyID, nil
+}
+
+func (es *IntotoSigner) Public() crypto.PublicKey {
+	return es.key.Public()
 }

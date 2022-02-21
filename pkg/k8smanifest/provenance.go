@@ -590,13 +590,12 @@ func parseEntry(uuid string, e models.LogEntryAnon) (*rekorCLIGetCmdOutput, erro
 	}
 
 	obj := &rekorCLIGetCmdOutput{
-		Attestation:     string(e.Attestation.Data),
-		AttestationType: e.Attestation.MediaType,
-		Body:            eimpl,
-		UUID:            uuid,
-		IntegratedTime:  *e.IntegratedTime,
-		LogIndex:        int(*e.LogIndex),
-		LogID:           *e.LogID,
+		Attestation:    string(e.Attestation.Data),
+		Body:           eimpl,
+		UUID:           uuid,
+		IntegratedTime: *e.IntegratedTime,
+		LogIndex:       int(*e.LogIndex),
+		LogID:          *e.LogID,
 	}
 
 	return obj, nil
