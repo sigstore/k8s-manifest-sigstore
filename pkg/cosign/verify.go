@@ -23,9 +23,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -128,28 +126,14 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 }
 
 func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *string) (bool, string, *int64, error) {
-	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
-	if err != nil {
-		return false, "", nil, err
-	}
-	defer os.RemoveAll(dir)
-
 	gzipMsg, _ := base64.StdEncoding.DecodeString(string(msgBytes))
 	rawMsg := k8smnfutil.GzipDecompress(gzipMsg)
-	msgFile := filepath.Join(dir, tmpMessageFile)
-	_ = ioutil.WriteFile(msgFile, rawMsg, 0777)
+	b64Sig := sigBytes
 
-	rawSig, _ := base64.StdEncoding.DecodeString(string(sigBytes))
-	sigFile := filepath.Join(dir, tmpSignatureFile)
-	_ = ioutil.WriteFile(sigFile, rawSig, 0777)
-
-	var certFile string
 	var rawCert []byte
 	if certBytes != nil {
 		gzipCert, _ := base64.StdEncoding.DecodeString(string(certBytes))
 		rawCert = k8smnfutil.GzipDecompress(gzipCert)
-		certFile = filepath.Join(dir, tmpCertificateFile)
-		_ = ioutil.WriteFile(certFile, rawCert, 0777)
 	}
 
 	// if bundle is provided, try verifying it in offline first and return results if verified
@@ -157,7 +141,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		gzipBundle, _ := base64.StdEncoding.DecodeString(string(bundleBytes))
 		rawBundle := k8smnfutil.GzipDecompress(gzipBundle)
 		b64Bundle := base64.StdEncoding.EncodeToString(rawBundle)
-		verified, signerName, signedTimestamp, err := verifyBundle(rawMsg, sigBytes, rawCert, []byte(b64Bundle))
+		verified, signerName, signedTimestamp, err := verifyBundle(rawMsg, b64Sig, rawCert, []byte(b64Bundle))
 		log.Debugf("verifyBundle() results: verified: %v, signerName: %s, err: %s", verified, signerName, err)
 		if verified {
 			log.Debug("Verified by bundle information")
@@ -174,22 +158,32 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	opt := clisign.KeyOpts{
-		Sk:           sk,
-		IDToken:      idToken,
-		RekorURL:     rekorSeverURL,
-		FulcioURL:    fulcioServerURL,
-		OIDCIssuer:   defaultOIDCIssuer,
-		OIDCClientID: defaultOIDCClientID,
+		Sk:        sk,
+		IDToken:   idToken,
+		RekorURL:  rekorSeverURL,
+		FulcioURL: fulcioServerURL,
 	}
 
 	if pubkeyPath != nil {
 		opt.KeyRef = *pubkeyPath
 	}
 
-	err = cliverify.VerifyBlobCmd(context.Background(), opt, certFile, "", defaultOIDCIssuer, sigFile, msgFile)
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "failed to create a virtual standard input")
+	}
+	origStdin := os.Stdin
+	os.Stdin = stdinReader
+	_, err = stdinWriter.Write(rawMsg)
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "failed to write a message data to virtual standard input")
+	}
+	_ = stdinWriter.Close()
+	err = cliverify.VerifyBlobCmd(context.Background(), opt, "", "", "", string(b64Sig), "-")
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
 	}
+	os.Stdin = origStdin
 	verified := false
 	if err == nil {
 		verified = true

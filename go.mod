@@ -22,6 +22,7 @@ require (
 	github.com/sigstore/rekor v0.4.1-0.20220114213500-23f583409af3
 	github.com/sigstore/sigstore v1.1.1-0.20220130134424-bae9b66b8442
 	github.com/sirupsen/logrus v1.8.1
+	github.com/spf13/afero v1.8.0
 	github.com/spf13/cobra v1.3.0
 	github.com/tektoncd/chains v0.3.0
 	github.com/theupdateframework/go-tuf v0.0.0-20220124194755-2c5d73bebc1c
