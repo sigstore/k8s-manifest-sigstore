@@ -123,7 +123,9 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "gzip.NewReader() failed while decompressing tar gz")
 	}
-	defer memfs.RemoveAll(dir)
+	defer func() {
+		_ = memfs.RemoveAll(dir)
+	}()
 
 	for {
 		header, err := tarReader.Next()
