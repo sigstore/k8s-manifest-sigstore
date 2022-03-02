@@ -77,8 +77,7 @@ func TestSignBlob(t *testing.T) {
 		return
 	}
 
-	// sigBytes := sigMap["signature"]
-	// b64SigBytes := base64.StdEncoding.EncodeToString(sigBytes)
+	// b64SigBytes := sigMap["signature"]
 	// sigFileName := filepath.Join("testdata", "testsig")
 	// _ = ioutil.WriteFile(sigFileName, []byte(b64SigBytes), 0644)
 }

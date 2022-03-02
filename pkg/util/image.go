@@ -33,6 +33,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/pkg/errors"
+	"github.com/spf13/afero"
 )
 
 func PullImage(imageRef string) (v1.Image, error) {
@@ -117,11 +118,14 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 
 	tarReader := tar.NewReader(uncompressedStream)
 
-	dir, err := ioutil.TempDir("", "decompressed-tar-gz")
+	memfs := afero.Afero{Fs: afero.NewMemMapFs()}
+	dir, err := memfs.TempDir("", "decompressed-tar-gz")
 	if err != nil {
 		return nil, errors.Wrap(err, "gzip.NewReader() failed while decompressing tar gz")
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		_ = memfs.RemoveAll(dir)
+	}()
 
 	for {
 		header, err := tarReader.Next()
@@ -136,19 +140,19 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			fpath := filepath.Join(dir, header.Name)
-			if err := os.MkdirAll(fpath, 0755); err != nil {
-				return nil, errors.Wrap(err, "os.MkdirAll() failed while decompressing tar gz")
+			if err := memfs.MkdirAll(fpath, 0755); err != nil {
+				return nil, errors.Wrap(err, "memfs.MkdirAll() failed while decompressing tar gz")
 			}
 		case tar.TypeReg:
 			fpath := filepath.Join(dir, header.Name)
 			fdir := filepath.Dir(fpath)
-			err := os.MkdirAll(fdir, 0755)
+			err := memfs.MkdirAll(fdir, 0755)
 			if err != nil {
-				return nil, errors.Wrap(err, "os.MkdirAll() failed while decompressing tar gz")
+				return nil, errors.Wrap(err, "memfs.MkdirAll() failed while decompressing tar gz")
 			}
-			outFile, err := os.Create(fpath)
+			outFile, err := memfs.Create(fpath)
 			if err != nil {
-				return nil, errors.Wrap(err, "os.Create() failed while decompressing tar gz")
+				return nil, errors.Wrap(err, "memfs.Create() failed while decompressing tar gz")
 			}
 			defer outFile.Close()
 			if _, err := io.Copy(outFile, tarReader); err != nil {
@@ -160,9 +164,9 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 	}
 
 	foundYAMLs := [][]byte{}
-	err = filepath.Walk(dir, func(fpath string, info os.FileInfo, err error) error {
+	err = memfs.Walk(dir, func(fpath string, info os.FileInfo, err error) error {
 		if err == nil && (path.Ext(info.Name()) == ".yaml" || path.Ext(info.Name()) == ".yml") {
-			yamlBytes, err := ioutil.ReadFile(fpath)
+			yamlBytes, err := memfs.ReadFile(fpath)
 			if err == nil && isK8sResourceYAML(yamlBytes) {
 				foundYAMLs = append(foundYAMLs, yamlBytes)
 			}
