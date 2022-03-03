@@ -20,7 +20,6 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -33,8 +32,6 @@ import (
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
-
-const InClusterObjectPrefix = "k8s://"
 
 // This is common ignore fields for changes by k8s system
 //go:embed resources/default-config.yaml
@@ -315,7 +312,7 @@ func LoadVerifyResourceConfigFromResource(configPath, configField string) (*Veri
 }
 
 func GetConfigResource(configPath string) (*unstructured.Unstructured, error) {
-	kind, ns, name, err := parseObjectInCluster(configPath)
+	kind, ns, name, err := kubeutil.ParseObjectRefInClusterWithKind(configPath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse config in cluster `%s`", configPath)
 	}
@@ -349,24 +346,6 @@ func GetMatchConditionFromConfigResource(configPath, matchField, inScopeObjectFi
 	}
 
 	return match, iscopeCondition, nil
-}
-
-func parseObjectInCluster(configPath string) (string, string, string, error) {
-	parts := strings.Split(strings.TrimPrefix(configPath, InClusterObjectPrefix), "/")
-	if len(parts) != 2 && len(parts) != 3 {
-		return "", "", "", fmt.Errorf("object in cluster must be in format like %s[KIND]/[NAMESPACE]/[NAME] or %s[KIND]/[NAME]", InClusterObjectPrefix, InClusterObjectPrefix)
-	}
-
-	var kind, ns, name string
-	if len(parts) == 2 {
-		kind = parts[0]
-		name = parts[1]
-	} else if len(parts) == 3 {
-		kind = parts[0]
-		ns = parts[1]
-		name = parts[2]
-	}
-	return kind, ns, name, nil
 }
 
 func parseConfigObj(configObj *unstructured.Unstructured, configField string) (*VerifyResourceOption, error) {

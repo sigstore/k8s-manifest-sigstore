@@ -42,7 +42,7 @@ type SignatureVerifier interface {
 
 func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
 	var imageRef, resourceRef string
-	if strings.HasPrefix(sigRef, InClusterObjectPrefix) {
+	if strings.HasPrefix(sigRef, kubeutil.InClusterObjectPrefix) {
 		resourceRef = sigRef
 	} else if sigRef != "" {
 		imageRef = sigRef
@@ -514,7 +514,7 @@ func (r *VerifyResult) String() string {
 }
 
 func GetConfigMapFromK8sObjectRef(objRef string) (*corev1.ConfigMap, error) {
-	kind, ns, name, err := parseObjectInCluster(objRef)
+	kind, ns, name, err := kubeutil.ParseObjectRefInClusterWithKind(objRef)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse a configmap reference")
 	}

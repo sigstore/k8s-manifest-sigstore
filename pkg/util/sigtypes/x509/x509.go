@@ -27,10 +27,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -102,12 +104,36 @@ func VerifyBlob(msgBytes, sigBytes, certBytes []byte, caCertPathString *string) 
 }
 
 // Load certificate at `certPath`
+// Specifying a cert secret with `k8s://` prefix is supported.
 func LoadCertificate(certPath string) (*x509.Certificate, error) {
-	cpath := filepath.Clean(certPath)
-	certPemBytes, err := ioutil.ReadFile(cpath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load public key; %s", err.Error())
+	var certPemBytes []byte
+	var err error
+
+	if strings.HasPrefix(certPath, kubeutil.InClusterObjectPrefix) {
+		ns, name, err := kubeutil.ParseObjectRefInCluster(certPath)
+		if err != nil {
+			return nil, errors.Wrap(err, fmt.Sprintf("failed to parse secret keyRef `%s`", certPath))
+		}
+		secret, err := kubeutil.GetSecret(ns, name)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load a kubernetes secret")
+		}
+		for _, val := range secret.Data {
+			if val != nil {
+				certPemBytes = val
+			}
+		}
+	} else {
+		cpath := filepath.Clean(certPath)
+		certPemBytes, err = ioutil.ReadFile(cpath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read a cert file; %s", err.Error())
+		}
 	}
+	if certPemBytes == nil {
+		return nil, errors.New("failed to get a certificate PEM data")
+	}
+
 	certBytes := PEMDecode(certPemBytes, PEMTypeCertificate)
 	cert, err := x509.ParseCertificate(certBytes)
 	if err != nil {

@@ -33,10 +33,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+const InClusterObjectPrefix = "k8s://"
 
 var cfg *rest.Config
 
@@ -171,6 +174,56 @@ func GetNamespaces() ([]*corev1.Namespace, error) {
 		namespaces = append(namespaces, &ns)
 	}
 	return namespaces, nil
+}
+
+func ParseObjectRefInCluster(objRef string) (string, string, error) {
+	parts := strings.Split(strings.TrimPrefix(objRef, InClusterObjectPrefix), "/")
+	if len(parts) != 1 && len(parts) != 2 {
+		return "", "", fmt.Errorf("object in cluster must be in format like %s[NAMESPACE]/[NAME] or %s[NAME]", InClusterObjectPrefix, InClusterObjectPrefix)
+	}
+
+	var ns, name string
+	if len(parts) == 1 {
+		name = parts[0]
+	} else if len(parts) == 2 {
+		ns = parts[0]
+		name = parts[1]
+	}
+	return ns, name, nil
+}
+
+func ParseObjectRefInClusterWithKind(objRef string) (string, string, string, error) {
+	parts := strings.Split(strings.TrimPrefix(objRef, InClusterObjectPrefix), "/")
+	if len(parts) != 2 && len(parts) != 3 {
+		return "", "", "", fmt.Errorf("kind and object in cluster must be in format like %s[KIND]/[NAMESPACE]/[NAME] or %s[KIND]/[NAME]", InClusterObjectPrefix, InClusterObjectPrefix)
+	}
+
+	var kind, ns, name string
+	if len(parts) == 2 {
+		kind = parts[0]
+		name = parts[1]
+	} else if len(parts) == 3 {
+		kind = parts[0]
+		ns = parts[1]
+		name = parts[2]
+	}
+	return kind, ns, name, nil
+}
+
+func GetSecret(namespace, name string) (*corev1.Secret, error) {
+	config, err := GetKubeConfig()
+	if err != nil {
+		return nil, fmt.Errorf("Error in getting k8s config; %s", err.Error())
+	}
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize kubernetes client; %s", err.Error())
+	}
+	obj, err := client.CoreV1().Secrets(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get secret `%s` in `%s` namespace; %s", name, namespace, err.Error())
+	}
+	return obj, nil
 }
 
 func GetResource(apiVersion, kind, namespace, name string) (*unstructured.Unstructured, error) {

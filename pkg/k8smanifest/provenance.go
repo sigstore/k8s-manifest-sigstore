@@ -98,7 +98,7 @@ type ProvenanceGetter interface {
 
 func NewProvenanceGetter(obj *unstructured.Unstructured, sigRef, imageHash, provResRef string) ProvenanceGetter {
 	var imageRef string
-	if !strings.HasPrefix(sigRef, InClusterObjectPrefix) {
+	if !strings.HasPrefix(sigRef, kubeutil.InClusterObjectPrefix) {
 		imageRef = sigRef
 	}
 
@@ -667,7 +667,7 @@ func GenerateIntotoAttestationCurlCommand(logIndex int) string {
 }
 
 func GenerateIntotoAttestationKubectlCommand(resourceRef string) string {
-	kind, ns, name, _ := parseObjectInCluster(resourceRef)
+	kind, ns, name, _ := kubeutil.ParseObjectRefInClusterWithKind(resourceRef)
 	cmdStr := fmt.Sprintf("kubectl get %s -n %s %s -o=jsonpath='{.data.%s}'", kind, ns, name, AttestationDataKeyName)
 	return cmdStr
 }
@@ -678,7 +678,7 @@ func GenerateSBOMDownloadCommand(imageRef string) string {
 }
 
 func GenerateSBOMKubectlCommand(resourceRef string) string {
-	kind, ns, name, _ := parseObjectInCluster(resourceRef)
+	kind, ns, name, _ := kubeutil.ParseObjectRefInClusterWithKind(resourceRef)
 	cmdStr := fmt.Sprintf("kubectl get %s -n %s %s -o=jsonpath='{.data.%s}'", kind, ns, name, SBOMDataKeyName)
 	return cmdStr
 }

@@ -40,21 +40,21 @@ func GetSignatureTypeFromPublicKey(keyPathPtr *string) SigType {
 	}
 
 	// key-ed
-	keyPath := *keyPathPtr
+	keyRef := *keyPathPtr
 
 	// cosign public key
-	if _, err := cosignsig.PublicKeyFromKeyRef(context.Background(), keyPath); err == nil {
+	if _, err := cosignsig.PublicKeyFromKeyRef(context.Background(), keyRef); err == nil {
 		return SigTypeCosign
 	}
 
 	// pgp public key
-	_, err := pgp.LoadPublicKey(keyPath)
+	_, err := pgp.LoadPublicKey(keyRef)
 	if err == nil {
 		return SigTypePGP
 	}
 
 	// x509 ca cert
-	_, err = x509.LoadCertificate(keyPath)
+	_, err = x509.LoadCertificate(keyRef)
 	if err == nil {
 		return SigTypeX509
 	}
