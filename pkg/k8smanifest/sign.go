@@ -82,7 +82,7 @@ func NewSigner(imageRef, keyPath, certPath, output string, doApply bool, Annotat
 		certPathP = &certPath
 	}
 	createSigConfigMap := false
-	if strings.HasPrefix(output, InClusterObjectPrefix) {
+	if strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) {
 		createSigConfigMap = true
 	}
 	if imageRef != "" {
@@ -238,7 +238,7 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 }
 
 func generateSignatureConfigMap(sigResRef string, sigMaps map[string][]byte) (*corev1.ConfigMap, error) {
-	kind, ns, name, err := parseObjectInCluster(sigResRef)
+	kind, ns, name, err := kubeutil.ParseObjectRefInClusterWithKind(sigResRef)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse a signature configmap reference `%s`", sigResRef)
 	}
@@ -386,5 +386,5 @@ func applySignatureConfigMap(configMapRef string, newCM *corev1.ConfigMap) ([]by
 // sanitize resrouce ref as a filename
 // e.g.) k8s://ConfigMap/sample-ns/sample-cm --> k8s_ConfigMap_sample-ns_sample-cm.yaml
 func K8sResourceRef2FileName(resRef string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(resRef, InClusterObjectPrefix, "k8s/"), "/", "_") + ".yaml"
+	return strings.ReplaceAll(strings.ReplaceAll(resRef, kubeutil.InClusterObjectPrefix, "k8s/"), "/", "_") + ".yaml"
 }

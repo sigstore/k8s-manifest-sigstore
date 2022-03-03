@@ -177,7 +177,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		vo = &k8smanifest.VerifyResourceOption{}
 	} else if configPath == "" {
 		vo = k8smanifest.LoadDefaultConfig()
-	} else if strings.HasPrefix(configPath, k8smanifest.InClusterObjectPrefix) {
+	} else if strings.HasPrefix(configPath, kubeutil.InClusterObjectPrefix) {
 		vo, err = k8smanifest.LoadVerifyResourceConfigFromResource(configPath, configField)
 		if err != nil {
 			return false, errors.Wrapf(err, "failed to load verify-resource config from resource %s", configPath)
@@ -1166,9 +1166,9 @@ func getConfigPathFromConfigFlags(path, ctype, kind, name, namespace, field stri
 	}
 	newPath := ""
 	if namespace == "" {
-		newPath = fmt.Sprintf("%s%s/%s", k8smanifest.InClusterObjectPrefix, kind, name)
+		newPath = fmt.Sprintf("%s%s/%s", kubeutil.InClusterObjectPrefix, kind, name)
 	} else {
-		newPath = fmt.Sprintf("%s%s/%s/%s", k8smanifest.InClusterObjectPrefix, kind, namespace, name)
+		newPath = fmt.Sprintf("%s%s/%s/%s", kubeutil.InClusterObjectPrefix, kind, namespace, name)
 	}
 	if field == "" {
 		if ctype == configTypeConstraint {
@@ -1196,10 +1196,10 @@ func validateConfigMapRef(cmRefString string) string {
 	validatedParts := []string{}
 	for _, p := range parts {
 		var validP string
-		if strings.HasPrefix(p, k8smanifest.InClusterObjectPrefix) {
+		if strings.HasPrefix(p, kubeutil.InClusterObjectPrefix) {
 			validP = p
 		} else {
-			validP = fmt.Sprintf("%s%s/%s/%s", k8smanifest.InClusterObjectPrefix, "ConfigMap", defaultManifetBundleNamespace, p)
+			validP = fmt.Sprintf("%s%s/%s/%s", kubeutil.InClusterObjectPrefix, "ConfigMap", defaultManifetBundleNamespace, p)
 		}
 		validatedParts = append(validatedParts, validP)
 	}

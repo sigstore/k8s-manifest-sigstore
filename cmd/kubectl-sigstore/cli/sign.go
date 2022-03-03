@@ -23,6 +23,7 @@ import (
 
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
+	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -91,7 +92,7 @@ func sign(inputDir, imageRef, keyPath, output string, applySignatureConfigMap, u
 		ImageAnnotations: anntns,
 	}
 
-	if applySignatureConfigMap && strings.HasPrefix(output, k8smanifest.InClusterObjectPrefix) {
+	if applySignatureConfigMap && strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) {
 		so.ApplySigConfigMap = true
 	}
 
@@ -101,7 +102,7 @@ func sign(inputDir, imageRef, keyPath, output string, applySignatureConfigMap, u
 	}
 	if so.UpdateAnnotation {
 		finalOutput := output
-		if strings.HasPrefix(output, k8smanifest.InClusterObjectPrefix) && !applySignatureConfigMap {
+		if strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) && !applySignatureConfigMap {
 			finalOutput = k8smanifest.K8sResourceRef2FileName(output)
 		}
 		log.Info("signed manifest generated at ", finalOutput)
