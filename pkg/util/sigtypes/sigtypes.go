@@ -17,12 +17,11 @@
 package sigtypes
 
 import (
-	"io/ioutil"
+	"context"
 
-	"github.com/sigstore/cosign/pkg/cosign"
+	cosignsig "github.com/sigstore/cosign/pkg/signature"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/pgp"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
-	log "github.com/sirupsen/logrus"
 )
 
 type SigType string
@@ -42,20 +41,14 @@ func GetSignatureTypeFromPublicKey(keyPathPtr *string) SigType {
 
 	// key-ed
 	keyPath := *keyPathPtr
-	keyBytes, err := ioutil.ReadFile(keyPath)
-	if err != nil {
-		log.Warnf("failed to load public key: %s", err.Error())
-		return SigTypeUnknown
-	}
 
 	// cosign public key
-	_, err = cosign.PemToECDSAKey(keyBytes)
-	if err == nil {
+	if _, err := cosignsig.PublicKeyFromKeyRef(context.Background(), keyPath); err == nil {
 		return SigTypeCosign
 	}
 
 	// pgp public key
-	_, err = pgp.LoadPublicKey(keyPath)
+	_, err := pgp.LoadPublicKey(keyPath)
 	if err == nil {
 		return SigTypePGP
 	}
