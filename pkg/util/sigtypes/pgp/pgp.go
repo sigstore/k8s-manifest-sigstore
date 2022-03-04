@@ -88,7 +88,7 @@ func LoadPublicKey(keyPath string) (openpgp.EntityList, error) {
 	// try loading it as a non-armored public key
 	tmpList, err1 = openpgp.ReadKeyRing(keyRingReader)
 	if err1 != nil {
-		// keyRingReader is a stream, so it must be re-load after first trial
+		// keyRingReader is a stream, so it must be re-loaded after first trial
 		keyRingReader, _ = getPublicKeyStream(keyPath)
 		// try loading it as an armored public key
 		tmpList, err2 = openpgp.ReadArmoredKeyRing(keyRingReader)
