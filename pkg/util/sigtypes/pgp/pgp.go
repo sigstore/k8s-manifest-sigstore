@@ -77,10 +77,47 @@ func LoadPublicKey(keyPath string) (openpgp.EntityList, error) {
 	var keyRingReader io.Reader
 	var err error
 
-	if strings.HasPrefix(keyPath, kubeutil.InClusterObjectPrefix) {
-		ns, name, err := kubeutil.ParseObjectRefInCluster(keyPath)
+	keyRingReader, err = getPublicKeyStream(keyPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read public key stream")
+	}
+
+	entities := []*openpgp.Entity{}
+	var tmpList openpgp.EntityList
+	var err1, err2 error
+	// try loading it as a non-armored public key
+	tmpList, err1 = openpgp.ReadKeyRing(keyRingReader)
+	if err1 != nil {
+		// keyRingReader is a stream, so it must be re-loaded after first trial
+		keyRingReader, _ = getPublicKeyStream(keyPath)
+		// try loading it as an armored public key
+		tmpList, err2 = openpgp.ReadArmoredKeyRing(keyRingReader)
+	}
+	// if both trial failed, return error
+	if err1 != nil && err2 != nil {
+		err = fmt.Errorf("failed to load public key; %s; %s", err1.Error(), err2.Error())
+	} else if len(tmpList) > 0 {
+		for _, tmp := range tmpList {
+			entities = append(entities, tmp)
+		}
+	}
+	return openpgp.EntityList(entities), err
+}
+
+func GetFirstIdentity(signer *openpgp.Entity) *openpgp.Identity {
+	for _, idt := range signer.Identities {
+		return idt
+	}
+	return nil
+}
+
+func getPublicKeyStream(keyRef string) (io.Reader, error) {
+	var keyRingReader io.Reader
+	var err error
+	if strings.HasPrefix(keyRef, kubeutil.InClusterObjectPrefix) {
+		ns, name, err := kubeutil.ParseObjectRefInCluster(keyRef)
 		if err != nil {
-			return nil, errors.Wrap(err, fmt.Sprintf("failed to parse secret keyRef `%s`", keyPath))
+			return nil, errors.Wrap(err, fmt.Sprintf("failed to parse secret keyRef `%s`", keyRef))
 		}
 		secret, err := kubeutil.GetSecret(ns, name)
 		if err != nil {
@@ -93,39 +130,11 @@ func LoadPublicKey(keyPath string) (openpgp.EntityList, error) {
 			}
 		}
 	} else {
-		kpath := filepath.Clean(keyPath)
+		kpath := filepath.Clean(keyRef)
 		keyRingReader, err = os.Open(kpath)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to open a public key")
 		}
 	}
-	if keyRingReader == nil {
-		return nil, errors.New("failed to get a keyRingReader")
-	}
-
-	entities := []*openpgp.Entity{}
-	var tmpList openpgp.EntityList
-	var err1, err2 error
-	tmpList, err1 = openpgp.ReadKeyRing(keyRingReader)
-	if err1 != nil {
-		tmpList, err2 = openpgp.ReadArmoredKeyRing(keyRingReader)
-	}
-	if err1 != nil && err2 != nil {
-		err = fmt.Errorf("failed to load public key; %s; %s", err1.Error(), err2.Error())
-	} else if len(tmpList) > 0 {
-		for _, tmp := range tmpList {
-			entities = append(entities, tmp)
-		}
-	}
-	if len(entities) == 0 {
-		return nil, errors.New("no public key was found while reading a keyring")
-	}
-	return openpgp.EntityList(entities), err
-}
-
-func GetFirstIdentity(signer *openpgp.Entity) *openpgp.Identity {
-	for _, idt := range signer.Identities {
-		return idt
-	}
-	return nil
+	return keyRingReader, nil
 }

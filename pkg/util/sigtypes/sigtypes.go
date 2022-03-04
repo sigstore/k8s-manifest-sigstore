@@ -18,10 +18,12 @@ package sigtypes
 
 import (
 	"context"
+	"fmt"
 
 	cosignsig "github.com/sigstore/cosign/pkg/signature"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/pgp"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
+	log "github.com/sirupsen/logrus"
 )
 
 type SigType string
@@ -42,22 +44,35 @@ func GetSignatureTypeFromPublicKey(keyPathPtr *string) SigType {
 	// key-ed
 	keyRef := *keyPathPtr
 
+	sumErr := map[string]string{}
+
 	// cosign public key
 	if _, err := cosignsig.PublicKeyFromKeyRef(context.Background(), keyRef); err == nil {
 		return SigTypeCosign
+	} else {
+		sumErr["cosign"] = err.Error()
 	}
 
 	// pgp public key
-	_, err := pgp.LoadPublicKey(keyRef)
-	if err == nil {
+	if _, err := pgp.LoadPublicKey(keyRef); err == nil {
 		return SigTypePGP
+	} else {
+		sumErr["pgp"] = err.Error()
 	}
 
 	// x509 ca cert
-	_, err = x509.LoadCertificate(keyRef)
-	if err == nil {
+	if _, err := x509.LoadCertificate(keyRef); err == nil {
 		return SigTypeX509
+	} else {
+		sumErr["x509"] = err.Error()
 	}
+
+	// if not defined after all types, report warning
+	detail := ""
+	for sigT, errStr := range sumErr {
+		detail = fmt.Sprintf("%s`%s`: `%s`; ", detail, sigT, errStr)
+	}
+	log.Warnf("failed to load the public key `%s` as any known types; %s", keyRef, detail)
 
 	return SigTypeUnknown
 }
