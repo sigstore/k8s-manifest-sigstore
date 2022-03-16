@@ -35,6 +35,20 @@ import (
 
 const MapnodeVersion = "0.0.2"
 
+type matchMode string
+
+const (
+	// In golang, a default value of each type will be possibly converted into nil.
+	// For example, a boolean variable with `false` will be `nil` in JSON in case of `omitempty`.
+	// Whether this conversion should be regarded as diff or not depends on the context, so we support the following 2 modes.
+	// In `MatchDefaultWithNil` mode, diff function for mapnode don't regard them as differences.
+	// In `DistinguishDefaultFromNil` mode, this type of conversion is detected as a difference.
+	// By default, `MatchDefaultWithNil` mode is enabled.
+	DefaultMatchMode          matchMode = ""
+	MatchDefaultWithNil       matchMode = "match"
+	DistinguishDefaultFromNil matchMode = "distiguish"
+)
+
 /**********************************************
 
 					Node Value
@@ -728,7 +742,12 @@ func (n *Node) String() string {
 }
 
 func (t *Node) Diff(t2 *Node) *DiffResult {
-	dr := FindDiffBetweenNodes(t, t2, nil)
+	dr := FindDiffBetweenNodes(t, t2, nil, DefaultMatchMode)
+	return dr
+}
+
+func (t *Node) DiffStrict(t2 *Node) *DiffResult {
+	dr := FindDiffBetweenNodes(t, t2, nil, DistinguishDefaultFromNil)
 	return dr
 }
 
@@ -737,7 +756,7 @@ func (t *Node) DiffSpecificType(t2 *Node, findTypeList []string) *DiffResult {
 	for _, t := range findTypeList {
 		findType[t] = true
 	}
-	dr := FindDiffBetweenNodes(t, t2, findType)
+	dr := FindDiffBetweenNodes(t, t2, findType, DefaultMatchMode)
 	return dr
 }
 
@@ -788,13 +807,16 @@ func extractComparableMap(m1, m2 map[string]interface{}) (map[string]interface{}
 	return nm1, nm2, typeDiffs
 }
 
-func FindDiffBetweenNodes(t1, t2 *Node, findType map[string]bool) *DiffResult {
+func FindDiffBetweenNodes(t1, t2 *Node, findType map[string]bool, matchMode matchMode) *DiffResult {
 	if findType == nil {
 		findType = map[string]bool{
 			"create": true,
 			"update": true,
 			"delete": true,
 		}
+	}
+	if matchMode == DefaultMatchMode {
+		matchMode = MatchDefaultWithNil
 	}
 
 	m1 := t1.Ravel()
@@ -829,6 +851,10 @@ func FindDiffBetweenNodes(t1, t2 *Node, findType map[string]bool) *DiffResult {
 	}
 
 	items = removeKeyDiffsInListNode(items)
+
+	if matchMode == MatchDefaultWithNil {
+		items = removeDiffWithDefaultConversion(items)
+	}
 
 	items = append(items, typeDiffs...)
 	sort.SliceStable(items, func(i, j int) bool {
@@ -929,6 +955,40 @@ func removeKeyDiffsInListNode(items []Difference) []Difference {
 		if addThis {
 			items2 = append(items2, item)
 		}
+	}
+	return items2
+}
+
+func removeDiffWithDefaultConversion(items []Difference) []Difference {
+	items2 := []Difference{}
+	for _, item := range items {
+		beforeVal := item.Values["before"]
+		afterVal := item.Values["after"]
+		needCheck := false
+		// only when either before or after is nil, check equivalence of values
+		if (beforeVal != nil && afterVal == nil) || (beforeVal == nil && afterVal != nil) {
+			needCheck = true
+		}
+		if !needCheck {
+			items2 = append(items2, item)
+			continue
+		}
+
+		equivalent := false
+		if beforeVal == nil {
+			if reflect.ValueOf(afterVal) == reflect.Zero(reflect.TypeOf(afterVal)) {
+				equivalent = true
+			}
+		}
+		if afterVal == nil {
+			if reflect.ValueOf(beforeVal) == reflect.Zero(reflect.TypeOf(beforeVal)) {
+				equivalent = true
+			}
+		}
+		if equivalent {
+			continue
+		}
+		items2 = append(items2, item)
 	}
 	return items2
 }

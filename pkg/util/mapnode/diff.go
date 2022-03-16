@@ -47,23 +47,40 @@ func (d *Difference) Equal(d2 *Difference) bool {
 
 type DiffPattern Difference
 
-func (d *DiffPattern) Match(d2 *Difference) bool {
-	if d.Key == d2.Key {
-		if reflect.DeepEqual(d.Values, d2.Values) {
+func (dp *DiffPattern) Match(diff *Difference) bool {
+	if dp.Key == diff.Key {
+		// quick match by checking deep equality
+		if reflect.DeepEqual(dp.Values, diff.Values) {
 			return true
 		}
-		d1before := d.Values["before"]
-		d2before := d2.Values["before"]
-		d1after := d.Values["after"]
-		d2after := d2.Values["after"]
-		d1bStr, ok1 := d1before.(string)
-		d2bStr, ok2 := d2before.(string)
-		d1aStr, ok3 := d1after.(string)
-		d2aStr, ok4 := d2after.(string)
-		if ok1 && ok2 && ok3 && ok4 {
-			if isListed(d2bStr, d1bStr) && isListed(d2aStr, d1aStr) {
-				return true
-			}
+
+		patternBeforeIf, patternBeforeExists := dp.Values["before"]
+		patternAfterIf, patternAfterExists := dp.Values["after"]
+		diffBeforeIf, diffBeforeExists := diff.Values["before"]
+		diffAfterIf, diffAfterExists := diff.Values["after"]
+
+		// both `before` and `after` must exist in the actual diff value,
+		// so exit here if either does not exist for some reason
+		if !diffBeforeExists || !diffAfterExists {
+			return false
+		}
+
+		beforeOK := false
+		if patternBeforeExists {
+			beforeOK = patternMatch(diffBeforeIf, patternBeforeIf)
+		} else {
+			beforeOK = true
+		}
+
+		afterOK := false
+		if patternAfterExists {
+			afterOK = patternMatch(diffAfterIf, patternAfterIf)
+		} else {
+			afterOK = true
+		}
+
+		if beforeOK && afterOK {
+			return true
 		}
 	}
 	return false
@@ -164,29 +181,49 @@ func (d *DiffResult) KeyString() string {
 }
 
 func keyExistsInList(slice []string, val string) (bool, string) {
-	var isMatch bool
+	var matched bool
 	for _, item := range slice {
-		isMatch = isListed(val, item)
-		if isMatch {
+		matched = patternMatchString(val, item)
+		if matched {
 			return true, item
 		}
 	}
 	return false, ""
 }
 
-func isListed(data, rule string) bool {
-	isMatch := false
-	if data == rule {
-		isMatch = true
-	} else if rule == "*" {
-		isMatch = true
-	} else if rule == "" {
-		isMatch = true
-	} else if strings.Contains(rule, "*") {
-		rule2 := strings.Replace(rule, "*", ".*", -1)
-		if m, _ := regexp.MatchString(rule2, data); m {
-			isMatch = true
+func patternMatchString(data, pattern string) bool {
+	matched := false
+	if data == pattern {
+		matched = true
+	} else if pattern == "*" {
+		matched = true
+	} else if pattern == "" {
+		matched = true
+	} else if strings.Contains(pattern, "*") {
+		pattern2 := strings.Replace(pattern, "*", ".*", -1)
+		if m, _ := regexp.MatchString(pattern2, data); m {
+			matched = true
 		}
 	}
-	return isMatch
+	return matched
+}
+
+func patternMatch(data, pattern interface{}) bool {
+	if reflect.TypeOf(pattern) == reflect.TypeOf(data) {
+		dataType := reflect.TypeOf(data)
+		// if data type is nil, both data and pattern must be nil
+		if dataType == nil {
+			return (data == nil && pattern == nil)
+		}
+		// if the type is string, use the special pattern match
+		// otherwise, just call reflect.DeepEqual()
+		if dataType.Kind() == reflect.String {
+			patternStr := pattern.(string)
+			dataStr := data.(string)
+			return patternMatchString(dataStr, patternStr)
+		} else {
+			return reflect.DeepEqual(data, pattern)
+		}
+	}
+	return false
 }
