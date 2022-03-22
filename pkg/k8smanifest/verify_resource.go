@@ -111,7 +111,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	var diffsForAllCandidates []*mapnode.DiffResult
 	for i, candidate := range resourceManifests {
 		log.Debugf("try matching with the candidate %v out of %v", i+1, len(resourceManifests))
-		cndMatched, tmpDiff, err := matchResourceWithManifest(obj, candidate, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply)
+		cndMatched, tmpDiff, err := matchResourceWithManifest(obj, candidate, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply, vo.CheckMutatingResource)
 		if err != nil {
 			return nil, errors.Wrap(err, "error occurred during matching manifest")
 		}
@@ -164,7 +164,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}, nil
 }
 
-func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, dryRunNamespace string, checkDryRunForApply bool) (bool, *mapnode.DiffResult, error) {
+func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, dryRunNamespace string, checkDryRunForApply, checkMutatingResource bool) (bool, *mapnode.DiffResult, error) {
 
 	apiVersion := obj.GetAPIVersion()
 	kind := obj.GetKind()
@@ -222,7 +222,8 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 
 	// CASE2: dryrun create match
 	log.Debug("try dryrun create matching")
-	matched, diff, err = dryrunCreateMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
+	var dryRunBytes []byte
+	matched, diff, dryRunBytes, err = dryrunCreateMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
 	}
@@ -268,6 +269,30 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		}
 	}
 
+	if checkMutatingResource {
+		log.Debug("try mutating resoruce matching (check inclusion relation between manifest, resource and dryrun result)")
+		matched, diff, err = inclusionMatch(foundManifestBytes, objBytes, dryRunBytes, clusterScope, isCRD)
+		if err != nil {
+			return false, nil, errors.Wrap(err, "error occured during mutating resource matching")
+		}
+		if diff != nil && len(ignoreFields) > 0 {
+			_, diff, _ = diff.Filter(ignoreFields)
+		}
+		if diff == nil || diff.Size() == 0 {
+			matched = true
+			diff = nil
+		}
+		if matched {
+			return true, nil, nil
+		} else {
+			diffStr := ""
+			if diff != nil {
+				diffStr = diff.ToJson()
+			}
+			log.Debugf("found diff by mutating resource matching: %s", diffStr)
+		}
+	}
+
 	return false, diff, nil
 }
 
@@ -287,14 +312,14 @@ func directMatch(messageYAMLBytes, resourceJSONBytes []byte) (bool, *mapnode.Dif
 	return false, diff, nil
 }
 
-func dryrunCreateMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope, isCRD bool, dryRunNamespace string) (bool, *mapnode.DiffResult, error) {
+func dryrunCreateMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope, isCRD bool, dryRunNamespace string) (bool, *mapnode.DiffResult, []byte, error) {
 	mnfNode, err := mapnode.NewFromYamlBytes(messageYAMLBytes)
 	if err != nil {
-		return false, nil, errors.Wrap(err, "failed to initialize manifest node")
+		return false, nil, nil, errors.Wrap(err, "failed to initialize manifest node")
 	}
 	objNode, err := mapnode.NewFromBytes(resourceJSONBytes)
 	if err != nil {
-		return false, nil, errors.Wrap(err, "failed to initialize object node")
+		return false, nil, nil, errors.Wrap(err, "failed to initialize object node")
 	}
 	nsMaskedManifestBytes := mnfNode.Mask([]string{"metadata.namespace"}).ToYaml()
 	var simBytes []byte
@@ -304,11 +329,11 @@ func dryrunCreateMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope,
 		simBytes, err = kubeutil.DryRunCreate([]byte(nsMaskedManifestBytes), dryRunNamespace)
 	}
 	if err != nil {
-		return false, nil, errors.Wrap(err, "failed to dryrun with the found YAML in image")
+		return false, nil, nil, errors.Wrap(err, "failed to dryrun with the found YAML in image")
 	}
 	simNode, err := mapnode.NewFromYamlBytes(simBytes)
 	if err != nil {
-		return false, nil, errors.Wrap(err, "failed to initialize dry-run-generated object node")
+		return false, nil, simBytes, errors.Wrap(err, "failed to initialize dry-run-generated object node")
 	}
 	mask := []string{}
 	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
@@ -325,9 +350,9 @@ func dryrunCreateMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope,
 	maskedSimNode := simNode.Mask(mask)
 	diff := maskedSimNode.Diff(maskedObjNode)
 	if diff == nil || diff.Size() == 0 {
-		return true, nil, nil
+		return true, nil, simBytes, nil
 	}
-	return false, diff, nil
+	return false, diff, simBytes, nil
 }
 
 func dryrunApplyMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope, isCRD bool, dryRunNamespace string) (bool, *mapnode.DiffResult, error) {
@@ -371,6 +396,48 @@ func dryrunApplyMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope, 
 	}
 	return false, diff, nil
 
+}
+
+// Check inclusion relation between manifest, object and dryrun result.
+// This function covers verification for an object which is mutated by the following steps.
+// STEPS) Manifest --(mutating webhook A)--> Checking Object --(mutating webhook B)--> DryRun Result
+// This is basically useful for verification in mutating admission controller.
+func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clusterScope, isCRD bool) (bool, *mapnode.DiffResult, error) {
+	mnfNode, err := mapnode.NewFromYamlBytes(messageYAMLBytes)
+	if err != nil {
+		return false, nil, errors.Wrap(err, "failed to initialize manifest node")
+	}
+	objNode, err := mapnode.NewFromBytes(resourceJSONBytes)
+	if err != nil {
+		return false, nil, errors.Wrap(err, "failed to initialize object node")
+	}
+	simNode, err := mapnode.NewFromYamlBytes(dryRunBytes)
+	if err != nil {
+		return false, nil, errors.Wrap(err, "failed to initialize dry-run-generated object node")
+	}
+	mask := []string{}
+	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
+	if !clusterScope {
+		mask = append(mask, "metadata.namespace") // namespace is overwritten for dryrun
+	}
+	if isCRD {
+		mask = append(mask, "spec.names.kind")
+		mask = append(mask, "spec.names.listKind")
+		mask = append(mask, "spec.names.singular")
+		mask = append(mask, "spec.names.plural")
+	}
+	maskedMnfNode := mnfNode.Mask(mask)
+	maskedObjNode := objNode.Mask(mask)
+	maskedSimNode := simNode.Mask(mask)
+	// find diffs but ignore newly added attributes
+	diff1 := maskedMnfNode.FindUpdatedAndDeleted(maskedObjNode)
+	diff2 := maskedObjNode.FindUpdatedAndDeleted(maskedSimNode)
+	diff1ok := (diff1 == nil || diff1.Size() == 0)
+	diff2ok := (diff2 == nil || diff2.Size() == 0)
+	if diff1ok && diff2ok {
+		return true, nil, nil
+	}
+	return false, diff2, nil
 }
 
 func getTime(tstamp *int64) *time.Time {
