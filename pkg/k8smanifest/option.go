@@ -58,9 +58,10 @@ type VerifyResourceOption struct {
 	verifyOption `json:""`
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
-	Provenance          bool   `json:"-"`
-	CheckDryRunForApply bool   `json:"-"`
-	DryRunNamespace     string `json:"-"`
+	Provenance            bool   `json:"-"`
+	CheckDryRunForApply   bool   `json:"-"`
+	CheckMutatingResource bool   `json:"-"`
+	DryRunNamespace       string `json:"-"`
 }
 
 func (o *VerifyResourceOption) SetAnnotationIgnoreFields() {
