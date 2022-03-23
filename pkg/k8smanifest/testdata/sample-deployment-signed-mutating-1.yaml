@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    cosign.sigstore.dev/message: H4sIAAAAAAAA/wB5AYb+H4sIAAAAAAAA/+yRzW4UMQzH5zxP4ReYSTJfS3PiwAEJDhwQ18rNeKeh+WqSLWwR747CbqdbkDiCkOZ3sWL//44tsweMbO/NTDGxaWb3x0e3WOd211d8VPxafeZi391/4ZzzxbGPTHkbIqWk3dJkjM3y2Ild1/dXfS9YQhsMNTMF44+WXG6PaE3xTsNQlbibxp+Rd6d3YZyGSgydmMZR9Lup4v3Uj0MFvPoLHFLGWHH+Vkd/d3C6facz3mJE8Vrf2FZ5e9KljPv9H/qcd1njfwIG/Yli0t5JwBASexD1nXazhDfrEWtLGWfMKGsAh5Yk/HboGsDgDZlUNFBaSXCLdl/rFEiVZKRgtMIkQdQAiQyp7ONJbjGr2/cX/hcdADLZYDDTWX0xTsG8MP5iBXgaoKC8y6gdxVXenDd61he0xeUpKUUrhrZba5GSP0RFScK372s2+JgvZmiev/rgY5bwitfnYv2vb76xsbFR+BEAAP//8Jky1wAIAAABAAD//8hQOkd5AQAA
+    cosign.sigstore.dev/signature: MEUCIE8e5U1QHzBKz+Ndx/uehcMIHoUpbwlwZGknFLCM2+/AAiEAnNPRorUI0DFOMm9P5Yd6yDDZotZu8CFzCTsPgIYdcck=
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2022-03-23T07:58:50Z"
+  generation: 1
+  labels:
+    app: nginx
+  name: sample-deployment
+  namespace: test-ns
+  resourceVersion: "7426512"
+  uid: 5c0ab7a9-adbe-406b-a3bf-4b628345f28d
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: docker.io/nginx:1.14.2
+        imagePullPolicy: IfNotPresent
+        name: nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2022-03-23T07:58:53Z"
+    lastUpdateTime: "2022-03-23T07:58:53Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2022-03-23T07:58:51Z"
+    lastUpdateTime: "2022-03-23T07:58:53Z"
+    message: ReplicaSet "sample-deployment-66b6c48dd5" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    cosign.sigstore.dev/message: H4sIAAAAAAAA/wB5AYb+H4sIAAAAAAAA/+yRzW4UMQzH5zxP4ReYSTJfS3PiwAEJDhwQ18rNeKeh+WqSLWwR747CbqdbkDiCkOZ3sWL//44tsweMbO/NTDGxaWb3x0e3WOd211d8VPxafeZi391/4ZzzxbGPTHkbIqWk3dJkjM3y2Ild1/dXfS9YQhsMNTMF44+WXG6PaE3xTsNQlbibxp+Rd6d3YZyGSgydmMZR9Lup4v3Uj0MFvPoLHFLGWHH+Vkd/d3C6facz3mJE8Vrf2FZ5e9KljPv9H/qcd1njfwIG/Yli0t5JwBASexD1nXazhDfrEWtLGWfMKGsAh5Yk/HboGsDgDZlUNFBaSXCLdl/rFEiVZKRgtMIkQdQAiQyp7ONJbjGr2/cX/hcdADLZYDDTWX0xTsG8MP5iBXgaoKC8y6gdxVXenDd61he0xeUpKUUrhrZba5GSP0RFScK372s2+JgvZmiev/rgY5bwitfnYv2vb76xsbFR+BEAAP//8Jky1wAIAAABAAD//8hQOkd5AQAA
+    cosign.sigstore.dev/signature: MEUCIE8e5U1QHzBKz+Ndx/uehcMIHoUpbwlwZGknFLCM2+/AAiEAnNPRorUI0DFOMm9P5Yd6yDDZotZu8CFzCTsPgIYdcck=
+  labels:
+    app: nginx
+  name: sample-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx:1.14.2
+        name: nginx
+        ports:
+        - containerPort: 80
+        resources: {}

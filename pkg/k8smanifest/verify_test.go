@@ -90,14 +90,14 @@ func TestInclusionMatch(t *testing.T) {
 		return
 	}
 
-	f1path := "testdata/sample-configmap-signed.yaml"
+	f1path := "testdata/sample-deployment-signed.yaml"
 	mnfBytes, err := ioutil.ReadFile(f1path)
 	if err != nil {
 		t.Errorf("failed to load a test resource file for manifest: %s", err.Error())
 		return
 	}
 
-	f2path := "testdata/sample-configmap-signed-mutating-1.yaml"
+	f2path := "testdata/sample-deployment-signed-mutating-1.yaml"
 	objYAMLBytes, err := ioutil.ReadFile(f2path)
 	if err != nil {
 		t.Errorf("failed to load a test resource file for obejct: %s", err.Error())
@@ -109,7 +109,7 @@ func TestInclusionMatch(t *testing.T) {
 		return
 	}
 
-	f3path := "testdata/sample-configmap-signed-mutating-2.yaml"
+	f3path := "testdata/sample-deployment-signed-mutating-2.yaml"
 	dyrRunBytes, err := ioutil.ReadFile(f3path)
 	if err != nil {
 		t.Errorf("failed to load a test resource file for DryRun result: %s", err.Error())
