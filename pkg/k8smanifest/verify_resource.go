@@ -19,6 +19,7 @@ package k8smanifest
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -31,6 +32,9 @@ import (
 )
 
 const defaultDryRunNamespace = "default"
+
+const imageCanonicalizePatternRegistry = "docker.io/"
+const imageCanonicalizePatternTag = ":latest"
 
 type VerifyResourceResult struct {
 	Verified        bool                   `json:"verified"`
@@ -269,6 +273,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		}
 	}
 
+	// CASE4: manifest match for a resource in mutating admission controller
 	if checkMutatingResource {
 		log.Debug("try mutating resoruce matching (check inclusion relation between manifest, resource and dryrun result)")
 		matched, diff, err = inclusionMatch(foundManifestBytes, objBytes, dryRunBytes, clusterScope, isCRD)
@@ -431,13 +436,71 @@ func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clu
 	maskedSimNode := simNode.Mask(mask)
 	// find diffs but ignore newly added attributes
 	diff1 := maskedMnfNode.FindUpdatedAndDeleted(maskedObjNode)
-	diff2 := maskedObjNode.FindUpdatedAndDeleted(maskedSimNode)
+	diff2 := inverseDiff(maskedObjNode.FindUpdatedAndDeleted(maskedSimNode)) // simNode is based on manifest, so inverse diff results
+	diff1 = removeCanonicalizedImageDiff(diff1)
+	diff2 = removeCanonicalizedImageDiff(diff2)
 	diff1ok := (diff1 == nil || diff1.Size() == 0)
 	diff2ok := (diff2 == nil || diff2.Size() == 0)
 	if diff1ok && diff2ok {
 		return true, nil, nil
 	}
 	return false, diff2, nil
+}
+
+// remove a diff result caused by image canonicalization
+// diffs like below can be ignored, so remove them from the result
+// e.g.) nginx:1.14.2 --> docker.io/nginx:1.14.2
+//       ubuntu --> ubuntu:latest
+func removeCanonicalizedImageDiff(diff *mapnode.DiffResult) *mapnode.DiffResult {
+	if diff == nil || diff.Size() == 0 {
+		return nil
+	}
+	items := []mapnode.Difference{}
+	for _, d := range diff.Items {
+		keep := true
+		// check only if the key has suffix "image"
+		if strings.HasSuffix(d.Key, "image") {
+			var image1, image2 string
+			var ok1, ok2 bool
+			image1, ok1 = d.Values["before"].(string)
+			image2, ok2 = d.Values["after"].(string)
+			if ok1 && ok2 {
+				// pattern 1) nginx:1.14.2 --> docker.io/nginx:1.14.2
+				ignoreCondition1 := (imageCanonicalizePatternRegistry+image1 == image2)
+				// pattern 2) ubuntu --> ubuntu:latest
+				ignoreCondition2 := (image1+imageCanonicalizePatternTag == image2)
+				// if the diff matches any pattern, this will be removed
+				if ignoreCondition1 || ignoreCondition2 {
+					keep = false
+				}
+			}
+		}
+		if keep {
+			items = append(items, d)
+		}
+	}
+	return &mapnode.DiffResult{Items: items}
+}
+
+// a util function to inverse `before` and `after` in diff result
+func inverseDiff(diff *mapnode.DiffResult) *mapnode.DiffResult {
+	if diff == nil || diff.Size() == 0 {
+		return nil
+	}
+	items := []mapnode.Difference{}
+	for _, d := range diff.Items {
+		val1 := d.Values["before"]
+		val2 := d.Values["after"]
+		newD := mapnode.Difference{
+			Key: d.Key,
+			Values: map[string]interface{}{
+				"before": val2,
+				"after":  val1,
+			},
+		}
+		items = append(items, newD)
+	}
+	return &mapnode.DiffResult{Items: items}
 }
 
 func getTime(tstamp *int64) *time.Time {
