@@ -10,8 +10,8 @@ This plugin has 3 major operations around singing and verification as below.
 <img src="images/overview.png" alt="overview" width="1000"/>
 
 - `kubectl sigstore sign` generates signature data ("SIG" in the figure) and attach it to a YAML manifest.
-- `kubectl sigstore verify` verifies the signature in the signed YAML manifest, and checks equivalence of an input YAML manifest and encoded manfiest data in "SIG".
-- `kubectl sigstore verify-resource` verifies the signature in the speciifed resource, and it checks equivalence between the resource and an encoded manfiest in "SIG".
+- `kubectl sigstore verify` verifies the signature in the signed YAML manifest, and checks equivalence of an input YAML manifest and encoded manifest data in "SIG".
+- `kubectl sigstore verify-resource` verifies the signature in the speciifed resource, and it checks equivalence between the resource and an encoded manifest in "SIG".
 
 ## Easy install & simple use
 You can install it by a single command.

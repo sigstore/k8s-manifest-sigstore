@@ -42,7 +42,7 @@ var KOptions KubectlOptions
 
 var RootCmd = &cobra.Command{
 	Use:   "kubectl-sigstore",
-	Short: "A command to sign/verify Kubernetes YAML manifests and resoruces on cluster",
+	Short: "A command to sign/verify Kubernetes YAML manifests and resources on cluster",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return errors.New("kubectl sigstore cannot be invoked without a subcommand operation")
 	},

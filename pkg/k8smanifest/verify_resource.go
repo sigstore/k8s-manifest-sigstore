@@ -275,7 +275,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 
 	// CASE4: manifest match for a resource in mutating admission controller
 	if checkMutatingResource {
-		log.Debug("try mutating resoruce matching (check inclusion relation between manifest, resource and dryrun result)")
+		log.Debug("try mutating resource matching (check inclusion relation between manifest, resource and dryrun result)")
 		matched, diff, err = inclusionMatch(foundManifestBytes, objBytes, dryRunBytes, clusterScope, isCRD)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during mutating resource matching")
