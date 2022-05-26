@@ -38,7 +38,6 @@ import (
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/bundle"
 	"github.com/sigstore/cosign/pkg/cosign/pkcs11key"
-	"github.com/sigstore/cosign/pkg/cosign/tuf"
 	sigs "github.com/sigstore/cosign/pkg/signature"
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
@@ -173,7 +172,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		return false, "", nil, errors.Wrap(err, "failed to write a message data to virtual standard input")
 	}
 	_ = stdinWriter.Close()
-	err = cliverify.VerifyBlobCmd(context.Background(), opt, "", "", "", string(b64Sig), "-")
+	err = cliverify.VerifyBlobCmd(context.Background(), opt, "", "", "", "", string(b64Sig), "-", false)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
 	}
@@ -286,10 +285,6 @@ func (s *cosignBundleSignature) Cert() (*x509.Certificate, error) {
 }
 
 func (s *cosignBundleSignature) Chain() ([]*x509.Certificate, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (s *cosignBundleSignature) Timestamp() (*tuf.Timestamp, error) {
 	return nil, errors.New("not implemented")
 }
 

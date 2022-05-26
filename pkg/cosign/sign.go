@@ -44,7 +44,7 @@ const (
 	defaultOIDCIssuer        = "https://oauth2.sigstore.dev/auth"
 	defaultOIDCClientID      = "sigstore"
 	cosignPasswordEnvKey     = "COSIGN_PASSWORD"
-	defaultTlogUploadTimeout = 0
+	defaultTlogUploadTimeout = 10
 )
 
 func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
@@ -55,6 +55,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
+	rootOpt := &cliopt.RootOptions{Timeout: defaultTlogUploadTimeout * time.Second}
 	opt := clisign.KeyOpts{
 		Sk:           sk,
 		IDToken:      idToken,
@@ -83,7 +84,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	outputSignaturePath := ""
 	outputCertificatePath := ""
 
-	return clisign.SignCmd(context.Background(), opt, regOpt, imageAnnotations, []string{imageRef}, certPathStr, true, "", outputSignaturePath, outputCertificatePath, false, false, "")
+	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{imageRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "")
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {
@@ -137,11 +138,10 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	base64Msg := []byte(base64.StdEncoding.EncodeToString(gzipMsg))
 	m["message"] = base64Msg
 
-	tlogUploadTimeout := defaultTlogUploadTimeout * time.Second
-
+	rootOpt := &cliopt.RootOptions{Timeout: defaultTlogUploadTimeout * time.Second}
 	outputSignaturePath := ""
 	outputCertificatePath := ""
-	rawSig, err := clisign.SignBlobCmd(context.Background(), opt, regOpt, blobPath, false, outputSignaturePath, outputCertificatePath, tlogUploadTimeout)
+	rawSig, err := clisign.SignBlobCmd(rootOpt, opt, regOpt, blobPath, false, outputSignaturePath, outputCertificatePath)
 	if err != nil {
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
