@@ -1,4 +1,4 @@
-## Example Use of k8s-manifest-sigstore as A Library
+## Example usage of k8s-manifest-sigstore as a library
 
 With this example code, you can learn how to import and use k8s-manifest-sigstore for verifying resources in your go project.
 
@@ -87,7 +87,11 @@ if result.Verified {
 }
 ```
 
-This is the expected output of the sample code.
+In the sample code, a light-weight mock Kubernetes cluster is configured on memory right after execution, and a signed configmap resource will be created there.
+
+Some specific fields in the configmap were changed after signing, but these fields are configured as `IgnoreFields`, so `VerifyResource()` allows the changes and signature verification will pass without any errors.
+
+The following is the expected output of the sample code.
 
 ```
 $ go run sample.go
