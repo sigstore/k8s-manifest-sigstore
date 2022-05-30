@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    cosign.sigstore.dev/message: H4sIAAAAAAAA/wAiAd3+H4sIAAAAAAAA/+yRP2/CMBDFM+dTWOzgPziBZqrEUqnqVnVFh+MYl/gcbJMKPn1FgHZqx1at8luefXrPku/RHgJtfFvrEGlZ0/3xhMYhLtZ3rFBsrV4Zb8T+jTHGDNJnqrzrgo7RopkmCFNzEsu55EspFoJGcF2rp8pjY42DbnYE12bnbCnloIuyGJSJy304ijLjUsiCCSm5yNi85KLICMt+gENMEDLGHmzwuwPa2aNNsIUA/N5u3Ex5d/HFBE3zzTvXv3zoHwE6+6JDtB4r0vN8Z7GuyGro7wm63OkENSSockIQnK7IrWJ3ncQO1OcYY36zqy2ggU2rKzLxwRqL0JIe2oOenKM+rb42/PZWRkZGRv4/7wEAAP//wP/GtgAIAAABAAD//90T5nAiAQAA
+    cosign.sigstore.dev/signature: MEQCIAOEnJLrovSP8iuyhLwoVbClj8XDkcQNg9YI3VTNpeNeAiBCn8yGBATgeAZN/FJK+ro9WtyOshCt1WYcDhZIDNzr6g==
+  name: sample-cm
+  namespace: sample-ns
+  labels:
+    autoEmbeddedLabel: "embedded"
+data:
+  changable: "CHANGED"
+  notChangable: "original value"
