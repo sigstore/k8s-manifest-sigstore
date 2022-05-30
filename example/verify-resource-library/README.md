@@ -78,7 +78,7 @@ Now you can call `VerifyResource()` as below.
 ```go
 result, err := k8smanifest.VerifyResource(obj, opt)
 if err != nil {
-	// handle the error
+    // handle the error
 }
 if result.Verified {
     // verification success.
