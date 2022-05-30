@@ -19,8 +19,7 @@ First, to verify Kubernetes resources in your go project, import the `k8s-manife
 ```go
 import (
     // ... other modules
-
-	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
+    "github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 )
 ```
 
