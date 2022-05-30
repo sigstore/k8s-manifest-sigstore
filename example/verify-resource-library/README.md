@@ -32,7 +32,7 @@ The arguments for this function are just the following 2 variables.
 
 `obj` is the resource you want to verify here, and you can get it via K8s API modules. ([client-go example](https://github.com/kubernetes/client-go#how-to-use-it))
 
-If you want to multiple resources, just to call `VerifyResource()` as many as the resources.
+If you want to verify multiple resources, just to call `VerifyResource()` for each of them.
 
 `opt` is a variable of type `k8smanifest.VerifyResourceOption`, and this is a set of verification configuration.
 
@@ -67,7 +67,7 @@ Also, in this sample code, a public key is specified in the `KeyPath` config lik
 opt.KeyPath = pubkeyPath
 ```
 
-Then you can add a pre-defined config to yours so that VerifyResource() can ignore some changes made by Kubernetes system.
+Then you can add a pre-defined config to yours so that `VerifyResource()` can ignore some changes made by Kubernetes system.
 
 ```go
 opt = k8smanifest.AddDefaultConfig(opt)
