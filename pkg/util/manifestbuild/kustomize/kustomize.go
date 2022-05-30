@@ -93,7 +93,7 @@ func LoadKustomization(fpath, baseDir, gitURL, gitRevision string, inRemoteRepo 
 	}
 	k.FixKustomizationPostUnmarshalling()
 
-	// these resoruces are used as "provenance materials" later
+	// these resources are used as "provenance materials" later
 	// files in a local filesystem --> File resource
 	// all resources in a remote git repository --> GitRepo resource
 	resources := []*KustomizationResource{}
