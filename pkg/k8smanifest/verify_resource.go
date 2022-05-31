@@ -144,7 +144,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
 	containerImages, err := kubeutil.GetAllImagesFromObject(&obj)
-	if err != nil {
+	if err != nil && vo.Provenance {
 		return nil, errors.Wrap(err, "failed to get container images")
 	}
 
