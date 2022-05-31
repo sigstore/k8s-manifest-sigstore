@@ -115,7 +115,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	var diffsForAllCandidates []*mapnode.DiffResult
 	for i, candidate := range resourceManifests {
 		log.Debugf("try matching with the candidate %v out of %v", i+1, len(resourceManifests))
-		cndMatched, tmpDiff, err := matchResourceWithManifest(obj, candidate, ignoreFields, vo.DryRunNamespace, vo.CheckDryRunForApply, vo.CheckMutatingResource)
+		cndMatched, tmpDiff, err := matchResourceWithManifest(obj, candidate, ignoreFields, vo.DryRunNamespace, vo.DisableDryRun, vo.CheckDryRunForApply, vo.CheckMutatingResource)
 		if err != nil {
 			return nil, errors.Wrap(err, "error occurred during matching manifest")
 		}
@@ -144,7 +144,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	verified = mnfMatched && sigVerified && vo.Signers.Match(signerName)
 
 	containerImages, err := kubeutil.GetAllImagesFromObject(&obj)
-	if err != nil {
+	if err != nil && vo.Provenance {
 		return nil, errors.Wrap(err, "failed to get container images")
 	}
 
@@ -168,7 +168,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}, nil
 }
 
-func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, dryRunNamespace string, checkDryRunForApply, checkMutatingResource bool) (bool, *mapnode.DiffResult, error) {
+func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes []byte, ignoreFields []string, dryRunNamespace string, disableDryRun, checkDryRunForApply, checkMutatingResource bool) (bool, *mapnode.DiffResult, error) {
 
 	apiVersion := obj.GetAPIVersion()
 	kind := obj.GetKind()
@@ -222,6 +222,10 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 			diffStr = diff.ToJson()
 		}
 		log.Debugf("found diff by direct match: %s", diffStr)
+	}
+	// if DryRun is disabled, manifest matching ends here
+	if disableDryRun {
+		return matched, diff, nil
 	}
 
 	// CASE2: dryrun create match
