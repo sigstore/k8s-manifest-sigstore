@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    cosign.sigstore.dev/message: H4sIAAAAAAAA/wDtARL+H4sIAAAAAAAA/+ySQXPTMBCFc/av2AlXYsuO4xRx4dADDBx6YLhQprORN46otVIluaX99YzS4DgwcIRhJt9F1tunJ63k4h59sbV9Sz4UTVvcPT5xZ5jXN6/ESokb9VWU2+ruQQghOi4+Fsoa5ykEzd0iol90T5VYL5uqqcqyCGhcT4uWXG8fDXHMH9H0aW1T17M0rpvVfhTV81wIUZbLZlbWVb2q1vWyFDOxbJbLegZi9hcYQkQ/E+Kt9vZ2YJ2/1xF36LF8ozcmV9Y8+0LE7fYPOYdmxvE/AZ3+RD5oyxLQuVDcl9mt5lbC5fiImaGILUaUGQCjIQm/PHQGgMw2YtSWQzICRAoxiXL8ygB63FA/Mezn8vi5L6BzErjT/C0LjlRye3K9VhgklBlAoJ5UtP45x2BUuw+T4JOEtI9xPUY6uCfdJPqThT8tBfhxgMQL2NkQr95dSoh+oIOqLEfUTH4MWRyu6ZiS0AY7kjBsBo6DLC9yUY81ZY3BdO2f5xsMu/mX43F8F5K8UPOXMH/Y6Z72m7+G1l4zAKmdBT8wa+7yPE9S6IkcVOKaW8s0yfIU7OAVTbpN4t1AIZ5oAMoNElbCjMJYddZPzYtj/1fWRwkXIjsUs3/9d585c+bMmd/xPQAA//91avHRAAoAAAEAAP//PD61Y+0BAAA=
+    cosign.sigstore.dev/signature: MEUCIFT8EomWVDORxVJRLT8FAgERlHegext87tI0dqnu32GLAiEAuU5IA+PXollmeLPuT/2f/mSXzKkYOaW91iAgzbUqo5M=
+    deployment.kubernetes.io/revision: "1"
+    testanno: testanno
+  creationTimestamp: "2022-05-31T02:23:18Z"
+  generation: 1
+  labels:
+    app: nginx
+    testlabel: testlabel
+  name: sample-deployment
+  namespace: default
+  resourceVersion: "89129"
+  uid: de62dbb1-b488-4857-81c3-cff1ca959738
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - args:
+        - -c
+        - |-
+          while true; do
+            echo running...
+            sleep 20
+          done
+        command:
+        - bash
+        image: ubuntu:18.04
+        imagePullPolicy: IfNotPresent
+        name: nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2022-05-31T02:23:36Z"
+    lastUpdateTime: "2022-05-31T02:23:36Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2022-05-31T02:23:18Z"
+    lastUpdateTime: "2022-05-31T02:23:36Z"
+    message: ReplicaSet "sample-deployment-568c46b66" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1

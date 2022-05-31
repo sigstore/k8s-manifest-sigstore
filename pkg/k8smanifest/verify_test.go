@@ -75,6 +75,56 @@ func TestVerifyResource(t *testing.T) {
 	t.Logf("verify-resource result: %s", string(resultBytes))
 }
 
+func TestVerifyResourceWithoutDryRun(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-without-dryrun-test")
+	if err != nil {
+		t.Errorf("failed to create temp dir: %s", err.Error())
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "testpub")
+	err = initSingleTestFile(b64EncodedTestPubkey, keyPath)
+	if err != nil {
+		t.Errorf("failed to init a public key file for test: %s", err.Error())
+		return
+	}
+
+	fpath := "testdata/sample-deployment-signed-deployed.yaml"
+	objBytes, err := ioutil.ReadFile(fpath)
+	if err != nil {
+		t.Errorf("failed to load a test resource file: %s", err.Error())
+		return
+	}
+	t.Logf("verify-resource resource: %s", string(objBytes))
+	var obj unstructured.Unstructured
+	err = yaml.Unmarshal(objBytes, &obj)
+	if err != nil {
+		t.Errorf("failed to unmarshal: %s", err.Error())
+		return
+	}
+	vo := &VerifyResourceOption{
+		verifyOption: verifyOption{
+			KeyPath: keyPath,
+		},
+		DisableDryRun: true,
+	}
+	vo = AddDefaultConfig(vo)
+
+	result, err := VerifyResource(obj, vo)
+	if err != nil {
+		t.Errorf("failed to verify a resource: %s", err.Error())
+		return
+	}
+
+	resultBytes, _ := json.Marshal(result)
+	t.Logf("verify-resource result: %s", string(resultBytes))
+	if result.Verified {
+		t.Errorf("it should fail without dryrun in this test case, but not failed")
+		return
+	}
+}
+
 func TestInclusionMatch(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-test")
 	if err != nil {

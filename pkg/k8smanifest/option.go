@@ -59,6 +59,7 @@ type VerifyResourceOption struct {
 	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
 
 	Provenance            bool   `json:"-"`
+	DisableDryRun         bool   `json:"-"`
 	CheckDryRunForApply   bool   `json:"-"`
 	CheckMutatingResource bool   `json:"-"`
 	DryRunNamespace       string `json:"-"`
