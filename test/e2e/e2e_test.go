@@ -207,6 +207,28 @@ var _ = Describe("E2e Test for Kubectl Sigstore Commands", func() {
 			return nil
 		}, timeout, 1).Should(BeNil())
 	})
+	It("VerifyResource Test with pubkey in env var", func() {
+		var timeout int = 10
+		Eventually(func() error {
+			testNamespace := "default"
+			testPubkeyBytes, err := base64.StdEncoding.DecodeString(string(b64EncodedTestPubKey))
+			if err != nil {
+				return err
+			}
+			pubkeyEnvVarName := "K8S_MANIFEST_SIGSTORE_TEST_PUBLIC_KEY"
+			err = os.Setenv(pubkeyEnvVarName, string(testPubkeyBytes))
+			if err != nil {
+				return err
+			}
+			defer os.Unsetenv(pubkeyEnvVarName)
+			pubkeyRef := fmt.Sprintf("env://%s", pubkeyEnvVarName)
+			err = verifyResource(outPath, pubkeyRef, testNamespace, "")
+			if err != nil {
+				return err
+			}
+			return nil
+		}, timeout, 1).Should(BeNil())
+	})
 	It("VerifyResource Test With Keyless-signed Resource", func() {
 		var timeout int = 10
 		Eventually(func() error {

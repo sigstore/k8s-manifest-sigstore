@@ -32,6 +32,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const EnvVarFileRefPrefix = "env://"
+
 // AnnotationWriter represents the embedAnnotation function
 type AnnotationWriter func([]byte, map[string]interface{}) ([]byte, error)
 
@@ -287,4 +289,13 @@ func GetHomeDir() string {
 		dir = "/root"
 	}
 	return dir
+}
+
+func LoadFileDataInEnvVar(envVarRef string) ([]byte, error) {
+	envVarName := strings.TrimPrefix(envVarRef, EnvVarFileRefPrefix)
+	dataStr, found := os.LookupEnv(envVarName)
+	if !found {
+		return nil, fmt.Errorf("`$%s` is not found in environment variables", envVarName)
+	}
+	return []byte(dataStr), nil
 }
