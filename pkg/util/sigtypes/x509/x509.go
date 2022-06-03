@@ -123,6 +123,12 @@ func LoadCertificate(certPath string) (*x509.Certificate, error) {
 				certPemBytes = val
 			}
 		}
+	} else if strings.HasPrefix(certPath, k8smnfutil.EnvVarFileRefPrefix) {
+		tmpCertBytes, err := k8smnfutil.LoadFileDataInEnvVar(certPath)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load the key in env var")
+		}
+		certPemBytes = tmpCertBytes
 	} else {
 		cpath := filepath.Clean(certPath)
 		certPemBytes, err = ioutil.ReadFile(cpath)

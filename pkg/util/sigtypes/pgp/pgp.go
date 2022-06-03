@@ -129,6 +129,12 @@ func getPublicKeyStream(keyRef string) (io.Reader, error) {
 				break
 			}
 		}
+	} else if strings.HasPrefix(keyRef, k8smnfutil.EnvVarFileRefPrefix) {
+		keyBytes, err := k8smnfutil.LoadFileDataInEnvVar(keyRef)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load the key in env var")
+		}
+		keyRingReader = bytes.NewBuffer(keyBytes)
 	} else {
 		kpath := filepath.Clean(keyRef)
 		keyRingReader, err = os.Open(kpath)
