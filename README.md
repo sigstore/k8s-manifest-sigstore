@@ -97,8 +97,8 @@ Flags:
   -c, --config string     path to verification config YAML file (for advanced verification)
   -f, --filename string   file name which will be verified
   -h, --help              help for verify
-  -i, --image string      signed image name which bundles yaml files
-  -k, --key string        path to your signing key (if empty, do key-less signing)
+  -i, --image string      a comma-separated list of signed image names that contains YAML manifests
+  -k, --key string        a comma-separated list of paths to public keys or environment variable names start with "env://" (if empty, do key-less verification)
 ```
 
 ```
@@ -109,8 +109,8 @@ Flags:
   -c, --config string                  path to verification config YAML file (for advanced verification)
   -f, --filename string                file name which will be verified and applied
   -h, --help                           help for apply-after-verify
-  -i, --image string                   signed image name which bundles yaml files
-  -k, --key string                     path to your signing key (if empty, do key-less signing)
+  -i, --image string                   a comma-separated list of signed image names that contains YAML manifests
+  -k, --key string                     a comma-separated list of paths to public keys or environment variable names start with "env://" (if empty, do key-less verification)
 ```
 
 ```
@@ -123,7 +123,7 @@ Flags:
   -f, --filename string          manifest filename (this can be "-", then read a file from stdin)
   -h, --help                     help for verify-resource
   -i, --image string             a comma-separated list of signed image names that contains YAML manifests
-  -k, --key string               a comma-separated list of paths to public keys (if empty, do key-less verification)
+  -k, --key string               a comma-separated list of paths to public keys or environment variable names start with "env://" (if empty, do key-less verification)
   -o, --output string            output format string, either "json" or "yaml" (if empty, a result is shown as a table)
 ```
 

@@ -145,7 +145,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename (this can be \"-\", then read a file from stdin)")
 	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
 	cmd.PersistentFlags().StringVar(&sigResRef, "signature-resource", "", "a comma-separated list of configmaps that contains message, signature and some others")
-	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys (if empty, do key-less verification)")
+	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys or environment variable names start with \"env://\" (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file or k8s object identifier like k8s://[KIND]/[NAMESPACE]/[NAME]")
 	cmd.PersistentFlags().StringVar(&configType, "config-type", "file", "a type of config, one of the following: \"file\", \"constraint\" or \"configmap\"")
 	cmd.PersistentFlags().StringVar(&configKind, "config-kind", "", "a kind of config resource in a cluster, only valid when --config-type is \"constraint\" or \"configmap\"")
