@@ -1,4 +1,4 @@
-## Example usage of k8s-manifest-sigstore as a library
+## How to implement a go project which invokes `VerifyResource()` with a custom `VerifyResourceOption`
 
 With this example code, you can learn how to import and use k8s-manifest-sigstore for verifying resources in your go project.
 

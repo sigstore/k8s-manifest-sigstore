@@ -1,3 +1,69 @@
+# What's new in v0.3.0
+
+In this release, we mainly updated verification functions so that users can easily & flexibly use `k8s-manifest-sigstore`.
+
+In particular, now all verification functions do not require any file-write permission on local file system, so users can use `k8s-manifest-sigstore` verification in a read-only environment such as a read-only container.
+
+## Verification features are all "read-only" in this version!
+
+`k8s-manifest-sigstore` does not create/update/delete any files including temporary files while verification.
+You can use it inside your project that need to be run in a read-only container / in a least privilege environment.
+
+## Support multiple ways to input public key**
+
+Now we support the following 2 types of public key reference. You can use them when the public key is not a local file.
+
+- If the public key is in a Kubernetes secret deployed on a cluster, you can specify it with `k8s://` prefix.
+
+    ```
+    # example of a secret from the public key file
+    $ kubectl create secret -n sample-namespace generic pubkey-secret --from-file=publickey=<PATH/TO/PUBLIC_KEY>
+
+    # you can specify the secret in "k8s://namespace/name" format
+    $ kubectl sigstore verify-resource <KIND> [-n <NAMESPACE>] [<NAME>] --key k8s://sample-namespace/pubkey-secret
+    ```
+
+- If PEM data of the public key is set as an environment variable, you can specify it with `env://` prefix.
+
+    ```
+    # example of the public key PEM in an environment variable
+    $ export MANIFEST_VERIFICATION_KEY=$(cat <PATH/TO/PUBLIC_KEY>)
+
+    # you can specify the secret in "env://variablename" format
+    $ kubectl sigstore verify-resource <KIND> [-n <NAMESPACE>] [<NAME>] --key env://MANIFEST_VERIFICATION_KEY
+    ```
+
+## Prepare an example code to use `verify-resource` with a custom configuration in your project 
+
+We prepared a new example code which imports `k8s-manifest-sigstore` as an external module and calls the `VerifyResource()` function with a custom `ignoreFields` configuration defined in the code.
+
+This would be useful for developers to know how to implement a go project which leverages the `VerifyResource()` feature inside their codes.
+
+The sample code is easy to run, so you can try it just by the command as below.
+
+```
+$ cd example/verify-resource
+$ go run sample.go
+```
+
+## Add some options for a custom "verify-resource"
+
+The following 2 options are added as verify-resource options to enable flexible verification configuration.
+
+- `DisableDryRun`
+    - Some users may want to diable dry run feature because it requires some more RBAC permissions compared to no dry-run case, so they can use this option for that purpose.
+- `CheckMutatingResource`
+    - If multiple mutating webhooks mutate one resource and if verify-resource is used in one of the mutating webhooks, the specified resource might be not an actual resource but an intermediate object which is on the way of mutation. With this option, k8s-manifest-sigstore supports the verification for this kind of intermediate objects, so users can safely use verify-resource in such an admission controller.
+
+## Update cosign version to v1.8.0
+
+The dependency version of cosign is updated to v1.8.0.
+
+---
+
+# Backlog 
+
+---
 
 # What's new in v0.1.0
 
@@ -97,5 +163,6 @@ $ kubectl sigstore verify-resource -n sample-ns -i sample-registry/sample-manife
 A reference impletementation of admission controller with verify-resource feature is inside [example/admission-controller](../example/admission-controller) directory.
 
 For more comprehensive admission controller implementation which uses this project, you can try [Integrity Shield](https://github.com/open-cluster-management/integrity-shield).
+
 
 
