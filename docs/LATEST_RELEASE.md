@@ -46,6 +46,23 @@ $ cd example/verify-resource
 $ go run sample.go
 ```
 
+## Support multiple signatures for verification
+
+We newly support multiple signatures for verification. In addition to the default signature, you can specify the other ones by using `AnnotationConfig` configuration both from CLI and from codes.
+
+An example of AnnotationConfig for this is like the following. In this case, 2 annotations `cosign.sigstore.dev/signature` (default one) and `cosign2.sigstore.dev/signature-alt` (added by this config) will be used. 
+
+```
+vo := &VerifyResourceOption{}
+vo.AnnotationConfig = AnnotationConfig{
+    AdditionalSignatureKeysForVerify: []string{
+        "cosign2.sigstore.dev/signature-alt",
+    },
+}
+```
+
+When multiple signatures are specified, verification will be ok if at least 1 signature is successfully verified.
+
 ## Add some options for a custom "verify-resource"
 
 The following 2 options are added as verify-resource options to enable flexible verification configuration.
