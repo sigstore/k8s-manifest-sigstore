@@ -1,0 +1,12 @@
+apiVersion: v1
+data:
+  key1: val1
+  key4: val4
+kind: ConfigMap
+metadata:
+  annotations:
+    # the first signature was signed by different key, so verification fails. the second one (signature-alt) should pass the verification.
+    cosign.sigstore.dev/message: H4sIAAAAAAAA/wAMAfP+H4sIAAAAAAAA/+zRQU/DIBQHcM79FHyBjUcH1PVk4sXEeDNel2dLK7ZAB6ym+/RmrfO4o8akv8s/fwIkL4+NGFjj+1qHyFTNjtPZtda54rAHWcGh+gDe5MdPAIDWsRdWeTsEHaNx7SZh2LRnAXd7JVVRAItoh15vKu8a01octhPanlzeKiHmLJScE/KlX/DdjnCRS5BS5ZIT2CkuBKFAfsEpJgwE4NEE352c2T6ZhO8YkN+bN7utvF3uxYRNc+Of71l+8p/AwbzqEI13JR151hlXl/Rh3t8zDpnVCWtMWGaUOrS6pNcV2+x63umJl3TEni9FzEVkfz3aarVarW74CgAA//9twMOhAAgAAAEAAP//LuzpogwBAAA=
+    cosign.sigstore.dev/signature: MEYCIQCDHyo+TlvuLDHav7TYLkW5MpvUguJ89I9rZVL7LgxSKAIhAIF3eRCj7+lIlGVvsH42xEFEKj14e2nEBrkTrQsD3AEf
+    cosign2.sigstore.dev/signature-alt: MEQCIG/x/yNDBWF/t5GafauG89/ohvUhCnONjkK8bRUj/dZdAiAbL1E33JQYNRVjcloi9xr6XeqNzf+Ya/VJ8bcNfVa3fA==
+  name: sample-cm

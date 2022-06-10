@@ -188,28 +188,50 @@ func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 		return false, "", nil, errors.Wrap(err, "failed to get signature")
 	}
 
-	msgBytes := sigMap[MessageAnnotationBaseName]
-	sigBytes := sigMap[SignatureAnnotationBaseName]
-	certBytes := sigMap[CertificateAnnotationBaseName]
-	bundleBytes := sigMap[BundleAnnotationBaseName]
+	msgBytes := sigMap[defaultMessageAnnotationBaseName]
+	sigBytesArray := [][]byte{}
+	for i := 0; ; i++ {
+		sigKeyi := fmt.Sprintf("%s-%v", defaultSignatureAnnotationBaseName, i)
+		if sigBytes, ok := sigMap[sigKeyi]; ok {
+			sigBytesArray = append(sigBytesArray, sigBytes)
+		} else {
+			break
+		}
+	}
+	certBytes := sigMap[defaultCertificateAnnotationBaseName]
+	bundleBytes := sigMap[defaultBundleAnnotationBaseName]
 
 	sigType := sigtypes.GetSignatureTypeFromPublicKey(v.pubkeyPathString)
 	if sigType == sigtypes.SigTypeUnknown {
 		return false, "", nil, errors.New("failed to judge signature type from public key configuration")
-	} else if sigType == sigtypes.SigTypeCosign {
-		return k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
-	} else if sigType == sigtypes.SigTypePGP {
-		return pgp.VerifyBlob(msgBytes, sigBytes, v.pubkeyPathString)
-	} else if sigType == sigtypes.SigTypeX509 {
-		return x509.VerifyBlob(msgBytes, sigBytes, certBytes, v.pubkeyPathString)
 	}
 
-	return false, "", nil, errors.New("unknown error")
+	var verified bool
+	var signer string
+	errStrArray := []string{}
+	for _, sigBytes := range sigBytesArray {
+		if sigType == sigtypes.SigTypeCosign {
+			verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
+		} else if sigType == sigtypes.SigTypePGP {
+			verified, signer, _, err = pgp.VerifyBlob(msgBytes, sigBytes, v.pubkeyPathString)
+		} else if sigType == sigtypes.SigTypeX509 {
+			verified, signer, _, err = x509.VerifyBlob(msgBytes, sigBytes, certBytes, v.pubkeyPathString)
+		}
+		if verified {
+			// if verified, return the result here
+			return verified, signer, nil, err
+		} else {
+			// otherwise, keep the returned error and try the next signature
+			errStrArray = append(errStrArray, err.Error())
+		}
+	}
+	return false, "", nil, fmt.Errorf("verification failed for %v signature. the detail error follows: %s", len(sigBytesArray), errStrArray)
 }
 
 func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
 	sigMap := map[string][]byte{}
-	var msg, sig, cert, bundle string
+	var msg, cert, bundle string
+	sigArray := []string{}
 	var ok bool
 	if v.resourceRef != "" {
 		cmRef := v.resourceRef
@@ -217,16 +239,17 @@ func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get a configmap")
 		}
-		msg, ok = cm.Data[MessageAnnotationBaseName]
+		msg, ok = cm.Data[defaultMessageAnnotationBaseName]
 		if !ok {
-			return nil, fmt.Errorf("`%s` is not found in the configmap %s", MessageAnnotationBaseName, cmRef)
+			return nil, fmt.Errorf("`%s` is not found in the configmap %s", defaultMessageAnnotationBaseName, cmRef)
 		}
-		sig, ok = cm.Data[SignatureAnnotationBaseName]
+		sig, ok := cm.Data[defaultSignatureAnnotationBaseName]
 		if !ok {
-			return nil, fmt.Errorf("`%s` is not found in the configmap %s", SignatureAnnotationBaseName, cmRef)
+			return nil, fmt.Errorf("`%s` is not found in the configmap %s", defaultSignatureAnnotationBaseName, cmRef)
 		}
-		cert = cm.Data[CertificateAnnotationBaseName]
-		bundle = cm.Data[BundleAnnotationBaseName]
+		sigArray = append(sigArray, sig)
+		cert = cm.Data[defaultCertificateAnnotationBaseName]
+		bundle = cm.Data[defaultBundleAnnotationBaseName]
 	} else {
 		annotations := v.annotations
 		messageAnnotationKey := v.annotationConfig.MessageAnnotationKey()
@@ -234,10 +257,15 @@ func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("`%s` is not found in the annotations", messageAnnotationKey)
 		}
-		signatureAnnotationKey := v.annotationConfig.SignatureAnnotationKey()
-		sig, ok = annotations[signatureAnnotationKey]
-		if !ok {
-			return nil, fmt.Errorf("`%s` is not found in the annotations", signatureAnnotationKey)
+		signatureAnnotationKeys := v.annotationConfig.SignatureAnnotationKeysForVerify()
+		for _, sigKey := range signatureAnnotationKeys {
+			if sig, ok := annotations[sigKey]; ok {
+				sigArray = append(sigArray, sig)
+			}
+		}
+		if len(sigArray) == 0 {
+			keys := strings.Join(signatureAnnotationKeys, " or ")
+			return nil, fmt.Errorf("`%s` is not found in the annotations", keys)
 		}
 		certificateAnnotationKey := v.annotationConfig.CertificateAnnotationKey()
 		budnleAnnotationKey := v.annotationConfig.BundleAnnotationKey()
@@ -245,16 +273,19 @@ func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
 		bundle = annotations[budnleAnnotationKey]
 	}
 	if msg != "" {
-		sigMap[MessageAnnotationBaseName] = []byte(msg)
+		sigMap[defaultMessageAnnotationBaseName] = []byte(msg)
 	}
-	if sig != "" {
-		sigMap[SignatureAnnotationBaseName] = []byte(sig)
+	if len(sigArray) > 0 {
+		for i, sig := range sigArray {
+			mapKey := fmt.Sprintf("%s-%v", defaultSignatureAnnotationBaseName, i)
+			sigMap[mapKey] = []byte(sig)
+		}
 	}
 	if cert != "" {
-		sigMap[CertificateAnnotationBaseName] = []byte(cert)
+		sigMap[defaultCertificateAnnotationBaseName] = []byte(cert)
 	}
 	if bundle != "" {
-		sigMap[BundleAnnotationBaseName] = []byte(bundle)
+		sigMap[defaultBundleAnnotationBaseName] = []byte(bundle)
 	}
 	return sigMap, nil
 }
@@ -483,9 +514,9 @@ func (f *BlobManifestFetcher) fetchManifestInSingleConfigMap(singleCMRef string)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get a configmap")
 	}
-	base64Msg, messageFound := cm.Data[MessageAnnotationBaseName]
+	base64Msg, messageFound := cm.Data[defaultMessageAnnotationBaseName]
 	if !messageFound {
-		return nil, fmt.Errorf("failed to find `%s` in a configmap %s", MessageAnnotationBaseName, cm.GetName())
+		return nil, fmt.Errorf("failed to find `%s` in a configmap %s", defaultMessageAnnotationBaseName, cm.GetName())
 	}
 	gzipMsg, err := base64.StdEncoding.DecodeString(base64Msg)
 	if err != nil {

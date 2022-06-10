@@ -72,7 +72,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
 	var imageRefAnnotationKey string
 	if vo == nil {
-		imageRefAnnotationKey = fmt.Sprintf("%s/%s", DefaultAnnotationKeyDomain, ImageRefAnnotationBaseName)
+		imageRefAnnotationKey = fmt.Sprintf("%s/%s", DefaultAnnotationKeyDomain, defaultImageRefAnnotationBaseName)
 	} else {
 		imageRefAnnotationKey = vo.AnnotationConfig.ImageRefAnnotationKey()
 	}

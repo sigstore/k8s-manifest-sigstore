@@ -124,26 +124,43 @@ type commonOption struct {
 type AnnotationConfig struct {
 	// default "cosign.sigstore.dev"
 	AnnotationKeyDomain string `json:"annotationKeyDomain,omitempty"`
+
+	ImageRefBaseName    string `json:"imageRefBaseName,omitempty"`
+	SignatureBaseName   string `json:"signatureBaseName,omitempty"`
+	CertificateBaseName string `json:"certificateBaseName,omitempty"`
+	MessageBaseName     string `json:"messageBaseName,omitempty"`
+	BundleBaseName      string `json:"bundleBaseName,omitempty"`
+
+	// signature annotation keys in addition to `<AnnotationKeyDomain>/signature`
+	// e.g.) annotation.domain.com/signature-alt
+	// this config is used only for verification
+	AdditionalSignatureKeysForVerify []string `json:"additionalSignatureKeysForVerify,omitempty"`
 }
 
 func (c AnnotationConfig) ImageRefAnnotationKey() string {
-	return c.annotationKey(ImageRefAnnotationBaseName)
+	return c.annotationKey(firstNonEmpty(c.ImageRefBaseName, defaultImageRefAnnotationBaseName))
 }
 
 func (c AnnotationConfig) SignatureAnnotationKey() string {
-	return c.annotationKey(SignatureAnnotationBaseName)
+	return c.annotationKey(firstNonEmpty(c.SignatureBaseName, defaultSignatureAnnotationBaseName))
+}
+
+func (c AnnotationConfig) SignatureAnnotationKeysForVerify() []string {
+	keys := []string{c.SignatureAnnotationKey()}
+	keys = append(keys, c.AdditionalSignatureKeysForVerify...)
+	return keys
 }
 
 func (c AnnotationConfig) CertificateAnnotationKey() string {
-	return c.annotationKey(CertificateAnnotationBaseName)
+	return c.annotationKey(firstNonEmpty(c.CertificateBaseName, defaultCertificateAnnotationBaseName))
 }
 
 func (c AnnotationConfig) MessageAnnotationKey() string {
-	return c.annotationKey(MessageAnnotationBaseName)
+	return c.annotationKey(firstNonEmpty(c.MessageBaseName, defaultMessageAnnotationBaseName))
 }
 
 func (c AnnotationConfig) BundleAnnotationKey() string {
-	return c.annotationKey(BundleAnnotationBaseName)
+	return c.annotationKey(firstNonEmpty(c.BundleBaseName, defaultBundleAnnotationBaseName))
 }
 
 func (c AnnotationConfig) annotationKey(keyType string) string {
@@ -154,24 +171,28 @@ func (c AnnotationConfig) annotationKey(keyType string) string {
 	return fmt.Sprintf("%s/%s", d, keyType)
 }
 
+// this map determins annotations in the signed manifest
 func (c AnnotationConfig) AnnotationKeyMap() map[string]string {
 	return map[string]string{
-		ImageRefAnnotationBaseName:    c.ImageRefAnnotationKey(),
-		SignatureAnnotationBaseName:   c.SignatureAnnotationKey(),
-		CertificateAnnotationBaseName: c.CertificateAnnotationKey(),
-		MessageAnnotationBaseName:     c.MessageAnnotationKey(),
-		BundleAnnotationBaseName:      c.BundleAnnotationKey(),
+		defaultImageRefAnnotationBaseName:    c.ImageRefAnnotationKey(),
+		defaultSignatureAnnotationBaseName:   c.SignatureAnnotationKey(),
+		defaultCertificateAnnotationBaseName: c.CertificateAnnotationKey(),
+		defaultMessageAnnotationBaseName:     c.MessageAnnotationKey(),
+		defaultBundleAnnotationBaseName:      c.BundleAnnotationKey(),
 	}
 }
 
+// this list is used as ignorefields for verification
 func (c AnnotationConfig) AnnotationKeyMask() []string {
-	return []string{
+	masks := []string{
 		"metadata.annotations." + c.ImageRefAnnotationKey(),
 		"metadata.annotations." + c.SignatureAnnotationKey(),
 		"metadata.annotations." + c.CertificateAnnotationKey(),
 		"metadata.annotations." + c.MessageAnnotationKey(),
 		"metadata.annotations." + c.BundleAnnotationKey(),
 	}
+	masks = append(masks, c.AdditionalSignatureKeysForVerify...)
+	return masks
 }
 
 func (c AnnotationConfig) AnnotationKeyIgnoreField() ObjectFieldBindingList {
@@ -185,6 +206,15 @@ func (c AnnotationConfig) AnnotationKeyIgnoreField() ObjectFieldBindingList {
 			},
 		},
 	)
+}
+
+func firstNonEmpty(strArray ...string) string {
+	for _, stri := range strArray {
+		if stri != "" {
+			return stri
+		}
+	}
+	return ""
 }
 
 type ObjectReference struct {

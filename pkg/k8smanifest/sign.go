@@ -46,11 +46,11 @@ import (
 const DefaultAnnotationKeyDomain = "cosign.sigstore.dev"
 
 const (
-	ImageRefAnnotationBaseName    = "imageRef"
-	SignatureAnnotationBaseName   = "signature"
-	CertificateAnnotationBaseName = "certificate"
-	MessageAnnotationBaseName     = "message"
-	BundleAnnotationBaseName      = "bundle"
+	defaultImageRefAnnotationBaseName    = "imageRef"
+	defaultSignatureAnnotationBaseName   = "signature"
+	defaultCertificateAnnotationBaseName = "certificate"
+	defaultMessageAnnotationBaseName     = "message"
+	defaultBundleAnnotationBaseName      = "bundle"
 )
 
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
