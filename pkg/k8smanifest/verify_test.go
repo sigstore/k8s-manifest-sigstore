@@ -75,6 +75,54 @@ func TestVerifyResource(t *testing.T) {
 	t.Logf("verify-resource result: %s", string(resultBytes))
 }
 
+func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-multisig-test")
+	if err != nil {
+		t.Errorf("failed to create temp dir: %s", err.Error())
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "testpub")
+	err = initSingleTestFile(b64EncodedTestPubkey, keyPath)
+	if err != nil {
+		t.Errorf("failed to init a public key file for test: %s", err.Error())
+		return
+	}
+
+	fpath := "testdata/sample-configmap-multi-signed.yaml"
+	objBytes, err := ioutil.ReadFile(fpath)
+	if err != nil {
+		t.Errorf("failed to load a test resource file: %s", err.Error())
+		return
+	}
+	t.Logf("verify-resource resource: %s", string(objBytes))
+	var obj unstructured.Unstructured
+	err = yaml.Unmarshal(objBytes, &obj)
+	if err != nil {
+		t.Errorf("failed to unmarshal: %s", err.Error())
+		return
+	}
+	vo := &VerifyResourceOption{
+		verifyOption: verifyOption{
+			KeyPath: keyPath,
+		},
+	}
+	vo.AnnotationConfig = AnnotationConfig{
+		AdditionalSignatureKeysForVerify: []string{
+			"cosign2.sigstore.dev/signature-alt",
+		},
+	}
+
+	result, err := VerifyResource(obj, vo)
+	if err != nil {
+		t.Errorf("failed to verify a resource: %s", err.Error())
+		return
+	}
+	resultBytes, _ := json.Marshal(result)
+	t.Logf("verify-resource with multiple signatures result: %s", string(resultBytes))
+}
+
 func TestVerifyResourceWithoutDryRun(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-without-dryrun-test")
 	if err != nil {
@@ -118,7 +166,7 @@ func TestVerifyResourceWithoutDryRun(t *testing.T) {
 	}
 
 	resultBytes, _ := json.Marshal(result)
-	t.Logf("verify-resource result: %s", string(resultBytes))
+	t.Logf("verify-resource without dry run result: %s", string(resultBytes))
 	if result.Verified {
 		t.Errorf("it should fail without dryrun in this test case, but not failed")
 		return
