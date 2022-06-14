@@ -49,9 +49,9 @@ data:
 		return
 	}
 
-	imageRefAnnotationKey := vo.AnnotationConfig.ImageRefAnnotationKey()
-	if imageRefAnnotationKey == "" {
-		t.Error("failed to get imageRefAnnotationKey; this config must not be empty and must return `cosign.sigstore.dev/iamgeRef` if empty")
+	resourceBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
+	if resourceBundleRefAnnotationKey == "" {
+		t.Error("failed to get imageRefAnnotationKey; this config must not be empty and must return `cosign.sigstore.dev/resourceBundleRef` if empty")
 		return
 	}
 }

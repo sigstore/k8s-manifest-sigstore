@@ -18,7 +18,6 @@ package k8smanifest
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -53,6 +52,9 @@ func (r *VerifyResourceResult) String() string {
 }
 
 func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*VerifyResourceResult, error) {
+	if vo == nil {
+		vo = LoadDefaultConfig()
+	}
 	objBytes, _ := yaml.Marshal(obj.Object)
 
 	verified := false
@@ -62,26 +64,16 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	sigRef := ""
 	var err error
 
-	imageRefString := ""
 	sigResourceRefString := ""
 	if vo != nil {
-		imageRefString = vo.ImageRef
 		sigResourceRefString = vo.SignatureResourceRef
 	}
 
-	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
-	var imageRefAnnotationKey string
-	if vo == nil {
-		imageRefAnnotationKey = fmt.Sprintf("%s/%s", DefaultAnnotationKeyDomain, defaultImageRefAnnotationBaseName)
-	} else {
-		imageRefAnnotationKey = vo.AnnotationConfig.ImageRefAnnotationKey()
-	}
-	if imageRefString == "" {
-		annotations := obj.GetAnnotations()
-		annoImageRef, found := annotations[imageRefAnnotationKey]
-		if found {
-			imageRefString = annoImageRef
-		}
+	// use resourceBundleRef if specified in the annotation; otherwise follow the verify option
+	resBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
+	annotations := obj.GetAnnotations()
+	if annoImageRef, found := annotations[resBundleRefAnnotationKey]; found {
+		vo.ImageRef = annoImageRef
 	}
 
 	// check if the resource should be skipped or not
@@ -105,7 +97,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	resourceManifests, sigRef, err = NewManifestFetcher(imageRefString, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(vo.ImageRef, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}

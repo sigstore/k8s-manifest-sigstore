@@ -42,18 +42,17 @@ type SignatureVerifier interface {
 
 func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
 	var imageRef, resourceRef string
-	if strings.HasPrefix(sigRef, kubeutil.InClusterObjectPrefix) {
-		resourceRef = sigRef
-	} else if sigRef != "" {
-		imageRef = sigRef
+
+	resBundleRefAnnotationKey := annotationConfig.ResourceBundleRefAnnotationKey()
+	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
+	if annoImageRef, ok := annotations[resBundleRefAnnotationKey]; ok {
+		imageRef = annoImageRef
 	}
 
-	imageRefAnnotationKey := annotationConfig.ImageRefAnnotationKey()
-	annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
-	if imageRef == "" {
-		if annoImageRef, ok := annotations[imageRefAnnotationKey]; ok {
-			imageRef = annoImageRef
-		}
+	if strings.HasPrefix(sigRef, kubeutil.InClusterObjectPrefix) {
+		resourceRef = sigRef
+	} else if sigRef != "" && imageRef == "" {
+		imageRef = sigRef
 	}
 
 	var pubkeyPathString *string
@@ -183,63 +182,87 @@ type BlobSignatureVerifier struct {
 }
 
 func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
-	sigMap, err := v.getSignatures()
+	pubkeyPathString := v.pubkeyPathString
+	var pubkeys []string
+	if pubkeyPathString != nil && *pubkeyPathString != "" {
+		pubkeys = k8smnfutil.SplitCommaSeparatedString(*pubkeyPathString)
+	} else {
+		pubkeys = []string{""}
+	}
+
+	sigSets, err := v.getSignatureSets()
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "failed to get signature")
 	}
 
-	msgBytes := sigMap[defaultMessageAnnotationBaseName]
-	sigBytesArray := [][]byte{}
-	for i := 0; ; i++ {
-		sigKeyi := fmt.Sprintf("%s-%v", defaultSignatureAnnotationBaseName, i)
-		if sigBytes, ok := sigMap[sigKeyi]; ok {
-			sigBytesArray = append(sigBytesArray, sigBytes)
-		} else {
-			break
-		}
-	}
-	certBytes := sigMap[defaultCertificateAnnotationBaseName]
-	bundleBytes := sigMap[defaultBundleAnnotationBaseName]
-
-	sigType := sigtypes.GetSignatureTypeFromPublicKey(v.pubkeyPathString)
-	if sigType == sigtypes.SigTypeUnknown {
-		return false, "", nil, errors.New("failed to judge signature type from public key configuration")
-	}
-
 	var verified bool
 	var signer string
-	errStrArray := []string{}
-	for _, sigBytes := range sigBytesArray {
-		if sigType == sigtypes.SigTypeCosign {
-			verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, v.pubkeyPathString)
-		} else if sigType == sigtypes.SigTypePGP {
-			verified, signer, _, err = pgp.VerifyBlob(msgBytes, sigBytes, v.pubkeyPathString)
-		} else if sigType == sigtypes.SigTypeX509 {
-			verified, signer, _, err = x509.VerifyBlob(msgBytes, sigBytes, certBytes, v.pubkeyPathString)
+	allErrs := []string{}
+	for i := range pubkeys {
+		pubkey := pubkeys[i]
+		var pubkeyPtr *string
+		if pubkey != "" {
+			pubkeyPtr = &pubkey
 		}
-		if verified {
-			// if verified, return the result here
-			return verified, signer, nil, err
-		} else {
-			// otherwise, keep the returned error and try the next signature
-			errStrArray = append(errStrArray, err.Error())
+		sigType := sigtypes.GetSignatureTypeFromPublicKey(pubkeyPtr)
+		if sigType == sigtypes.SigTypeUnknown {
+			return false, "", nil, errors.New("failed to judge signature type from public key configuration")
+		}
+		for j, sigMap := range sigSets {
+			sigMapBytes, _ := json.Marshal(sigMap)
+			log.Debugf("verifying %v/%v signature set: %s", j+1, len(sigSets), string(sigMapBytes))
+			var msgBytes, sigBytes, certBytes, bundleBytes []byte
+			if msg, ok := sigMap[defaultMessageAnnotationBaseName]; ok && msg != "" {
+				msgBytes = []byte(msg)
+			}
+			if sig, ok := sigMap[defaultSignatureAnnotationBaseName]; ok && sig != "" {
+				sigBytes = []byte(sig)
+			}
+			if cert, ok := sigMap[defaultCertificateAnnotationBaseName]; ok && cert != "" {
+				certBytes = []byte(cert)
+			}
+			if bundle, ok := sigMap[defaultBundleAnnotationBaseName]; ok && bundle != "" {
+				bundleBytes = []byte(bundle)
+			}
+			switch sigType {
+			case sigtypes.SigTypeCosign:
+				verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, pubkeyPtr)
+			case sigtypes.SigTypePGP:
+				verified, signer, _, err = pgp.VerifyBlob(msgBytes, sigBytes, pubkeyPtr)
+			case sigtypes.SigTypeX509:
+				verified, signer, _, err = x509.VerifyBlob(msgBytes, sigBytes, certBytes, pubkeyPtr)
+			}
+			if verified {
+				// if verified, return the result here
+				return verified, signer, nil, err
+			} else {
+				// otherwise, keep the returned error and try the next signature
+				keyname := fmt.Sprintf("publickey %v/%v", i+1, len(pubkeys))
+				if pubkey == "" {
+					keyname = "keyless"
+				}
+				signaturename := fmt.Sprintf("signature %v/%v", j+1, len(sigSets))
+				errStr := "verification failed without error"
+				if err != nil {
+					errStr = err.Error()
+				}
+				allErrs = append(allErrs, fmt.Sprintf("[%s] [%s] error: %s", keyname, signaturename, errStr))
+			}
 		}
 	}
-	return false, "", nil, fmt.Errorf("verification failed for %v signature. the detail error follows: %s", len(sigBytesArray), errStrArray)
+	allErrsBytes, _ := json.Marshal(allErrs)
+	return false, "", nil, fmt.Errorf("verification failed for %v signature. all trials: %s", len(sigSets), string(allErrsBytes))
 }
 
-func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
-	sigMap := map[string][]byte{}
-	var msg, cert, bundle string
-	sigArray := []string{}
-	var ok bool
+func (v *BlobSignatureVerifier) getSignatureSets() ([]map[string]string, error) {
+	sigSets := []map[string]string{}
 	if v.resourceRef != "" {
 		cmRef := v.resourceRef
 		cm, err := GetConfigMapFromK8sObjectRef(cmRef)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get a configmap")
 		}
-		msg, ok = cm.Data[defaultMessageAnnotationBaseName]
+		msg, ok := cm.Data[defaultMessageAnnotationBaseName]
 		if !ok {
 			return nil, fmt.Errorf("`%s` is not found in the configmap %s", defaultMessageAnnotationBaseName, cmRef)
 		}
@@ -247,47 +270,19 @@ func (v *BlobSignatureVerifier) getSignatures() (map[string][]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("`%s` is not found in the configmap %s", defaultSignatureAnnotationBaseName, cmRef)
 		}
-		sigArray = append(sigArray, sig)
-		cert = cm.Data[defaultCertificateAnnotationBaseName]
-		bundle = cm.Data[defaultBundleAnnotationBaseName]
+		cert := cm.Data[defaultCertificateAnnotationBaseName]
+		bundle := cm.Data[defaultBundleAnnotationBaseName]
+
+		sigMap := map[string]string{}
+		sigMap[defaultMessageAnnotationBaseName] = msg
+		sigMap[defaultSignatureAnnotationBaseName] = sig
+		sigMap[defaultCertificateAnnotationBaseName] = cert
+		sigMap[defaultBundleAnnotationBaseName] = bundle
+		sigSets = append(sigSets, sigMap)
 	} else {
-		annotations := v.annotations
-		messageAnnotationKey := v.annotationConfig.MessageAnnotationKey()
-		msg, ok = annotations[messageAnnotationKey]
-		if !ok {
-			return nil, fmt.Errorf("`%s` is not found in the annotations", messageAnnotationKey)
-		}
-		signatureAnnotationKeys := v.annotationConfig.SignatureAnnotationKeysForVerify()
-		for _, sigKey := range signatureAnnotationKeys {
-			if sig, ok := annotations[sigKey]; ok {
-				sigArray = append(sigArray, sig)
-			}
-		}
-		if len(sigArray) == 0 {
-			keys := strings.Join(signatureAnnotationKeys, " or ")
-			return nil, fmt.Errorf("`%s` is not found in the annotations", keys)
-		}
-		certificateAnnotationKey := v.annotationConfig.CertificateAnnotationKey()
-		budnleAnnotationKey := v.annotationConfig.BundleAnnotationKey()
-		cert = annotations[certificateAnnotationKey]
-		bundle = annotations[budnleAnnotationKey]
+		sigSets = v.annotationConfig.GetAllSignatureSets(v.annotations)
 	}
-	if msg != "" {
-		sigMap[defaultMessageAnnotationBaseName] = []byte(msg)
-	}
-	if len(sigArray) > 0 {
-		for i, sig := range sigArray {
-			mapKey := fmt.Sprintf("%s-%v", defaultSignatureAnnotationBaseName, i)
-			sigMap[mapKey] = []byte(sig)
-		}
-	}
-	if cert != "" {
-		sigMap[defaultCertificateAnnotationBaseName] = []byte(cert)
-	}
-	if bundle != "" {
-		sigMap[defaultBundleAnnotationBaseName] = []byte(bundle)
-	}
-	return sigMap, nil
+	return sigSets, nil
 }
 
 // This is an interface for fetching YAML manifest
@@ -319,10 +314,10 @@ type ImageManifestFetcher struct {
 
 func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
 	imageRefString := f.imageRefString
-	imageRefAnnotationKey := f.AnnotationConfig.ImageRefAnnotationKey()
+	resBundleRefAnnotationKey := f.AnnotationConfig.ResourceBundleRefAnnotationKey()
 	if imageRefString == "" {
 		annotations := k8smnfutil.GetAnnotationsInYAML(objYAMLBytes)
-		if annoImageRef, ok := annotations[imageRefAnnotationKey]; ok {
+		if annoImageRef, ok := annotations[resBundleRefAnnotationKey]; ok {
 			imageRefString = annoImageRef
 		}
 	}

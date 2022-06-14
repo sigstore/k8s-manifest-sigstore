@@ -44,7 +44,7 @@ type MutateOptions struct {
 	Annotations map[string]interface{}
 }
 
-func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
+func TarGzCompress(src string, buf io.Writer, moList ...*MutateOptions) error {
 
 	// tar > gzip > buf
 	zr := gzip.NewWriter(buf)
@@ -55,7 +55,7 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 	// we cannot use ioutil.TempDir() here because it creates a direcotry with a different name everytime
 	// it results in inconsistent compression result that means inconsistent message even for the identical input.
 	// instead, we use a temporary directory which is named like `compression-tar-gz-<INPUT_FILE_DIGEST>`.
-	digest, err := getSourceDigest(src)
+	digest, err := getSourceDigest(src, moList)
 	if err != nil {
 		return errors.Wrap(err, "error occurred during getting digest of the input for tar gz compression")
 	}
@@ -85,7 +85,7 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 
 	// if mutation option is specified, should mutate files before tar gz compression
 	// in order to avoid file header inconsistency
-	if mo != nil {
+	if len(moList) > 0 {
 		errV = filepath.Walk(tmpSrc, func(file string, fi os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -97,13 +97,31 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 				if err != nil {
 					return err
 				}
-
-				data, err := mo.AW(f, mo.Annotations)
+				// get original timestamps
+				tStat, err := filetimes.Stat(file)
 				if err != nil {
 					return err
 				}
 
+				data := f
+				for _, mo := range moList {
+					if mo == nil {
+						continue
+					}
+					data, err = mo.AW(data, mo.Annotations)
+					if err != nil {
+						return err
+					}
+				}
+				log.Debugf("message YAML file mutated by MutationOption: %s\n%s", file, string(data))
+
 				err = os.WriteFile(file, data, fi.Mode())
+				if err != nil {
+					return err
+				}
+
+				// set the original timestamp metadata to generate consistent compression results everytime
+				err = os.Chtimes(file, tStat.AccessTime(), tStat.ModTime())
 				if err != nil {
 					return err
 				}
@@ -321,12 +339,25 @@ func LoadFileDataInEnvVar(envVarRef string) ([]byte, error) {
 	return []byte(dataStr), nil
 }
 
-func getSourceDigest(srcPath string) (string, error) {
+func getSourceDigest(srcPath string, moList []*MutateOptions) (string, error) {
 	yamls, err := FindYAMLsInDir(srcPath)
 	if err != nil {
 		return "", err
 	}
-	oneYaml := ConcatenateYAMLs(yamls)
+	mYamls := [][]byte{}
+	for _, yaml := range yamls {
+		for _, mo := range moList {
+			if mo == nil {
+				continue
+			}
+			mYaml, err := mo.AW(yaml, mo.Annotations)
+			if err != nil {
+				return "", err
+			}
+			mYamls = append(mYamls, mYaml)
+		}
+	}
+	oneYaml := ConcatenateYAMLs(mYamls)
 	digest := sha256.Sum256(oneYaml)
 	return fmt.Sprintf("%x", digest), nil
 }

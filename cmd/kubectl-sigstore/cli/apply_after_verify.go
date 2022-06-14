@@ -90,9 +90,8 @@ func applyAfterVerify(filename, imageRef, keyPath, configPath string) error {
 	vo.SetAnnotationIgnoreFields()
 
 	annotations := k8ssigutil.GetAnnotationsInYAML(manifest)
-	imageRefAnnotationKey := vo.AnnotationConfig.ImageRefAnnotationKey()
-	annoImageRef, annoImageRefFound := annotations[imageRefAnnotationKey]
-	if imageRef == "" && annoImageRefFound {
+	resBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
+	if annoImageRef, annoImageRefFound := annotations[resBundleRefAnnotationKey]; annoImageRefFound {
 		imageRef = annoImageRef
 	}
 	log.Debug("annotations", annotations)

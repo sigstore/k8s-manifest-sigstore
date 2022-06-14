@@ -64,7 +64,7 @@ func TestSign(t *testing.T) {
 	}
 	t.Logf("signed YAML file: %s", string(signedBytes))
 
-	var obj1, obj2 unstructured.Unstructured
+	var obj1, obj2, obj3 unstructured.Unstructured
 	err = yaml.Unmarshal(signedBytes, &obj1)
 	if err != nil {
 		t.Errorf("failed to unmarshal the signed yaml: %s", err.Error())
@@ -89,6 +89,26 @@ func TestSign(t *testing.T) {
 	msg2 := annotationMap2[msgKey]
 	if msg1 != msg2 {
 		t.Errorf("the message is different from the first time even though the input is identical")
+		return
+	}
+
+	// then, try signing with "AppendSignature" option on the signed manifest
+	so.AppendSignature = true
+	thirdSignedBytes, err := Sign(outPath, so)
+	if err != nil {
+		t.Errorf("failed to sign the test file (3rd time): %s", err.Error())
+		return
+	}
+	err = yaml.Unmarshal(thirdSignedBytes, &obj3)
+	if err != nil {
+		t.Errorf("failed to unmarshal the signed yaml (3rd time): %s", err.Error())
+		return
+	}
+	annotationMap3 := obj3.GetAnnotations()
+	sigKey := DefaultAnnotationKeyDomain + "/signature_1"
+	_, ok := annotationMap3[sigKey]
+	if !ok {
+		t.Errorf("`%s` is not found in the signed yaml manifest after signing with AppendSignature option", sigKey)
 		return
 	}
 }

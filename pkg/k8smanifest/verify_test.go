@@ -108,11 +108,6 @@ func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
 			KeyPath: keyPath,
 		},
 	}
-	vo.AnnotationConfig = AnnotationConfig{
-		AdditionalSignatureKeysForVerify: []string{
-			"cosign2.sigstore.dev/signature-alt",
-		},
-	}
 
 	result, err := VerifyResource(obj, vo)
 	if err != nil {

@@ -1215,10 +1215,10 @@ type imageToBeUsed struct {
 func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled bool) []imageToBeUsed {
 	images := []imageToBeUsed{}
 	if imageRef == "" {
-		imageAnnotationKey := annotationConfig.ImageRefAnnotationKey()
+		resBundleRefAnnotationKey := annotationConfig.ResourceBundleRefAnnotationKey()
 		for _, obj := range objs {
 			annt := obj.GetAnnotations()
-			if img, ok := annt[imageAnnotationKey]; ok {
+			if img, ok := annt[resBundleRefAnnotationKey]; ok {
 				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
 			}
 		}

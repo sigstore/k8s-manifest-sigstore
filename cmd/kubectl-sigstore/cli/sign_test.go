@@ -16,15 +16,12 @@
 package cli
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/base64"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/pkg/errors"
 
 	"github.com/ghodss/yaml"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
@@ -54,7 +51,7 @@ func TestSign(t *testing.T) {
 
 	fpath := "testdata/sample-configmap.yaml"
 	outPath := filepath.Join(tmpDir, "sample-configmap.yaml.signed")
-	err = sign(fpath, "", keyPath, outPath, false, true, true, nil)
+	err = sign(fpath, "", keyPath, outPath, false, false, true, true, nil)
 	if err != nil {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
@@ -68,7 +65,7 @@ func TestSign(t *testing.T) {
 
 	fpath2 := "testdata/sample-configmap-concat.yaml"
 	outPath2 := filepath.Join(tmpDir, "sample-configmap-concat.yaml.signed")
-	err = sign(fpath2, "", keyPath, outPath2, false, true, true, nil)
+	err = sign(fpath2, "", keyPath, outPath2, false, false, true, true, nil)
 	if err != nil {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
@@ -126,26 +123,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 }
 
 func getManifestInMessage(msgBytes []byte) ([]byte, error) {
-	dir, err := ioutil.TempDir("", "kubectl-sigstore-sign-test-temp-dir")
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create temp directory")
-	}
-	defer os.RemoveAll(dir)
-
 	gzipMsg, _ := base64.StdEncoding.DecodeString(string(msgBytes))
 	rawMsg := k8smnfutil.GzipDecompress(gzipMsg)
-	rawMsgReader := bytes.NewReader(rawMsg)
-
-	err = k8smnfutil.TarGzDecompress(rawMsgReader, dir)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to decompress an input file/dir")
-	}
-
-	yamls, err := k8smnfutil.FindYAMLsInDir(dir)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to find yamls in decompressed message tar gz file")
-	}
-
-	manifest := k8smnfutil.ConcatenateYAMLs(yamls)
-	return manifest, nil
+	return rawMsg, nil
 }
