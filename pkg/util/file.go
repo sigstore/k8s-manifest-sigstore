@@ -28,9 +28,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
-	"time"
 
+	filetimes "github.com/djherbis/times"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -285,10 +284,11 @@ func copyFile(src string, dst string) error {
 	}
 
 	// set the original timestamp metadata to generate consistent compression results everytime
-	mtime := fi.ModTime()
-	stat := fi.Sys().(*syscall.Stat_t)
-	atime := time.Unix(int64(stat.Atimespec.Sec), int64(stat.Atimespec.Nsec))
-	err = os.Chtimes(dst, atime, mtime)
+	tStat, err := filetimes.Stat(src)
+	if err != nil {
+		return err
+	}
+	err = os.Chtimes(dst, tStat.AccessTime(), tStat.ModTime())
 	if err != nil {
 		return err
 	}

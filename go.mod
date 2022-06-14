@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/ProtonMail/go-crypto v0.0.0-20210707164159-52430bf6b52c
 	github.com/cyberphone/json-canonicalization v0.0.0-20210823021906-dc406ceaf94b
+	github.com/djherbis/times v1.5.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-openapi/runtime v0.23.3
 	github.com/google/go-containerregistry v0.8.1-0.20220209165246-a44adc326839
