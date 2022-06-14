@@ -22,6 +22,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ghodss/yaml"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // files for test cases
@@ -60,6 +63,34 @@ func TestSign(t *testing.T) {
 		return
 	}
 	t.Logf("signed YAML file: %s", string(signedBytes))
+
+	var obj1, obj2 unstructured.Unstructured
+	err = yaml.Unmarshal(signedBytes, &obj1)
+	if err != nil {
+		t.Errorf("failed to unmarshal the signed yaml: %s", err.Error())
+		return
+	}
+	annotationMap := obj1.GetAnnotations()
+	msgKey := DefaultAnnotationKeyDomain + "/message"
+	msg1 := annotationMap[msgKey]
+
+	// 2nd time to check message consistency
+	secondSignedBytes, err := Sign(fpath, so)
+	if err != nil {
+		t.Errorf("failed to sign the test file (2nd time): %s", err.Error())
+		return
+	}
+	err = yaml.Unmarshal(secondSignedBytes, &obj2)
+	if err != nil {
+		t.Errorf("failed to unmarshal the signed yaml (2nd time): %s", err.Error())
+		return
+	}
+	annotationMap2 := obj2.GetAnnotations()
+	msg2 := annotationMap2[msgKey]
+	if msg1 != msg2 {
+		t.Errorf("the message is different from the first time even though the input is identical")
+		return
+	}
 }
 
 func initSingleTestFile(b64EncodedData []byte, fpath string) error {
