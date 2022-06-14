@@ -20,6 +20,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -27,6 +28,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -50,7 +53,15 @@ func TarGzCompress(src string, buf io.Writer, mo *MutateOptions) error {
 
 	var errV error
 
-	dir, err := ioutil.TempDir("", "compressing-tar-gz")
+	// we cannot use ioutil.TempDir() here because it creates a direcotry with a different name everytime
+	// it results in inconsistent compression result that means inconsistent message even for the identical input.
+	// instead, we use a temporary directory which is named like `compression-tar-gz-<INPUT_FILE_DIGEST>`.
+	digest, err := getSourceDigest(src)
+	if err != nil {
+		return errors.Wrap(err, "error occurred during getting digest of the input for tar gz compression")
+	}
+	dir := filepath.Join(os.TempDir(), "compressing-tar-gz-"+digest[:12])
+	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		return errors.Wrap(err, "error occurred during creating temp dir for tar gz compression")
 	}
@@ -272,6 +283,16 @@ func copyFile(src string, dst string) error {
 	if err != nil {
 		return err
 	}
+
+	// set the original timestamp metadata to generate consistent compression results everytime
+	mtime := fi.ModTime()
+	stat := fi.Sys().(*syscall.Stat_t)
+	atime := time.Unix(int64(stat.Atimespec.Sec), int64(stat.Atimespec.Nsec))
+	err = os.Chtimes(dst, atime, mtime)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -298,4 +319,14 @@ func LoadFileDataInEnvVar(envVarRef string) ([]byte, error) {
 		return nil, fmt.Errorf("`$%s` is not found in environment variables", envVarName)
 	}
 	return []byte(dataStr), nil
+}
+
+func getSourceDigest(srcPath string) (string, error) {
+	yamls, err := FindYAMLsInDir(srcPath)
+	if err != nil {
+		return "", err
+	}
+	oneYaml := ConcatenateYAMLs(yamls)
+	digest := sha256.Sum256(oneYaml)
+	return fmt.Sprintf("%x", digest), nil
 }
