@@ -62,7 +62,7 @@ func TestSign(t *testing.T) {
 	t.Logf("signed YAML file: %s", string(signedBytes))
 }
 
-func TestDirectSign(t *testing.T) {
+func TestRawSign(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "k8smanifest-sign-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
@@ -79,7 +79,7 @@ func TestDirectSign(t *testing.T) {
 	}
 
 	fpath := "testdata/sample-configmap.yaml"
-	outPath := filepath.Join(tmpDir, "sample-configmap-direct.yaml.signed")
+	outPath := filepath.Join(tmpDir, "sample-configmap-raw.yaml.signed")
 
 	so := &SignOption{
 		KeyPath:          keyPath,
@@ -90,10 +90,10 @@ func TestDirectSign(t *testing.T) {
 
 	signedBytes, err := Sign(fpath, so)
 	if err != nil {
-		t.Errorf("failed to sign the test file by direct sign: %s", err.Error())
+		t.Errorf("failed to sign the test file by raw sign: %s", err.Error())
 		return
 	}
-	t.Logf("signed YAML file by direct sign: %s", string(signedBytes))
+	t.Logf("signed YAML file by raw sign: %s", string(signedBytes))
 }
 
 func initSingleTestFile(b64EncodedData []byte, fpath string) error {
