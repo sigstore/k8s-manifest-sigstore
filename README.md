@@ -83,7 +83,6 @@ Flags:
   -a, --annotation stringArray      extra key=value pairs to sign
       --annotation-metadata         whether to update annotation and generate signed yaml file (default true)
   -A, --append-signature            if true, keep the existing signatures and append the new one to the annotation like "signature_1" or "signature_2"
-      --apply-signature-configmap   whether to apply a generated signature configmap only when "output" is k8s configmap
   -f, --filename string             file name which will be signed (if dir, all YAMLs inside it will be signed)
   -h, --help                        help for sign
   -i, --image string                image name which bundles yaml files and be signed
