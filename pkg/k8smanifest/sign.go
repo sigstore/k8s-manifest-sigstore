@@ -120,12 +120,12 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 	}
 	var err error
 	if s.tarball {
-		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
+		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to compress an input file/dir")
 		}
 	} else {
-		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
+		err = makeMessageYAML(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
 		}
@@ -182,12 +182,12 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	}
 
 	if s.tarball {
-		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
+		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to compress an input file/dir")
 		}
 	} else {
-		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
+		err = makeMessageYAML(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
 		}
