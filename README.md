@@ -89,6 +89,7 @@ Flags:
   -k, --key string                  path to your signing key (if empty, do key-less signing)
   -o, --output string               output file name or k8s signature configmap reference (if empty, use "<filename>.signed")
       --replace-signature           just to clarify the default mode of signature storing. If false, "append-signature" is enabled automatically (default true)
+      --tarball string              whether to make a tarball for signing (this will be default to "no" in v0.5.0+) (default "yes")
 ```
 
 ```
