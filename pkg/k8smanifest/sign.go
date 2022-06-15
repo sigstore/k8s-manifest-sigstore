@@ -56,8 +56,13 @@ const (
 
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
 
-	if !so.RawSigning {
-		log.Warn("[DEPRECATED] This signing method is deprecated in v0.3.1+, and will be unavailable in v0.5.0. You can use the new method by `--raw-sign` from CLI or `RawSign = true` in SignOption from codes.")
+	defaultTarballOption := true // this will be `false` in v0.5.0
+	if so.Tarball == nil {
+		so.Tarball = &defaultTarballOption
+	}
+	makeTarball := *(so.Tarball)
+	if makeTarball {
+		log.Warn("[DEPRECATED] The current signing method which makes a tarball for signing is deprecated in v0.3.1+, and will be unavailable in v0.5.0. You can use the new method by `--tarball=no` from CLI or `Tarball: &(false)` in SignOption from codes.")
 	}
 
 	output := ""
@@ -65,7 +70,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, output, so.ApplySigConfigMap, so.RawSigning, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
+	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, output, so.ApplySigConfigMap, makeTarball, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -77,7 +82,7 @@ type Signer interface {
 	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
-func NewSigner(imageRef, keyPath, certPath, output string, doApply, rawSigning bool, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
+func NewSigner(imageRef, keyPath, certPath, output string, doApply, tarball bool, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
 	var prikeyPath *string
 	if keyPath != "" {
 		prikeyPath = &keyPath
@@ -91,15 +96,15 @@ func NewSigner(imageRef, keyPath, certPath, output string, doApply, rawSigning b
 		createSigConfigMap = true
 	}
 	if imageRef != "" {
-		return &ImageSigner{AnnotationConfig: AnnotationConfig, imageRef: imageRef, rawSigning: rawSigning, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &ImageSigner{AnnotationConfig: AnnotationConfig, imageRef: imageRef, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	} else {
-		return &BlobSigner{AnnotationConfig: AnnotationConfig, createSigConfigMap: createSigConfigMap, doApply: doApply, rawSigning: rawSigning, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &BlobSigner{AnnotationConfig: AnnotationConfig, createSigConfigMap: createSigConfigMap, doApply: doApply, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	}
 }
 
 type ImageSigner struct {
 	AnnotationConfig AnnotationConfig
-	rawSigning       bool
+	tarball          bool
 	imageRef         string
 	prikeyPath       *string
 	certPath         *string
@@ -113,15 +118,15 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 		mo = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
 	}
 	var err error
-	if s.rawSigning {
-		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
-		}
-	} else {
+	if s.tarball {
 		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to compress an input file/dir")
+		}
+	} else {
+		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
 		}
 	}
 	var signedBytes []byte
@@ -153,7 +158,7 @@ type BlobSigner struct {
 	AnnotationConfig   AnnotationConfig
 	createSigConfigMap bool
 	doApply            bool
-	rawSigning         bool
+	tarball            bool
 	prikeyPath         *string
 	certPath           *string
 	passFunc           cosign.PassFunc
@@ -173,15 +178,15 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 		mo = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
 	}
 
-	if s.rawSigning {
-		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
-		}
-	} else {
+	if s.tarball {
 		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to compress an input file/dir")
+		}
+	} else {
+		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
 		}
 	}
 	var signedBytes []byte

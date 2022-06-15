@@ -62,7 +62,7 @@ func TestSign(t *testing.T) {
 	t.Logf("signed YAML file: %s", string(signedBytes))
 }
 
-func TestRawSign(t *testing.T) {
+func TestNonTarballSign(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "k8smanifest-sign-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
@@ -81,19 +81,20 @@ func TestRawSign(t *testing.T) {
 	fpath := "testdata/sample-configmap.yaml"
 	outPath := filepath.Join(tmpDir, "sample-configmap-raw.yaml.signed")
 
+	falseVar := false
 	so := &SignOption{
 		KeyPath:          keyPath,
 		Output:           outPath,
-		RawSigning:       true,
+		Tarball:          &falseVar,
 		UpdateAnnotation: true,
 	}
 
 	signedBytes, err := Sign(fpath, so)
 	if err != nil {
-		t.Errorf("failed to sign the test file by raw sign: %s", err.Error())
+		t.Errorf("failed to sign the test file by non-tarball sign: %s", err.Error())
 		return
 	}
-	t.Logf("signed YAML file by raw sign: %s", string(signedBytes))
+	t.Logf("signed YAML file by non-tarball sign: %s", string(signedBytes))
 }
 
 func initSingleTestFile(b64EncodedData []byte, fpath string) error {
