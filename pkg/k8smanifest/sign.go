@@ -61,6 +61,12 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		so.Tarball = &defaultTarballOption
 	}
 	makeTarball := *(so.Tarball)
+
+	// tarball causes inconsistent message among multiple signing, so disable it if append mode
+	if so.AppendSignature {
+		makeTarball = false
+	}
+
 	if makeTarball {
 		log.Warn("[DEPRECATED] The current signing method which makes a tarball for signing is deprecated in v0.3.1+, and will be unavailable in v0.5.0. You can use the new method by `--tarball=no` from CLI or `Tarball: &(false)` in SignOption from codes.")
 	}
