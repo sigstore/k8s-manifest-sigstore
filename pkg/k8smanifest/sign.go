@@ -47,11 +47,11 @@ import (
 const DefaultAnnotationKeyDomain = "cosign.sigstore.dev"
 
 const (
-	defaultImageRefAnnotationBaseName    = "imageRef"
-	defaultSignatureAnnotationBaseName   = "signature"
-	defaultCertificateAnnotationBaseName = "certificate"
-	defaultMessageAnnotationBaseName     = "message"
-	defaultBundleAnnotationBaseName      = "bundle"
+	defaultMessageAnnotationBaseName           = "message"
+	defaultSignatureAnnotationBaseName         = "signature"
+	defaultCertificateAnnotationBaseName       = "certificate"
+	defaultBundleAnnotationBaseName            = "bundle"
+	defaultResourceBundleRefAnnotationBaseName = "resourceBundleRef"
 )
 
 func Sign(inputDir string, so *SignOption) ([]byte, error) {
@@ -61,6 +61,12 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		so.Tarball = &defaultTarballOption
 	}
 	makeTarball := *(so.Tarball)
+
+	// tarball causes inconsistent message among multiple signing, so disable it if append mode
+	if so.AppendSignature {
+		makeTarball = false
+	}
+
 	if makeTarball {
 		log.Warn("[DEPRECATED] The current signing method which makes a tarball for signing is deprecated in v0.3.1+, and will be unavailable in v0.5.0. You can use the new method by `--tarball=no` from CLI or `Tarball: &(false)` in SignOption from codes.")
 	}
@@ -70,7 +76,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ImageRef, so.KeyPath, so.CertPath, output, so.ApplySigConfigMap, makeTarball, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
+	signedBytes, err := NewSigner(so.ResourceBundleRef, so.KeyPath, so.CertPath, output, so.AppendSignature, so.ApplySigConfigMap, makeTarball, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -82,7 +88,7 @@ type Signer interface {
 	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
-func NewSigner(imageRef, keyPath, certPath, output string, doApply, tarball bool, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
+func NewSigner(resBundleRef, keyPath, certPath, output string, appendSig, doApply, tarball bool, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
 	var prikeyPath *string
 	if keyPath != "" {
 		prikeyPath = &keyPath
@@ -95,17 +101,17 @@ func NewSigner(imageRef, keyPath, certPath, output string, doApply, tarball bool
 	if strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) {
 		createSigConfigMap = true
 	}
-	if imageRef != "" {
-		return &ImageSigner{AnnotationConfig: AnnotationConfig, imageRef: imageRef, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+	if resBundleRef != "" {
+		return &ImageSigner{AnnotationConfig: AnnotationConfig, resBundleRef: resBundleRef, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	} else {
-		return &BlobSigner{AnnotationConfig: AnnotationConfig, createSigConfigMap: createSigConfigMap, doApply: doApply, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &BlobSigner{AnnotationConfig: AnnotationConfig, createSigConfigMap: createSigConfigMap, appendSig: appendSig, doApply: doApply, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
 	}
 }
 
 type ImageSigner struct {
 	AnnotationConfig AnnotationConfig
 	tarball          bool
-	imageRef         string
+	resBundleRef     string
 	prikeyPath       *string
 	certPath         *string
 	passFunc         cosign.PassFunc
@@ -113,36 +119,37 @@ type ImageSigner struct {
 
 func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
 	var inputDataBuffer bytes.Buffer
-	var mo *k8ssigutil.MutateOptions
+	var moClean, moImage *k8ssigutil.MutateOptions
+	moClean = getMutationOptionForClean(s.AnnotationConfig)
 	if len(imageAnnotations) > 0 {
-		mo = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
+		moImage = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
 	}
 	var err error
 	if s.tarball {
-		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
+		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to compress an input file/dir")
 		}
 	} else {
-		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
+		err = makeMessageYAML(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
 		}
 	}
 	var signedBytes []byte
 	// upload files as image
-	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.imageRef)
+	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.resBundleRef)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.imageRef, s.prikeyPath, s.certPath, s.passFunc, imageAnnotations)
+	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.passFunc, imageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
 	if output != "" {
 		// generate a signed YAML file
-		signedBytes, err = generateSignedYAMLManifest(inputDir, s.imageRef, nil, imageAnnotations, s.AnnotationConfig)
+		signedBytes, err = generateSignedYAMLManifest(inputDir, s.resBundleRef, nil, false, imageAnnotations, s.AnnotationConfig)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
@@ -157,6 +164,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 type BlobSigner struct {
 	AnnotationConfig   AnnotationConfig
 	createSigConfigMap bool
+	appendSig          bool
 	doApply            bool
 	tarball            bool
 	prikeyPath         *string
@@ -173,18 +181,19 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	defer os.RemoveAll(dir)
 	tmpBlobFile := filepath.Join(dir, "tmp-blob-file")
 
-	var mo *k8ssigutil.MutateOptions
-	if imageAnnotations != nil {
-		mo = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
+	var moClean, moImage *k8ssigutil.MutateOptions
+	moClean = getMutationOptionForClean(s.AnnotationConfig)
+	if len(imageAnnotations) > 0 {
+		moImage = &k8ssigutil.MutateOptions{AW: embedAnnotation, Annotations: imageAnnotations}
 	}
 
 	if s.tarball {
-		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, mo)
+		err = k8ssigutil.TarGzCompress(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to compress an input file/dir")
 		}
 	} else {
-		err = makeMessageYAML(inputDir, &inputDataBuffer, mo)
+		err = makeMessageYAML(inputDir, &inputDataBuffer, moClean, moImage)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to make a message YAML from the input file/dir")
 		}
@@ -222,7 +231,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 		}
 	} else {
 		// generate a signed YAML file
-		signedBytes, err = generateSignedYAMLManifest(inputDir, "", sigMaps, imageAnnotations, s.AnnotationConfig)
+		signedBytes, err = generateSignedYAMLManifest(inputDir, "", sigMaps, s.appendSig, imageAnnotations, s.AnnotationConfig)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
@@ -248,7 +257,7 @@ func makeMessageYAML(inputDir string, outBuffer *bytes.Buffer, moList ...*k8ssig
 	return nil
 }
 
-func uploadFileToRegistry(inputData []byte, imageRef string) error {
+func uploadFileToRegistry(inputData []byte, resBundleRef string) error {
 	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
 	if err != nil {
 		return err
@@ -263,7 +272,7 @@ func uploadFileToRegistry(inputData []byte, imageRef string) error {
 
 	files := []cremote.File{cremote.FileFromFlag(fpath)}
 
-	ref, err := name.ParseReference(imageRef)
+	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return err
 	}
@@ -300,8 +309,8 @@ func generateSignatureConfigMap(sigResRef string, sigMaps map[string][]byte) (*c
 	return cm, nil
 }
 
-func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]byte, imageAnnotations map[string]interface{}, AnnotationConfig AnnotationConfig) ([]byte, error) {
-	if imageRef == "" && len(sigMaps) == 0 {
+func generateSignedYAMLManifest(inputDir, resBundleRef string, sigMaps map[string][]byte, appendSig bool, imageAnnotations map[string]interface{}, AnnotationConfig AnnotationConfig) ([]byte, error) {
+	if resBundleRef == "" && len(sigMaps) == 0 {
 		return nil, errors.New("either image ref or signature infos are required for generating a signed YAML")
 	}
 
@@ -321,27 +330,43 @@ func generateSignedYAMLManifest(inputDir, imageRef string, sigMaps map[string][]
 	}
 	yamls = tmpYAMLs
 
-	imageRefAnnotationKey := AnnotationConfig.ImageRefAnnotationKey()
-	annotationKeyMap := AnnotationConfig.AnnotationKeyMap()
-	annotationMap := map[string]interface{}{}
-	if imageRef != "" {
-		annotationMap[imageRefAnnotationKey] = imageRef
-	} else if len(sigMaps) > 0 {
-		for key, val := range sigMaps {
-			annoKey, ok := annotationKeyMap[key]
-			if ok {
-				annotationMap[annoKey] = string(val)
+	commonAnnotationMap := map[string]interface{}{}
+	if resBundleRef != "" {
+		resBundleRefAnnotationKey := AnnotationConfig.ResourceBundleRefAnnotationKey()
+		commonAnnotationMap[resBundleRefAnnotationKey] = resBundleRef
+	}
+	for k, v := range imageAnnotations {
+		commonAnnotationMap[k] = v
+	}
+	// if appendSig is false, then signature is embedded into a fixed annotation `<DOMAIN>/signature`
+	if !appendSig {
+		annotationKeyMap := AnnotationConfig.AnnotationKeyMap(0)
+		for k, v := range sigMaps {
+			if annoKey, ok := annotationKeyMap[k]; ok {
+				commonAnnotationMap[annoKey] = string(v)
 			}
 		}
-	}
-
-	for k, v := range imageAnnotations {
-		annotationMap[k] = v
 	}
 
 	signedYAMLs := [][]byte{}
 	sumErr := []string{}
 	for _, yaml := range yamls {
+		annotationMap := map[string]interface{}{}
+		for k, v := range commonAnnotationMap {
+			annotationMap[k] = v
+		}
+		// if appendSig is true, then signature is appended like `<DOMAIN>/signature_1` on top of current sigs
+		if appendSig {
+			annotations := k8ssigutil.GetAnnotationsInYAML(yaml)
+			sigSets := AnnotationConfig.GetAllSignatureSets(annotations)
+			annotationKeyMap := AnnotationConfig.AnnotationKeyMap(len(sigSets))
+			for k, v := range sigMaps {
+				if annoKey, ok := annotationKeyMap[k]; ok {
+					annotationMap[annoKey] = string(v)
+				}
+			}
+		}
+
 		signedYAML, err := embedAnnotation(yaml, annotationMap)
 		if err != nil {
 			sumErr = append(sumErr, err.Error())
@@ -389,6 +414,52 @@ func embedAnnotation(yamlBytes []byte, annotationMap map[string]interface{}) ([]
 	embedConcatYAMLs := k8ssigutil.ConcatenateYAMLs(embedYAMLs)
 
 	return embedConcatYAMLs, nil
+}
+
+// this mutation option removes signature annotations in the original YAML manifest
+// when generating message which will be signed later
+func getMutationOptionForClean(annoCfg AnnotationConfig) *k8ssigutil.MutateOptions {
+	annotationMaskMap := map[string]interface{}{}
+	for _, annotationFullKey := range annoCfg.AnnotationKeyMask() {
+		// any value is fine because it is not used, so use true here
+		annotationMaskMap[annotationFullKey] = true
+	}
+	return &k8ssigutil.MutateOptions{
+		AW:          removeSignatureAnnotation,
+		Annotations: annotationMaskMap,
+	}
+}
+
+// signature annotations should be ignored when generating message data
+// this function is used for this purpose
+func removeSignatureAnnotation(yamlBytes []byte, annotationMap map[string]interface{}) ([]byte, error) {
+	yamls := [][]byte{}
+	if k8ssigutil.IsConcatYAMLs(yamlBytes) {
+		yamls = k8ssigutil.SplitConcatYAMLs(yamlBytes)
+	} else {
+		yamls = append(yamls, yamlBytes)
+	}
+
+	maskedYAMLs := [][]byte{}
+	for _, yaml := range yamls {
+		orgNode, err := mapnode.NewFromYamlBytes(yaml)
+		if err != nil {
+			return nil, err
+		}
+		sigAnnotationMask := []string{}
+		for k := range annotationMap {
+			sigAnnotationMask = append(sigAnnotationMask, k)
+		}
+		maskedNode := orgNode.Mask(sigAnnotationMask)
+		annotationNode, _ := maskedNode.GetNode("metadata.annotations")
+		if annotationNode.Size() == 0 {
+			maskedNode = maskedNode.Mask([]string{"metadata.annotations"})
+		}
+		maskedYamlBytes := maskedNode.ToYaml()
+		maskedYAMLs = append(maskedYAMLs, []byte(maskedYamlBytes))
+	}
+	maskedConcatYAMLs := k8ssigutil.ConcatenateYAMLs(maskedYAMLs)
+	return maskedConcatYAMLs, nil
 }
 
 func applySignatureConfigMap(configMapRef string, newCM *corev1.ConfigMap) ([]byte, error) {

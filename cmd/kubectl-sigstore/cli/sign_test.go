@@ -24,9 +24,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pkg/errors"
-
 	"github.com/ghodss/yaml"
+	"github.com/pkg/errors"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -54,7 +53,7 @@ func TestSign(t *testing.T) {
 
 	fpath := "testdata/sample-configmap.yaml"
 	outPath := filepath.Join(tmpDir, "sample-configmap.yaml.signed")
-	err = sign(fpath, "", keyPath, outPath, false, true, true, nil)
+	err = sign(fpath, "", keyPath, outPath, false, false, true, true, nil)
 	if err != nil {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
@@ -68,7 +67,7 @@ func TestSign(t *testing.T) {
 
 	fpath2 := "testdata/sample-configmap-concat.yaml"
 	outPath2 := filepath.Join(tmpDir, "sample-configmap-concat.yaml.signed")
-	err = sign(fpath2, "", keyPath, outPath2, false, true, true, nil)
+	err = sign(fpath2, "", keyPath, outPath2, false, false, true, true, nil)
 	if err != nil {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
@@ -99,7 +98,7 @@ func TestSign(t *testing.T) {
 
 	t.Logf("signed YAML file2: %s", string(outBytes2))
 
-	manifestInAnnotations, err := getManifestInMessage([]byte(msgInAnnotations))
+	manifestInAnnotations, err := getManifestInTarballMessage([]byte(msgInAnnotations))
 	if err != nil {
 		t.Errorf("failed to get YAML manifest in message annotations: %s", err.Error())
 		return
@@ -125,7 +124,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 	return nil
 }
 
-func getManifestInMessage(msgBytes []byte) ([]byte, error) {
+func getManifestInTarballMessage(msgBytes []byte) ([]byte, error) {
 	dir, err := ioutil.TempDir("", "kubectl-sigstore-sign-test-temp-dir")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")

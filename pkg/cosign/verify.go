@@ -45,10 +45,10 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, error) {
-	ref, err := name.ParseReference(imageRef)
+func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, error) {
+	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
-		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", imageRef, err.Error())
+		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", resBundleRef, err.Error())
 	}
 
 	rekorSeverURL := GetRekorServerURL()
@@ -85,10 +85,10 @@ func VerifyImage(imageRef string, pubkeyPath string) (bool, string, *int64, erro
 
 	checkedSigs, _, err := cosign.VerifyImageSignatures(context.Background(), ref, co)
 	if err != nil {
-		return false, "", nil, fmt.Errorf("error occured while verifying image `%s`; %s", imageRef, err.Error())
+		return false, "", nil, fmt.Errorf("error occured while verifying image `%s`; %s", resBundleRef, err.Error())
 	}
 	if len(checkedSigs) == 0 {
-		return false, "", nil, fmt.Errorf("no verified signatures in the image `%s`; %s", imageRef, err.Error())
+		return false, "", nil, fmt.Errorf("no verified signatures in the image `%s`; %s", resBundleRef, err.Error())
 	}
 	var cert *x509.Certificate
 	var signedTimestamp *int64

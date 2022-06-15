@@ -37,6 +37,12 @@ import (
 
 const defaultmaxResourceManifestsNum = 3
 
+var supportedExtensions = map[string]bool{
+	".yaml":   true,
+	".yml":    true,
+	".signed": true,
+}
+
 type ResourceInfo struct {
 	group     string
 	version   string
@@ -60,7 +66,7 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 
 	foundYAMLs := [][]byte{}
 	err := filepath.Walk(dirPath, func(fpath string, info os.FileInfo, err error) error {
-		if err == nil && (path.Ext(info.Name()) == ".yaml" || path.Ext(info.Name()) == ".yml") {
+		if err == nil && supportedExtensions[path.Ext(info.Name())] {
 			yamlBytes, err := ioutil.ReadFile(fpath)
 			if err == nil && isK8sResourceYAML(yamlBytes) {
 				foundYAMLs = append(foundYAMLs, yamlBytes)

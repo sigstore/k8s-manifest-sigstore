@@ -32,10 +32,12 @@ const filenameIfInputIsDir = "manifest.yaml"
 
 func NewCmdSign() *cobra.Command {
 
-	var imageRef string
+	var resBundleRef string
 	var inputDir string
 	var keyPath string
 	var output string
+	var appendSignature bool
+	var replaceSignature bool
 	var applySignatureConfigMap bool
 	var updateAnnotation bool
 	var tarballOpt string
@@ -44,9 +46,13 @@ func NewCmdSign() *cobra.Command {
 		Use:   "sign -f FILENAME [-i IMAGE]",
 		Short: "A command to sign Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !replaceSignature {
+				appendSignature = true
+			}
 
 			makeTarball := (tarballOpt == "yes")
-			err := sign(inputDir, imageRef, keyPath, output, applySignatureConfigMap, updateAnnotation, makeTarball, imageAnnotations)
+
+			err := sign(inputDir, resBundleRef, keyPath, output, appendSignature, applySignatureConfigMap, updateAnnotation, makeTarball, imageAnnotations)
 			if err != nil {
 				log.Fatalf("error occurred during signing: %s", err.Error())
 				return nil
@@ -56,10 +62,12 @@ func NewCmdSign() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVarP(&inputDir, "filename", "f", "", "file name which will be signed (if dir, all YAMLs inside it will be signed)")
-	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "image name which bundles yaml files and be signed")
-	cmd.PersistentFlags().StringVarP(&output, "output", "o", "", "output file name or k8s signature configmap reference (if empty, use `<filename>.signed`)")
+	cmd.PersistentFlags().StringVarP(&resBundleRef, "image", "i", "", "image name which bundles yaml files and be signed")
+	cmd.PersistentFlags().StringVarP(&output, "output", "o", "", "output file name or k8s signature configmap reference (if empty, use \"<filename>.signed\")")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key (if empty, do key-less signing)")
-	cmd.PersistentFlags().BoolVar(&applySignatureConfigMap, "apply-signature-configmap", false, "whether to apply a generated signature configmap only when `output` is k8s configmap")
+	cmd.PersistentFlags().BoolVarP(&appendSignature, "append-signature", "A", false, "if true, keep the existing signatures and append the new one to the annotation like \"signature_1\" or \"signature_2\"")
+	cmd.PersistentFlags().BoolVar(&replaceSignature, "replace-signature", true, "just to clarify the default mode of signature storing. If false, \"append-signature\" is enabled automatically")
+	cmd.PersistentFlags().BoolVar(&applySignatureConfigMap, "apply-signature-configmap", false, "whether to apply a generated signature configmap only when \"output\" is k8s configmap")
 	cmd.PersistentFlags().BoolVar(&updateAnnotation, "annotation-metadata", true, "whether to update annotation and generate signed yaml file")
 	cmd.PersistentFlags().StringVar(&tarballOpt, "tarball", "yes", "whether to make a tarball for signing (this will be default to \"no\" in v0.5.0+)")
 	cmd.PersistentFlags().StringArrayVarP(&imageAnnotations, "annotation", "a", []string{}, "extra key=value pairs to sign")
@@ -67,7 +75,7 @@ func NewCmdSign() *cobra.Command {
 	return cmd
 }
 
-func sign(inputDir, imageRef, keyPath, output string, applySignatureConfigMap, updateAnnotation, tarball bool, annotations []string) error {
+func sign(inputDir, resBundleRef, keyPath, output string, appendSignature, applySignatureConfigMap, updateAnnotation, tarball bool, annotations []string) error {
 	if output == "" && updateAnnotation {
 		if isDir, _ := k8smnfutil.IsDir(inputDir); isDir {
 			// e.g.) "./yamls/" --> "./yamls/manifest.yaml.signed"
@@ -88,12 +96,13 @@ func sign(inputDir, imageRef, keyPath, output string, applySignatureConfigMap, u
 	}
 
 	so := &k8smanifest.SignOption{
-		ImageRef:         imageRef,
-		KeyPath:          keyPath,
-		Output:           output,
-		UpdateAnnotation: updateAnnotation,
-		Tarball:          &tarball,
-		ImageAnnotations: anntns,
+		ResourceBundleRef: resBundleRef,
+		KeyPath:           keyPath,
+		Output:            output,
+		UpdateAnnotation:  updateAnnotation,
+		Tarball:           &tarball,
+		ImageAnnotations:  anntns,
+		AppendSignature:   appendSignature,
 	}
 
 	if applySignatureConfigMap && strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) {

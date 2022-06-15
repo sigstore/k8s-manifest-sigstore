@@ -17,8 +17,6 @@
 package k8smanifest
 
 import (
-	"fmt"
-
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -31,6 +29,9 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	if objManifest == nil {
 		return nil, errors.New("input YAML manifest must be non-empty")
 	}
+	if vo == nil {
+		vo = &VerifyManifestOption{}
+	}
 
 	var obj unstructured.Unstructured
 	_ = yaml.Unmarshal(objManifest, &obj)
@@ -39,19 +40,11 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	signerName := ""
 	var err error
 
-	// if imageRef is not specified in args and it is found in object annotations, use the found image ref
-	var imageRefAnnotationKey string
-	if vo == nil {
-		imageRefAnnotationKey = fmt.Sprintf("%s/%s", DefaultAnnotationKeyDomain, defaultImageRefAnnotationBaseName)
-	} else {
-		imageRefAnnotationKey = vo.AnnotationConfig.ImageRefAnnotationKey()
-	}
-	if vo.ImageRef == "" {
-		annotations := obj.GetAnnotations()
-		annoImageRef, found := annotations[imageRefAnnotationKey]
-		if found {
-			vo.ImageRef = annoImageRef
-		}
+	// use resourceBundleRef if specified in the annotation; otherwise follow the verify option
+	resBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
+	annotations := obj.GetAnnotations()
+	if annoResBundleRef, found := annotations[resBundleRefAnnotationKey]; found {
+		vo.ResourceBundleRef = annoResBundleRef
 	}
 
 	// add signature/message/others annotations to ignore fields
@@ -68,7 +61,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 
 	var resourceManifests [][]byte
 	var sigRef string
-	resourceManifests, sigRef, err = NewManifestFetcher(vo.ImageRef, vo.SignatureResourceRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
+	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, vo.SignatureResourceRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}

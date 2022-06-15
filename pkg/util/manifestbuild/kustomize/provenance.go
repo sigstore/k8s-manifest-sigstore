@@ -259,8 +259,8 @@ func resourceToMaterial(kr *KustomizationResource) *intotoprov02.ProvenanceMater
 }
 
 // returns image digest
-func GetImageDigest(imageRef string) (string, error) {
-	ref, err := name.ParseReference(imageRef)
+func GetImageDigest(resBundleRef string) (string, error) {
+	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return "", err
 	}

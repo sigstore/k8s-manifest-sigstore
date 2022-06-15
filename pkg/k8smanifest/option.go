@@ -18,6 +18,7 @@ package k8smanifest
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -43,7 +44,7 @@ type SignOption struct {
 
 	// these options should be input from CLI arguments
 	KeyPath           string                 `json:"-"`
-	ImageRef          string                 `json:"-"`
+	ResourceBundleRef string                 `json:"-"`
 	CertPath          string                 `json:"-"`
 	Output            string                 `json:"-"`
 	UpdateAnnotation  bool                   `json:"-"`
@@ -51,6 +52,7 @@ type SignOption struct {
 	PassFunc          cosign.PassFunc        `json:"-"`
 	ApplySigConfigMap bool                   `json:"-"`
 	Tarball           *bool                  `json:"-"`
+	AppendSignature   bool                   `json:"-"`
 }
 
 // option for VerifyResource()
@@ -97,7 +99,7 @@ type verifyOption struct {
 
 	// these options should be input from CLI arguments
 	KeyPath               string `json:"-"`
-	ImageRef              string `json:"-"`
+	ResourceBundleRef     string `json:"-"`
 	SignatureResourceRef  string `json:"-"`
 	ProvenanceResourceRef string `json:"-"`
 	UseCache              bool   `json:"-"`
@@ -126,74 +128,105 @@ type AnnotationConfig struct {
 	// default "cosign.sigstore.dev"
 	AnnotationKeyDomain string `json:"annotationKeyDomain,omitempty"`
 
-	ImageRefBaseName    string `json:"imageRefBaseName,omitempty"`
-	SignatureBaseName   string `json:"signatureBaseName,omitempty"`
-	CertificateBaseName string `json:"certificateBaseName,omitempty"`
-	MessageBaseName     string `json:"messageBaseName,omitempty"`
-	BundleBaseName      string `json:"bundleBaseName,omitempty"`
-
-	// signature annotation keys in addition to `<AnnotationKeyDomain>/signature`
-	// e.g.) annotation.domain.com/signature-alt
-	// this config is used only for verification
-	AdditionalSignatureKeysForVerify []string `json:"additionalSignatureKeysForVerify,omitempty"`
-}
-
-func (c AnnotationConfig) ImageRefAnnotationKey() string {
-	return c.annotationKey(firstNonEmpty(c.ImageRefBaseName, defaultImageRefAnnotationBaseName))
-}
-
-func (c AnnotationConfig) SignatureAnnotationKey() string {
-	return c.annotationKey(firstNonEmpty(c.SignatureBaseName, defaultSignatureAnnotationBaseName))
-}
-
-func (c AnnotationConfig) SignatureAnnotationKeysForVerify() []string {
-	keys := []string{c.SignatureAnnotationKey()}
-	keys = append(keys, c.AdditionalSignatureKeysForVerify...)
-	return keys
-}
-
-func (c AnnotationConfig) CertificateAnnotationKey() string {
-	return c.annotationKey(firstNonEmpty(c.CertificateBaseName, defaultCertificateAnnotationBaseName))
+	ResourceBundleRefBaseName string `json:"resourceBundleRefBaseName,omitempty"`
+	SignatureBaseName         string `json:"signatureBaseName,omitempty"`
+	CertificateBaseName       string `json:"certificateBaseName,omitempty"`
+	MessageBaseName           string `json:"messageBaseName,omitempty"`
+	BundleBaseName            string `json:"bundleBaseName,omitempty"`
 }
 
 func (c AnnotationConfig) MessageAnnotationKey() string {
-	return c.annotationKey(firstNonEmpty(c.MessageBaseName, defaultMessageAnnotationBaseName))
+	return c.annotationKey(firstNonEmpty(c.MessageBaseName, defaultMessageAnnotationBaseName), 0)
 }
 
-func (c AnnotationConfig) BundleAnnotationKey() string {
-	return c.annotationKey(firstNonEmpty(c.BundleBaseName, defaultBundleAnnotationBaseName))
+func (c AnnotationConfig) SignatureAnnotationKey(i int) string {
+	return c.annotationKey(firstNonEmpty(c.SignatureBaseName, defaultSignatureAnnotationBaseName), i)
 }
 
-func (c AnnotationConfig) annotationKey(keyType string) string {
+func (c AnnotationConfig) CertificateAnnotationKey(i int) string {
+	return c.annotationKey(firstNonEmpty(c.CertificateBaseName, defaultCertificateAnnotationBaseName), i)
+}
+
+func (c AnnotationConfig) BundleAnnotationKey(i int) string {
+	return c.annotationKey(firstNonEmpty(c.BundleBaseName, defaultBundleAnnotationBaseName), i)
+}
+
+func (c AnnotationConfig) ResourceBundleRefAnnotationKey() string {
+	return c.annotationKey(firstNonEmpty(c.ResourceBundleRefBaseName, defaultResourceBundleRefAnnotationBaseName), 0)
+}
+
+func (c AnnotationConfig) annotationKey(keyType string, i int) string {
 	d := c.AnnotationKeyDomain
 	if d == "" {
 		d = DefaultAnnotationKeyDomain
 	}
-	return fmt.Sprintf("%s/%s", d, keyType)
+	key := fmt.Sprintf("%s/%s", d, keyType)
+	if i > 0 {
+		key = fmt.Sprintf("%s_%v", key, i)
+	}
+	return key
 }
 
 // this map determins annotations in the signed manifest
-func (c AnnotationConfig) AnnotationKeyMap() map[string]string {
+func (c AnnotationConfig) AnnotationKeyMap(i int) map[string]string {
 	return map[string]string{
-		defaultImageRefAnnotationBaseName:    c.ImageRefAnnotationKey(),
-		defaultSignatureAnnotationBaseName:   c.SignatureAnnotationKey(),
-		defaultCertificateAnnotationBaseName: c.CertificateAnnotationKey(),
-		defaultMessageAnnotationBaseName:     c.MessageAnnotationKey(),
-		defaultBundleAnnotationBaseName:      c.BundleAnnotationKey(),
+		defaultMessageAnnotationBaseName:           c.MessageAnnotationKey(),
+		defaultSignatureAnnotationBaseName:         c.SignatureAnnotationKey(i),
+		defaultCertificateAnnotationBaseName:       c.CertificateAnnotationKey(i),
+		defaultBundleAnnotationBaseName:            c.BundleAnnotationKey(i),
+		defaultResourceBundleRefAnnotationBaseName: c.ResourceBundleRefAnnotationKey(),
 	}
+}
+
+func (c AnnotationConfig) GetAllSignatureSets(annotations map[string]string) []map[string]string {
+	sigSets := []map[string]string{}
+	msgKey := c.MessageAnnotationKey()
+	msg, ok := annotations[msgKey]
+	annotationBytes, _ := json.Marshal(annotations)
+	log.Debugf("annotations: %s", string(annotationBytes))
+	if !ok {
+		return []map[string]string{}
+	}
+	for i := 0; ; i++ {
+		sig, ok := annotations[c.SignatureAnnotationKey(i)]
+		// if signature_i is not found, finish looking for signature set
+		if !ok {
+			break
+		}
+		sigMapi := map[string]string{}
+		// message
+		sigMapi[defaultMessageAnnotationBaseName] = msg
+		// signature
+		sigMapi[defaultSignatureAnnotationBaseName] = sig
+		// certificate
+		if cert, ok := annotations[c.CertificateAnnotationKey(i)]; ok {
+			sigMapi[defaultCertificateAnnotationBaseName] = cert
+		}
+		// bundle
+		if bndl, ok := annotations[c.BundleAnnotationKey(i)]; ok {
+			sigMapi[defaultBundleAnnotationBaseName] = bndl
+		}
+		sigSets = append(sigSets, sigMapi)
+
+		// prevent from infinite loop; the num of signature sets is always less than the num of annotations
+		if i > len(annotations) {
+			break
+		}
+	}
+	sigSetsBytes, _ := json.Marshal(sigSets)
+	log.Debugf("sigSets: %s", string(sigSetsBytes))
+	return sigSets
 }
 
 // this list is used as ignorefields for verification
 func (c AnnotationConfig) AnnotationKeyMask() []string {
-	masks := []string{
-		"metadata.annotations." + c.ImageRefAnnotationKey(),
-		"metadata.annotations." + c.SignatureAnnotationKey(),
-		"metadata.annotations." + c.CertificateAnnotationKey(),
-		"metadata.annotations." + c.MessageAnnotationKey(),
-		"metadata.annotations." + c.BundleAnnotationKey(),
+	return []string{
+		"metadata.annotations." + c.MessageAnnotationKey() + "*",
+		"metadata.annotations." + c.SignatureAnnotationKey(0) + "*",
+		"metadata.annotations." + c.CertificateAnnotationKey(0) + "*",
+		"metadata.annotations." + c.BundleAnnotationKey(0) + "*",
+		"metadata.annotations." + c.ResourceBundleRefAnnotationKey() + "*",
 	}
-	masks = append(masks, c.AdditionalSignatureKeysForVerify...)
-	return masks
 }
 
 func (c AnnotationConfig) AnnotationKeyIgnoreField() ObjectFieldBindingList {
@@ -391,14 +424,14 @@ func parseConfigObj(configObj *unstructured.Unstructured, configField string) (*
 		return nil, fmt.Errorf("failed to parse config field `%s` in `%s`", configField, configObj.GetName())
 	}
 	var configBytes []byte
-	var imageRefInConfigObj string
+	var resBundleRefInConfigObj string
 	switch cfg := cfgData.(type) {
 	case string:
 		configBytes = []byte(cfg)
 	case *mapnode.Node:
 		configBytes = []byte(cfg.ToYaml())
-		if tmpImageRef := cfg.GetString("imageRef"); tmpImageRef != "" {
-			imageRefInConfigObj = tmpImageRef
+		if tmpResourceBundleRef := cfg.GetString("resourceBundleRef"); tmpResourceBundleRef != "" {
+			resBundleRefInConfigObj = tmpResourceBundleRef
 		}
 	default:
 		return nil, fmt.Errorf("cannot handle this type for config object: %T", cfg)
@@ -409,8 +442,8 @@ func parseConfigObj(configObj *unstructured.Unstructured, configField string) (*
 	if err != nil {
 		return nil, err
 	}
-	if imageRefInConfigObj != "" {
-		option.ImageRef = imageRefInConfigObj
+	if resBundleRefInConfigObj != "" {
+		option.ResourceBundleRef = resBundleRefInConfigObj
 	}
 	return option, nil
 }

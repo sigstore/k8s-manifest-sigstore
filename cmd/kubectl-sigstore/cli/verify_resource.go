@@ -85,7 +85,7 @@ var OSExit = os.Exit
 func NewCmdVerifyResource() *cobra.Command {
 
 	var filename string
-	var imageRef string
+	var resBundleRef string
 	var sigResRef string
 	var keyPath string
 	var configPath string
@@ -131,7 +131,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, imageRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat, concurrencyNum)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, resBundleRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat, concurrencyNum)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -143,7 +143,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "manifest filename (this can be \"-\", then read a file from stdin)")
-	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
+	cmd.PersistentFlags().StringVarP(&resBundleRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
 	cmd.PersistentFlags().StringVar(&sigResRef, "signature-resource", "", "a comma-separated list of configmaps that contains message, signature and some others")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys or environment variable names start with \"env://\" (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file or k8s object identifier like k8s://[KIND]/[NAMESPACE]/[NAME]")
@@ -163,7 +163,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
 	var err error
 	start := time.Now().UTC()
 	if outputFormat != "" {
@@ -207,8 +207,8 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		objs, err = KOptions.Get(kubeGetArgs, "")
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
-	} else if imageRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(imageRef, "", vo.AnnotationConfig, nil, vo.MaxResourceManifestNum)
+	} else if resBundleRef != "" {
+		manifestFetcher := k8smanifest.NewManifestFetcher(resBundleRef, "", vo.AnnotationConfig, nil, vo.MaxResourceManifestNum)
 		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
 		var yamlsInImage [][]byte
 		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
@@ -219,8 +219,8 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		return false, errors.Wrap(err, "failed to get objects in cluster")
 	}
 
-	if imageRef != "" {
-		vo.ImageRef = imageRef
+	if resBundleRef != "" {
+		vo.ResourceBundleRef = resBundleRef
 	}
 	if sigResRef != "" {
 		vo.SignatureResourceRef = validateConfigMapRef(sigResRef)
@@ -235,7 +235,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
 
-	imagesToBeused := getAllImagesToBeUsed(vo.ImageRef, objs, vo.AnnotationConfig, vo.Provenance)
+	imagesToBeused := getAllImagesToBeUsed(vo.ResourceBundleRef, objs, vo.AnnotationConfig, vo.Provenance)
 
 	if outputFormat == "" {
 		log.Info("loading some required data.")
@@ -246,7 +246,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 		img := imagesToBeused[i]
 		// manifest fetch functions
 		if img.imageType == k8smanifest.ArtifactManifestImage {
-			manifestFetcher := k8smanifest.NewManifestFetcher(img.ImageRef, "", vo.AnnotationConfig, nil, 0)
+			manifestFetcher := k8smanifest.NewManifestFetcher(img.ResourceBundleRef, "", vo.AnnotationConfig, nil, 0)
 			if fetcher, ok := manifestFetcher.(*k8smanifest.ImageManifestFetcher); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(fetcher.FetchAll))
 			}
@@ -257,14 +257,14 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, imageRef, sigResRef, k
 			keyPath = &(vo.KeyPath)
 		}
 		// signature verification functions
-		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ImageRef, keyPath, vo.AnnotationConfig)
+		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ResourceBundleRef, keyPath, vo.AnnotationConfig)
 		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
 			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
 		}
 
 		if vo.Provenance {
 			// provenance functions
-			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ImageRef, img.Digest, "")
+			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ResourceBundleRef, img.Digest, "")
 			if getter, ok := provGetter.(*k8smanifest.ImageProvenanceGetter); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(getter.Get))
 			}
@@ -851,7 +851,7 @@ func makeResourceResultTable(result VerifyResourceResult, provenanceEnabled bool
 				attestationFoundStr := "-"
 				sbomFoundStr := "-"
 				for _, prov := range result.Provenance.Items {
-					if prov.Artifact != ci.ImageRef {
+					if prov.Artifact != ci.ResourceBundleRef {
 						continue
 					}
 					if prov.RawAttestation != "" {
@@ -1212,20 +1212,20 @@ type imageToBeUsed struct {
 }
 
 // list all images to be used for manifest matching, signature verification and provenance search
-func getAllImagesToBeUsed(imageRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled bool) []imageToBeUsed {
+func getAllImagesToBeUsed(resBundleRef string, objs []unstructured.Unstructured, annotationConfig k8smanifest.AnnotationConfig, provenanceEnabled bool) []imageToBeUsed {
 	images := []imageToBeUsed{}
-	if imageRef == "" {
-		imageAnnotationKey := annotationConfig.ImageRefAnnotationKey()
+	if resBundleRef == "" {
+		resBundleRefAnnotationKey := annotationConfig.ResourceBundleRefAnnotationKey()
 		for _, obj := range objs {
 			annt := obj.GetAnnotations()
-			if img, ok := annt[imageAnnotationKey]; ok {
-				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+			if img, ok := annt[resBundleRefAnnotationKey]; ok {
+				images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ResourceBundleRef: img}})
 			}
 		}
 	} else {
-		imageRefList := k8ssigutil.SplitCommaSeparatedString(imageRef)
-		for _, img := range imageRefList {
-			images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ImageRef: img}})
+		resBundleRefList := k8ssigutil.SplitCommaSeparatedString(resBundleRef)
+		for _, img := range resBundleRefList {
+			images = append(images, imageToBeUsed{imageType: k8smanifest.ArtifactManifestImage, ImageObject: kubeutil.ImageObject{ResourceBundleRef: img}})
 		}
 	}
 
