@@ -62,6 +62,41 @@ func TestSign(t *testing.T) {
 	t.Logf("signed YAML file: %s", string(signedBytes))
 }
 
+func TestNonTarballSign(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "k8smanifest-sign-test")
+	if err != nil {
+		t.Errorf("failed to create temp dir: %s", err.Error())
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "testkey")
+	_ = os.Setenv("COSIGN_PASSWORD", "")
+	err = initSingleTestFile(b64EncodedTestKey, keyPath)
+	if err != nil {
+		t.Errorf("failed to init a signing key file for test: %s", err.Error())
+		return
+	}
+
+	fpath := "testdata/sample-configmap.yaml"
+	outPath := filepath.Join(tmpDir, "sample-configmap-raw.yaml.signed")
+
+	falseVar := false
+	so := &SignOption{
+		KeyPath:          keyPath,
+		Output:           outPath,
+		Tarball:          &falseVar,
+		UpdateAnnotation: true,
+	}
+
+	signedBytes, err := Sign(fpath, so)
+	if err != nil {
+		t.Errorf("failed to sign the test file by non-tarball sign: %s", err.Error())
+		return
+	}
+	t.Logf("signed YAML file by non-tarball sign: %s", string(signedBytes))
+}
+
 func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 	testblob, err := base64.StdEncoding.DecodeString(string(b64EncodedData))
 	if err != nil {

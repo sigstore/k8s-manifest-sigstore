@@ -74,6 +74,28 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 	return foundYAMLs, nil
 }
 
+func LoadYAMLsInDirWithMutationOptions(dirPath string, moList ...*MutateOptions) ([][]byte, error) {
+	yamls, err := FindYAMLsInDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+	mYamls := [][]byte{}
+	for _, yaml := range yamls {
+		mYaml := yaml
+		for _, mo := range moList {
+			if mo == nil {
+				continue
+			}
+			mYaml, err = mo.AW(mYaml, mo.Annotations)
+			if err != nil {
+				return nil, err
+			}
+		}
+		mYamls = append(mYamls, mYaml)
+	}
+	return mYamls, nil
+}
+
 // Out of `concatYamlBytes`, find YAML manifests that are corresponding to the `objBytes`.
 // `maxResourceManifestNum` determines how many candidate manifests can be returned. If empty, default to 3.
 // `ignoreFields` is used for value based search, the specified fields are ignored on the comparison.

@@ -50,6 +50,7 @@ type SignOption struct {
 	ImageAnnotations  map[string]interface{} `json:"-"`
 	PassFunc          cosign.PassFunc        `json:"-"`
 	ApplySigConfigMap bool                   `json:"-"`
+	Tarball           *bool                  `json:"-"`
 }
 
 // option for VerifyResource()
