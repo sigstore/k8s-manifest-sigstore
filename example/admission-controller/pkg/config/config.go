@@ -42,7 +42,7 @@ type ManifestIntegrityConfig struct {
 	SkipUsers                        ObjectUserBindingList           `json:"skipUsers,omitempty"`
 	KeySecertName                    string                          `json:"keySecretName,omitempty"`
 	KeySecertNamespace               string                          `json:"keySecretNamespace,omitempty"`
-	ImageRef                         string                          `json:"imageRef,omitempty"`
+	ResourceBundleRef                string                          `json:"resourceBundleRef,omitempty"`
 }
 
 type ObjectUserBindingList []ObjectUserBinding

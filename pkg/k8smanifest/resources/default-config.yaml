@@ -1,6 +1,6 @@
 ignoreFields:
   - fields:
-    - metadata.annotations.cosign.sigstore.dev/imageRef
+    - metadata.annotations.cosign.sigstore.dev/resourceBundleRef
     - metadata.annotations.cosign.sigstore.dev/signature
     - metadata.annotations.cosign.sigstore.dev/message
     - metadata.annotations.cosign.sigstore.dev/certificate

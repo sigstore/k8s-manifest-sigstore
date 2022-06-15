@@ -363,11 +363,11 @@ func contains(all []string, one string) bool {
 }
 
 type ImageObject struct {
-	PodName       string
-	ContainerName string
-	ImageID       string
-	ImageRef      string
-	Digest        string
+	PodName           string
+	ContainerName     string
+	ImageID           string
+	ResourceBundleRef string
+	Digest            string
 }
 
 func GetAllImagesFromObject(obj *unstructured.Unstructured) ([]ImageObject, error) {
@@ -381,25 +381,25 @@ func GetAllImagesFromObject(obj *unstructured.Unstructured) ([]ImageObject, erro
 		podName := p.GetName()
 		for _, cstatus := range p.Status.InitContainerStatuses {
 			containerName := cstatus.Name
-			imageRef := cstatus.Image
+			resBundleRef := cstatus.Image
 			imageID := cstatus.ImageID
-			if imageRef == "" || imageID == "" {
+			if resBundleRef == "" || imageID == "" {
 				continue
 			}
 			parts := strings.Split(imageID, "@")
 			imageDigest := parts[len(parts)-1]
-			images = append(images, ImageObject{PodName: podName, ContainerName: containerName, ImageID: imageID, ImageRef: imageRef, Digest: imageDigest})
+			images = append(images, ImageObject{PodName: podName, ContainerName: containerName, ImageID: imageID, ResourceBundleRef: resBundleRef, Digest: imageDigest})
 		}
 		for _, cstatus := range p.Status.ContainerStatuses {
 			containerName := cstatus.Name
-			imageRef := cstatus.Image
+			resBundleRef := cstatus.Image
 			imageID := cstatus.ImageID
-			if imageRef == "" || imageID == "" {
+			if resBundleRef == "" || imageID == "" {
 				continue
 			}
 			parts := strings.Split(imageID, "@")
 			imageDigest := parts[len(parts)-1]
-			images = append(images, ImageObject{PodName: podName, ContainerName: containerName, ImageID: imageID, ImageRef: imageRef, Digest: imageDigest})
+			images = append(images, ImageObject{PodName: podName, ContainerName: containerName, ImageID: imageID, ResourceBundleRef: resBundleRef, Digest: imageDigest})
 		}
 	}
 	return images, nil

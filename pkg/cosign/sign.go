@@ -47,7 +47,7 @@ const (
 	defaultTlogUploadTimeout = 10
 )
 
-func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
+func SignImage(resBundleRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
@@ -84,7 +84,7 @@ func SignImage(imageRef string, keyPath, certPath *string, pf cosign.PassFunc, i
 	outputSignaturePath := ""
 	outputCertificatePath := ""
 
-	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{imageRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "")
+	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "")
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {

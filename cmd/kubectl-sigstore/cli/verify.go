@@ -32,7 +32,7 @@ import (
 
 func NewCmdVerify() *cobra.Command {
 
-	var imageRef string
+	var resBundleRef string
 	var filename string
 	var keyPath string
 	var configPath string
@@ -41,7 +41,7 @@ func NewCmdVerify() *cobra.Command {
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := verify(filename, imageRef, keyPath, configPath)
+			err := verify(filename, resBundleRef, keyPath, configPath)
 			if err != nil {
 				return err
 			}
@@ -50,14 +50,14 @@ func NewCmdVerify() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVarP(&filename, "filename", "f", "", "file name which will be verified")
-	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
+	cmd.PersistentFlags().StringVarP(&resBundleRef, "image", "i", "", "a comma-separated list of signed image names that contains YAML manifests")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys or environment variable names start with \"env://\" (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 
 	return cmd
 }
 
-func verify(filename, imageRef, keyPath, configPath string) error {
+func verify(filename, resBundleRef, keyPath, configPath string) error {
 	manifest, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -77,14 +77,14 @@ func verify(filename, imageRef, keyPath, configPath string) error {
 
 	annotations := k8ssigutil.GetAnnotationsInYAML(manifest)
 	resBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
-	if annoImageRef, annoImageRefFound := annotations[resBundleRefAnnotationKey]; annoImageRefFound {
-		imageRef = annoImageRef
+	if annoResBundleRef, annoResBundleRefFound := annotations[resBundleRefAnnotationKey]; annoResBundleRefFound {
+		resBundleRef = annoResBundleRef
 	}
 	log.Debug("annotations", annotations)
-	log.Debug("imageRef", imageRef)
+	log.Debug("resourceBundleRef", resBundleRef)
 
-	if imageRef != "" {
-		vo.ImageRef = imageRef
+	if resBundleRef != "" {
+		vo.ResourceBundleRef = resBundleRef
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath

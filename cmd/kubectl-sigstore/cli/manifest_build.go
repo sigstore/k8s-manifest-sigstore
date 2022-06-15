@@ -36,7 +36,7 @@ var supportedMode = []string{
 func NewCmdManifestBuild() *cobra.Command {
 
 	var baseDir string
-	var imageRef string
+	var resBundleRef string
 	var keyPath string
 	var outputPath string
 	var provenancePath string
@@ -47,7 +47,7 @@ func NewCmdManifestBuild() *cobra.Command {
 		Short: "A command to build a Kubernetes YAML manifest with provenance",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath, kustomizeMode, signProvenance)
+			err := buildManifest(baseDir, outputPath, provenancePath, resBundleRef, keyPath, kustomizeMode, signProvenance)
 			if err != nil {
 				return err
 			}
@@ -60,12 +60,12 @@ func NewCmdManifestBuild() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&baseDir, "dir", "d", "", "kustomize base dir")
 	cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "path to output manifest file")
 	cmd.PersistentFlags().StringVarP(&provenancePath, "provenance", "p", "", "path to output provenance file")
-	cmd.PersistentFlags().StringVarP(&imageRef, "image", "i", "", "image reference in which a generated manifest is stored")
+	cmd.PersistentFlags().StringVarP(&resBundleRef, "image", "i", "", "image reference in which a generated manifest is stored")
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "path to your signing key")
 	return cmd
 }
 
-func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string, kustomizeMode, signProvenance bool) error {
+func buildManifest(baseDir, outputPath, provenancePath, resBundleRef, keyPath string, kustomizeMode, signProvenance bool) error {
 
 	if !kustomizeMode {
 		return fmt.Errorf("only the following manifest types are supported: %v", supportedMode)
@@ -87,7 +87,7 @@ func buildManifest(baseDir, outputPath, provenancePath, imageRef, keyPath string
 		return errors.Wrap(err, "failed to create a manifest file")
 	}
 	// TODO: support uploading manifest image
-	// if imageRef != "" {
+	// if resBundleRef != "" {
 	//
 	// }
 	digest, err := kustbuildutil.GetDigestOfArtifact(manifestFile)

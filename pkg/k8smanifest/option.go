@@ -44,7 +44,7 @@ type SignOption struct {
 
 	// these options should be input from CLI arguments
 	KeyPath           string                 `json:"-"`
-	ImageRef          string                 `json:"-"`
+	ResourceBundleRef string                 `json:"-"`
 	CertPath          string                 `json:"-"`
 	Output            string                 `json:"-"`
 	UpdateAnnotation  bool                   `json:"-"`
@@ -99,7 +99,7 @@ type verifyOption struct {
 
 	// these options should be input from CLI arguments
 	KeyPath               string `json:"-"`
-	ImageRef              string `json:"-"`
+	ResourceBundleRef     string `json:"-"`
 	SignatureResourceRef  string `json:"-"`
 	ProvenanceResourceRef string `json:"-"`
 	UseCache              bool   `json:"-"`
@@ -424,14 +424,14 @@ func parseConfigObj(configObj *unstructured.Unstructured, configField string) (*
 		return nil, fmt.Errorf("failed to parse config field `%s` in `%s`", configField, configObj.GetName())
 	}
 	var configBytes []byte
-	var imageRefInConfigObj string
+	var resBundleRefInConfigObj string
 	switch cfg := cfgData.(type) {
 	case string:
 		configBytes = []byte(cfg)
 	case *mapnode.Node:
 		configBytes = []byte(cfg.ToYaml())
-		if tmpImageRef := cfg.GetString("imageRef"); tmpImageRef != "" {
-			imageRefInConfigObj = tmpImageRef
+		if tmpResourceBundleRef := cfg.GetString("resourceBundleRef"); tmpResourceBundleRef != "" {
+			resBundleRefInConfigObj = tmpResourceBundleRef
 		}
 	default:
 		return nil, fmt.Errorf("cannot handle this type for config object: %T", cfg)
@@ -442,8 +442,8 @@ func parseConfigObj(configObj *unstructured.Unstructured, configField string) (*
 	if err != nil {
 		return nil, err
 	}
-	if imageRefInConfigObj != "" {
-		option.ImageRef = imageRefInConfigObj
+	if resBundleRefInConfigObj != "" {
+		option.ResourceBundleRef = resBundleRefInConfigObj
 	}
 	return option, nil
 }

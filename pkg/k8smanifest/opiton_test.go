@@ -51,7 +51,7 @@ data:
 
 	resourceBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
 	if resourceBundleRefAnnotationKey == "" {
-		t.Error("failed to get imageRefAnnotationKey; this config must not be empty and must return `cosign.sigstore.dev/resourceBundleRef` if empty")
+		t.Error("failed to get resBundleRefAnnotationKey; this config must not be empty and must return `cosign.sigstore.dev/resourceBundleRef` if empty")
 		return
 	}
 }

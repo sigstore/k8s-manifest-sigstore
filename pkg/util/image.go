@@ -36,8 +36,8 @@ import (
 	"github.com/spf13/afero"
 )
 
-func PullImage(imageRef string) (v1.Image, error) {
-	ref, err := name.ParseReference(imageRef)
+func PullImage(resBundleRef string) (v1.Image, error) {
+	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +48,8 @@ func PullImage(imageRef string) (v1.Image, error) {
 	return img, nil
 }
 
-func GetImageDigest(imageRef string) (string, error) {
-	ref, err := name.ParseReference(imageRef)
+func GetImageDigest(resBundleRef string) (string, error) {
+	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return "", err
 	}

@@ -72,8 +72,8 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	// use resourceBundleRef if specified in the annotation; otherwise follow the verify option
 	resBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
 	annotations := obj.GetAnnotations()
-	if annoImageRef, found := annotations[resBundleRefAnnotationKey]; found {
-		vo.ImageRef = annoImageRef
+	if annoResBundleRef, found := annotations[resBundleRefAnnotationKey]; found {
+		vo.ResourceBundleRef = annoResBundleRef
 	}
 
 	// check if the resource should be skipped or not
@@ -97,7 +97,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	resourceManifests, sigRef, err = NewManifestFetcher(vo.ImageRef, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
 	}

@@ -99,14 +99,14 @@ func (h *k8sManifestHandler) Handle(ctx context.Context, req admission.Request) 
 		allow = true
 		message = "this resource is not in scope of verification"
 	} else {
-		imageRef := config.ImageRef
+		resBundleRef := config.ResourceBundleRef
 		keyPath := ""
 		if config.KeySecertName != "" {
 			keyPath, _ = config.LoadKeySecret()
 		}
 		vo := &(config.VerifyResourceOption)
-		if imageRef != "" {
-			vo.ImageRef = imageRef
+		if resBundleRef != "" {
+			vo.ResourceBundleRef = resBundleRef
 		}
 		if keyPath != "" {
 			vo.KeyPath = keyPath

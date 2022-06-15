@@ -43,8 +43,8 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	// use resourceBundleRef if specified in the annotation; otherwise follow the verify option
 	resBundleRefAnnotationKey := vo.AnnotationConfig.ResourceBundleRefAnnotationKey()
 	annotations := obj.GetAnnotations()
-	if annoImageRef, found := annotations[resBundleRefAnnotationKey]; found {
-		vo.ImageRef = annoImageRef
+	if annoResBundleRef, found := annotations[resBundleRefAnnotationKey]; found {
+		vo.ResourceBundleRef = annoResBundleRef
 	}
 
 	// add signature/message/others annotations to ignore fields
@@ -61,7 +61,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 
 	var resourceManifests [][]byte
 	var sigRef string
-	resourceManifests, sigRef, err = NewManifestFetcher(vo.ImageRef, vo.SignatureResourceRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
+	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, vo.SignatureResourceRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}
