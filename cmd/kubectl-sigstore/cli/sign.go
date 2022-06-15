@@ -51,6 +51,12 @@ func NewCmdSign() *cobra.Command {
 			}
 
 			makeTarball := (tarballOpt == "yes")
+
+			// tarball causes inconsistent message among multiple signing, so disable it if append mode
+			if appendSignature {
+				makeTarball = false
+			}
+
 			err := sign(inputDir, imageRef, keyPath, output, appendSignature, applySignatureConfigMap, updateAnnotation, makeTarball, imageAnnotations)
 			if err != nil {
 				log.Fatalf("error occurred during signing: %s", err.Error())
