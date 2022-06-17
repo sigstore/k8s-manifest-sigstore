@@ -276,7 +276,7 @@ func GetRekorServerURL() string {
 	return url
 }
 
-// cosign has a bug for the function as of v1.9.0, so use this instead here
+// cosign has a bug in GetTlogEntry() function as of v1.9.0, so use this instead here
 func GetTlogEntry(ctx context.Context, rekorClient *rekorgenclient.Rekor, uuid string) (*models.LogEntryAnon, error) {
 	params := entries.NewGetLogEntryByUUIDParamsWithContext(ctx)
 	params.SetEntryUUID(uuid)
