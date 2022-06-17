@@ -17,6 +17,7 @@ package k8smanifest
 
 import (
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -31,6 +32,8 @@ import (
 
 //go:embed testdata/testpub
 var b64EncodedTestPubkey []byte
+
+const b64KeylesSignerConfig = "aGlyb2t1bmkua2l0YWhhcmExQGlibS5jb20K"
 
 func TestVerifyResource(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-test")
@@ -116,6 +119,57 @@ func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
 	}
 	resultBytes, _ := json.Marshal(result)
 	t.Logf("verify-resource with multiple signatures result: %s", string(resultBytes))
+}
+
+func TestVerifyResourceWithKeylessMultipleSignatures(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-keyless-multisig-test")
+	if err != nil {
+		t.Errorf("failed to create temp dir: %s", err.Error())
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "testpub")
+	err = initSingleTestFile(b64EncodedTestPubkey, keyPath)
+	if err != nil {
+		t.Errorf("failed to init a public key file for test: %s", err.Error())
+		return
+	}
+
+	fpath := "testdata/sample-configmap-keyless-multi-signed.yaml"
+	objBytes, err := ioutil.ReadFile(fpath)
+	if err != nil {
+		t.Errorf("failed to load a test resource file: %s", err.Error())
+		return
+	}
+	t.Logf("verify-resource resource: %s", string(objBytes))
+	var obj unstructured.Unstructured
+	err = yaml.Unmarshal(objBytes, &obj)
+	if err != nil {
+		t.Errorf("failed to unmarshal: %s", err.Error())
+		return
+	}
+	signerConfig, err := base64.StdEncoding.DecodeString(b64KeylesSignerConfig)
+	if err != nil {
+		t.Errorf("failed to base64 decode the signer config: %s", err.Error())
+		return
+	}
+	vo := &VerifyResourceOption{
+		verifyOption: verifyOption{
+			KeyPath: keyPath,
+			Signers: SignerList{
+				string(signerConfig), // this should match with the second signature
+			},
+		},
+	}
+
+	result, err := VerifyResource(obj, vo)
+	if err != nil {
+		t.Errorf("failed to verify a resource: %s", err.Error())
+		return
+	}
+	resultBytes, _ := json.Marshal(result)
+	t.Logf("verify-resource with keyless multiple signatures result: %s", string(resultBytes))
 }
 
 func TestVerifyResourceWithoutDryRun(t *testing.T) {

@@ -125,10 +125,14 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	if vo.KeyPath != "" {
 		keyPath = &(vo.KeyPath)
 	}
+	var signers []string
+	if len(vo.Signers) > 0 {
+		signers = vo.Signers
+	}
 
 	var sigVerified bool
 	log.Debug("verifying signature...")
-	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath, vo.AnnotationConfig).Verify()
+	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath, signers, vo.AnnotationConfig).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to verify signature")
 	}

@@ -256,8 +256,12 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 		if vo.KeyPath != "" {
 			keyPath = &(vo.KeyPath)
 		}
+		var signers []string
+		if len(vo.Signers) > 0 {
+			signers = vo.Signers
+		}
 		// signature verification functions
-		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ResourceBundleRef, keyPath, vo.AnnotationConfig)
+		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ResourceBundleRef, keyPath, signers, vo.AnnotationConfig)
 		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
 			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
 		}

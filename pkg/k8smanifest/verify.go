@@ -40,7 +40,12 @@ type SignatureVerifier interface {
 	Verify() (bool, string, *int64, error)
 }
 
-func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, annotationConfig AnnotationConfig) SignatureVerifier {
+type verificationIdentity struct {
+	path string // for keyed
+	name string // for keyless
+}
+
+func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, signers []string, annotationConfig AnnotationConfig) SignatureVerifier {
 	var resBundleRef, resourceRef string
 
 	resBundleRefAnnotationKey := annotationConfig.ResourceBundleRefAnnotationKey()
@@ -55,37 +60,39 @@ func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string
 		resBundleRef = sigRef
 	}
 
-	var pubkeyPathString *string
+	identityList := []verificationIdentity{}
 	if pubkeyPath != nil && *pubkeyPath != "" {
-		pubkeyPathString = pubkeyPath
+		pubkeyPathList := k8smnfutil.SplitCommaSeparatedString(*pubkeyPath)
+		for _, k := range pubkeyPathList {
+			identityList = append(identityList, verificationIdentity{path: k})
+		}
+	} else if len(signers) > 0 {
+		for _, s := range signers {
+			identityList = append(identityList, verificationIdentity{name: s})
+		}
+	} else {
+		// no key option and no signer option, this means keyless mode and any signer names are allowed
+		identityList = append(identityList, verificationIdentity{name: ""})
 	}
 
 	if resBundleRef != "" && resBundleRef != SigRefEmbeddedInAnnotation {
-		return &ImageSignatureVerifier{resBundleRef: resBundleRef, onMemoryCacheEnabled: true, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
+		return &ImageSignatureVerifier{resBundleRef: resBundleRef, onMemoryCacheEnabled: true, identityList: identityList, annotationConfig: annotationConfig}
 	} else {
-		return &BlobSignatureVerifier{annotations: annotations, resourceRef: resourceRef, pubkeyPathString: pubkeyPathString, annotationConfig: annotationConfig}
+		return &BlobSignatureVerifier{annotations: annotations, resourceRef: resourceRef, identityList: identityList, annotationConfig: annotationConfig}
 	}
 }
 
 type ImageSignatureVerifier struct {
 	resBundleRef         string
-	pubkeyPathString     *string
 	onMemoryCacheEnabled bool
 	annotationConfig     AnnotationConfig
+	identityList         []verificationIdentity
 }
 
 func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	resBundleRef := v.resBundleRef
 	if resBundleRef == "" {
 		return false, "", nil, errors.New("no image reference is found")
-	}
-
-	pubkeyPathString := v.pubkeyPathString
-	var pubkeys []string
-	if pubkeyPathString != nil && *pubkeyPathString != "" {
-		pubkeys = k8smnfutil.SplitCommaSeparatedString(*pubkeyPathString)
-	} else {
-		pubkeys = []string{""}
 	}
 
 	verified := false
@@ -96,10 +103,10 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 		cacheFound := false
 		cacheFoundCount := 0
 		allErrs := []string{}
-		for i := range pubkeys {
-			pubkey := pubkeys[i]
+		for i := range v.identityList {
+			identity := v.identityList[i]
 			// try getting result from cache
-			cacheFound, verified, signerName, signedTimestamp, err = v.getResultFromCache(resBundleRef, pubkey)
+			cacheFound, verified, signerName, signedTimestamp, err = v.getResultFromCache(resBundleRef, identity.path)
 			// if found and verified true, return it
 			if cacheFound {
 				cacheFoundCount += 1
@@ -111,21 +118,29 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 				allErrs = append(allErrs, err.Error())
 			}
 		}
-		if !verified && cacheFoundCount == len(pubkeys) {
+		if !verified && cacheFoundCount == len(v.identityList) {
 			return false, "", nil, fmt.Errorf("signature verification failed: %s", strings.Join(allErrs, "; "))
 		}
 	}
 
 	log.Debug("image signature cache not found")
 	allErrs := []string{}
-	for i := range pubkeys {
-		pubkey := pubkeys[i]
+	for i := range v.identityList {
+		identity := v.identityList[i]
 		// do normal image verification
-		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, pubkey)
+		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path)
+
+		// cosign keyless returns signerName, so check if it matches the verificationIdentity
+		if verified && identity.name != "" {
+			if signerName != identity.name {
+				verified = false
+				err = fmt.Errorf("signature has been verified, but signer name `%s` does not match `%s`", signerName, identity.name)
+			}
+		}
 
 		if v.onMemoryCacheEnabled {
 			// set the result to cache
-			v.setResultToCache(resBundleRef, pubkey, verified, signerName, signedTimestamp, err)
+			v.setResultToCache(resBundleRef, identity.path, verified, signerName, signedTimestamp, err)
 		}
 
 		if verified {
@@ -177,19 +192,11 @@ func (v *ImageSignatureVerifier) setResultToCache(resBundleRef, pubkey string, v
 type BlobSignatureVerifier struct {
 	annotations      map[string]string
 	resourceRef      string
-	pubkeyPathString *string
 	annotationConfig AnnotationConfig
+	identityList     []verificationIdentity
 }
 
 func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
-	pubkeyPathString := v.pubkeyPathString
-	var pubkeys []string
-	if pubkeyPathString != nil && *pubkeyPathString != "" {
-		pubkeys = k8smnfutil.SplitCommaSeparatedString(*pubkeyPathString)
-	} else {
-		pubkeys = []string{""}
-	}
-
 	sigSets, err := v.getSignatureSets()
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "failed to get signature")
@@ -198,11 +205,11 @@ func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 	var verified bool
 	var signer string
 	allErrs := []string{}
-	for i := range pubkeys {
-		pubkey := pubkeys[i]
+	for i := range v.identityList {
+		identity := v.identityList[i]
 		var pubkeyPtr *string
-		if pubkey != "" {
-			pubkeyPtr = &pubkey
+		if identity.path != "" {
+			pubkeyPtr = &identity.path
 		}
 		sigType := sigtypes.GetSignatureTypeFromPublicKey(pubkeyPtr)
 		if sigType == sigtypes.SigTypeUnknown {
@@ -232,21 +239,30 @@ func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 			case sigtypes.SigTypeX509:
 				verified, signer, _, err = x509.VerifyBlob(msgBytes, sigBytes, certBytes, pubkeyPtr)
 			}
+			// cosign keyless & x509 returns signerName, so check if it matches the verificationIdentity
+			if verified && identity.name != "" {
+				if signer != identity.name {
+					verified = false
+					err = fmt.Errorf("signature has been verified, but signer name `%s` does not match `%s`", signer, identity.name)
+				}
+			}
 			if verified {
 				// if verified, return the result here
 				return verified, signer, nil, err
 			} else {
 				// otherwise, keep the returned error and try the next signature
-				keyname := fmt.Sprintf("publickey %v/%v", i+1, len(pubkeys))
-				if pubkey == "" {
-					keyname = "keyless"
+				identityName := ""
+				if identity.path != "" {
+					identityName = fmt.Sprintf("publickey %v/%v", i+1, len(v.identityList))
+				} else if identity.name != "" {
+					identityName = fmt.Sprintf("signer %v/%v", i+1, len(v.identityList))
 				}
 				signaturename := fmt.Sprintf("signature %v/%v", j+1, len(sigSets))
 				errStr := "verification failed without error"
 				if err != nil {
 					errStr = err.Error()
 				}
-				allErrs = append(allErrs, fmt.Sprintf("[%s] [%s] error: %s", keyname, signaturename, errStr))
+				allErrs = append(allErrs, fmt.Sprintf("[%s] [%s] error: %s", identityName, signaturename, errStr))
 			}
 		}
 	}
