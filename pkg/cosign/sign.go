@@ -17,8 +17,10 @@
 package cosign
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -34,17 +36,20 @@ import (
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekorclient "github.com/sigstore/rekor/pkg/client"
+	rekorgenclient "github.com/sigstore/rekor/pkg/generated/client"
+	"github.com/sigstore/rekor/pkg/generated/client/entries"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	rekorServerEnvKey        = "REKOR_SERVER"
-	defaultRekorServerURL    = "https://rekor.sigstore.dev"
-	defaultOIDCIssuer        = "https://oauth2.sigstore.dev/auth"
-	defaultOIDCClientID      = "sigstore"
-	cosignPasswordEnvKey     = "COSIGN_PASSWORD"
-	defaultTlogUploadTimeout = 10
+	rekorServerEnvKey               = "REKOR_SERVER"
+	defaultRekorServerURL           = "https://rekor.sigstore.dev"
+	defaultOIDCIssuer               = "https://oauth2.sigstore.dev/auth"
+	defaultOIDCClientID             = "sigstore"
+	cosignPasswordEnvKey            = "COSIGN_PASSWORD"
+	defaultTlogUploadTimeout        = 10
+	defaultKeylessTlogUploadTimeout = 90 // set to 90s for keyless as cosign recommends it in the help message
 )
 
 func SignImage(resBundleRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
@@ -138,7 +143,11 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	base64Msg := []byte(base64.StdEncoding.EncodeToString(gzipMsg))
 	m["message"] = base64Msg
 
-	rootOpt := &cliopt.RootOptions{Timeout: defaultTlogUploadTimeout * time.Second}
+	timeout := defaultTlogUploadTimeout
+	if keyPath == nil {
+		timeout = defaultKeylessTlogUploadTimeout
+	}
+	rootOpt := &cliopt.RootOptions{Timeout: time.Duration(timeout) * time.Second}
 	outputSignaturePath := ""
 	outputCertificatePath := ""
 	rawSig, err := clisign.SignBlobCmd(rootOpt, opt, regOpt, blobPath, false, outputSignaturePath, outputCertificatePath)
@@ -154,6 +163,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	var rawCert []byte
 	var rawBundle []byte
 
+	// cosign.SignBlobCmd() does not create a rekor entry bundle as of v1.8.0, so do it here
 	if uploadTlog && certPath == nil {
 		rClient, err := rekorclient.GetRekorClient(opt.RekorURL)
 		if err != nil {
@@ -170,7 +180,8 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 		if len(uuids) == 0 {
 			return nil, errors.New("could not find a tlog entry for provided blob")
 		}
-		tlogEntry, err := cosign.GetTlogEntry(context.Background(), rClient, uuids[0])
+		// tlogEntry, err := cosign.GetTlogEntry(context.Background(), rClient, uuids[0])
+		tlogEntry, err := GetTlogEntry(context.Background(), rClient, uuids[0])
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to find transparency log entry with uuid %s", uuids[0])
 		}
@@ -263,4 +274,35 @@ func GetRekorServerURL() string {
 		url = defaultRekorServerURL
 	}
 	return url
+}
+
+// cosign has a bug for the function as of v1.9.0, so use this instead here
+func GetTlogEntry(ctx context.Context, rekorClient *rekorgenclient.Rekor, uuid string) (*models.LogEntryAnon, error) {
+	params := entries.NewGetLogEntryByUUIDParamsWithContext(ctx)
+	params.SetEntryUUID(uuid)
+	resp, err := rekorClient.Entries.GetLogEntryByUUID(params)
+	if err != nil {
+		return nil, err
+	}
+	for k, e := range resp.Payload {
+		if err := verifyUUID(k, e); err != nil {
+			return nil, err
+		}
+		return &e, nil
+	}
+	return nil, errors.New("empty response")
+}
+
+func verifyUUID(uuid string, e models.LogEntryAnon) error {
+	entryUUID, _ := hex.DecodeString(uuid)
+
+	// Verify leaf hash matches hash of the entry body.
+	computedLeafHash, err := cosign.ComputeLeafHash(&e)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(computedLeafHash, entryUUID) {
+		return fmt.Errorf("computed leaf hash did not match entry UUID")
+	}
+	return nil
 }
