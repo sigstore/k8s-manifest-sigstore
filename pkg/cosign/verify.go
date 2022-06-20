@@ -41,6 +41,7 @@ import (
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	k8ssigx509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
+	rekorclient "github.com/sigstore/rekor/pkg/client"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
@@ -69,7 +70,10 @@ func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, 
 			return false, "", nil, fmt.Errorf("failed to initialize rekor client; %s", err.Error())
 		}
 		co.RekorClient = rekorClient
-		co.RootCerts = fulcio.GetRoots()
+		co.RootCerts, err = fulcio.GetRoots()
+		if err != nil {
+			return false, "", nil, fmt.Errorf("failed to get fulcio root; %s", err.Error())
+		}
 	} else {
 		pubKeyVerifier, err := sigs.PublicKeyFromKeyRef(context.Background(), pubkeyPath)
 		if err != nil {
@@ -247,7 +251,12 @@ func verifyBundle(rawMsg, b64Sig, rawCert, b64Bundle []byte) (bool, string, *int
 		cert:            rawCert,
 		base64Bundle:    b64Bundle,
 	}
-	verified, err := cosign.VerifyBundle(context.Background(), sig)
+	rekorSeverURL := GetRekorServerURL()
+	rClient, err := rekorclient.GetRekorClient(rekorSeverURL)
+	if err != nil {
+		return false, "", nil, errors.Wrap(err, "failed to get rekor client")
+	}
+	verified, err := cosign.VerifyBundle(context.Background(), sig, rClient)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "verifying bundle")
 	}
