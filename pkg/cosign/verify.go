@@ -33,7 +33,6 @@ import (
 	"github.com/sigstore/cosign/cmd/cosign/cli/fulcio"
 	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
 	"github.com/sigstore/cosign/cmd/cosign/cli/rekor"
-	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
 	cliverify "github.com/sigstore/cosign/cmd/cosign/cli/verify"
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/bundle"
@@ -150,7 +149,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
-	opt := clisign.KeyOpts{
+	opt := cliopt.KeyOpts{
 		Sk:        sk,
 		IDToken:   idToken,
 		RekorURL:  rekorSeverURL,

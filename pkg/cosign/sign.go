@@ -61,7 +61,7 @@ func SignImage(resBundleRef string, keyPath, certPath *string, pf cosign.PassFun
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	rootOpt := &cliopt.RootOptions{Timeout: defaultTlogUploadTimeout * time.Second}
-	opt := clisign.KeyOpts{
+	opt := cliopt.KeyOpts{
 		Sk:           sk,
 		IDToken:      idToken,
 		RekorURL:     rekorSeverURL,
@@ -100,7 +100,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (m
 	rekorSeverURL := GetRekorServerURL()
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
-	opt := clisign.KeyOpts{
+	opt := cliopt.KeyOpts{
 		Sk:           sk,
 		IDToken:      idToken,
 		RekorURL:     rekorSeverURL,
