@@ -8,7 +8,7 @@ require (
 	github.com/djherbis/times v1.5.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-openapi/runtime v0.24.1
-	github.com/google/go-containerregistry v0.8.1-0.20220209165246-a44adc326839
+	github.com/google/go-containerregistry v0.9.0
 	github.com/in-toto/in-toto-golang v0.3.4-0.20211211042327-af1f9fb822bf
 	github.com/jinzhu/copier v0.3.2
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
@@ -18,16 +18,16 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0
-	github.com/sigstore/cosign v1.9.0
+	github.com/sigstore/cosign v1.9.1-0.20220615165628-e4bc4a95743b
 	github.com/sigstore/fulcio v0.1.2-0.20220114150912-86a2036f9bc7
 	github.com/sigstore/rekor v0.4.1-0.20220114213500-23f583409af3
-	github.com/sigstore/sigstore v1.2.1-0.20220424143412-3d41663116d5
+	github.com/sigstore/sigstore v1.2.1-0.20220614141825-9c0e2e247545
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.8.2
 	github.com/spf13/cobra v1.4.0
 	github.com/tektoncd/chains v0.3.0
 	github.com/theupdateframework/go-tuf v0.3.0
-	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.23.5
 	k8s.io/apimachinery v0.23.5
