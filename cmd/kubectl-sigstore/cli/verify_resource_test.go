@@ -207,7 +207,7 @@ var _ = Describe("Test Kubeutil Sigstore Functions", func() {
 				return err
 			}
 
-			verified, err := verifyResource(nil, []string{"cm", "sample-cm"}, "", "", "", "", "", "", false, false, "", "", 4)
+			verified, err := verifyResource(nil, []string{"cm", "sample-cm"}, "", "", "", "", "", "", false, false, "", "", "", "", "", "", 4)
 			if err != nil {
 				return err
 			}
@@ -227,7 +227,7 @@ var _ = Describe("Test Kubeutil Sigstore Functions", func() {
 			}
 
 			pubkeyPath := filepath.Join(testTempDir, "testpub")
-			verified, err := verifyResource(nil, []string{"cm", "sample-cm-signed"}, "", "", pubkeyPath, "", "", "", false, false, "", "json", 4)
+			verified, err := verifyResource(nil, []string{"cm", "sample-cm-signed"}, "", "", pubkeyPath, "", "", "", false, false, "", "", "", "", "", "json", 4)
 			if err != nil {
 				return err
 			}

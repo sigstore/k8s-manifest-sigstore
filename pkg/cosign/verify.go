@@ -18,6 +18,7 @@ package cosign
 
 import (
 	"context"
+	"crypto"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -42,16 +43,22 @@ import (
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	k8ssigx509 "github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
 	rekorclient "github.com/sigstore/rekor/pkg/client"
+	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, error) {
+func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIssuer string) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", resBundleRef, err.Error())
 	}
 
-	rekorSeverURL := GetRekorServerURL()
+	var rekorSeverURL string
+	if rekorURL == "" {
+		rekorSeverURL = GetRekorServerURL()
+	} else {
+		rekorSeverURL = rekorURL
+	}
 
 	regOpt := &cliopt.RegistryOptions{}
 	reqCliOpt, err := regOpt.ClientOpts(context.Background())
@@ -64,7 +71,7 @@ func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, 
 		RegistryClientOpts: reqCliOpt,
 	}
 
-	if pubkeyPath == "" {
+	if cliopt.EnableExperimental() {
 		rekorClient, err := rekor.NewClient(rekorSeverURL)
 		if err != nil {
 			return false, "", nil, fmt.Errorf("failed to initialize rekor client; %s", err.Error())
@@ -74,7 +81,10 @@ func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, 
 		if err != nil {
 			return false, "", nil, fmt.Errorf("failed to get fulcio root; %s", err.Error())
 		}
-	} else {
+		co.CertOidcIssuer = oidcIssuer
+	}
+
+	if pubkeyPath != "" {
 		pubKeyVerifier, err := sigs.PublicKeyFromKeyRef(context.Background(), pubkeyPath)
 		if err != nil {
 			return false, "", nil, fmt.Errorf("failed to load public key; %s", err.Error())
@@ -84,6 +94,33 @@ func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, 
 			defer pkcs11Key.Close()
 		}
 		co.SigVerifier = pubKeyVerifier
+	} else if certRef != "" {
+		cert, err := k8ssigx509.LoadCertificate(certRef)
+		if err != nil {
+			return false, "", nil, fmt.Errorf("failed to load certificate; %s", err.Error())
+		}
+		var sigVerifier signature.Verifier
+		if certChain == "" {
+			err = cosign.CheckCertificatePolicy(cert, co)
+			if err != nil {
+				return false, "", nil, fmt.Errorf("certificate check failed; %s", err.Error())
+			}
+			sigVerifier, err = signature.LoadVerifier(cert.PublicKey, crypto.SHA256)
+			if err != nil {
+				return false, "", nil, fmt.Errorf("failed to initialize signature verifier; %s", err.Error())
+			}
+		} else {
+			// Verify certificate with chain
+			chain, err := k8ssigx509.LoadCertificateChain(certChain)
+			if err != nil {
+				return false, "", nil, fmt.Errorf("failed to load certificate chain; %s", err.Error())
+			}
+			sigVerifier, err = cosign.ValidateAndUnpackCertWithChain(cert, chain, co)
+			if err != nil {
+				return false, "", nil, fmt.Errorf("certificate chain validation failed; %s", err.Error())
+			}
+		}
+		co.SigVerifier = sigVerifier
 	}
 
 	checkedSigs, _, err := cosign.VerifyImageSignatures(context.Background(), ref, co)
@@ -121,7 +158,7 @@ func VerifyImage(resBundleRef string, pubkeyPath string) (bool, string, *int64, 
 	return true, signerName, signedTimestamp, nil
 }
 
-func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *string) (bool, string, *int64, error) {
+func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *string, certRef, certChain, rekorURL, oidcIssuer string) (bool, string, *int64, error) {
 	gzipMsg, _ := base64.StdEncoding.DecodeString(string(msgBytes))
 	rawMsg := k8smnfutil.GzipDecompress(gzipMsg)
 	b64Sig := sigBytes
@@ -150,7 +187,12 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 	sk := false
 	idToken := ""
 
-	rekorSeverURL := GetRekorServerURL()
+	var rekorSeverURL string
+	if rekorURL == "" {
+		rekorSeverURL = GetRekorServerURL()
+	} else {
+		rekorSeverURL = rekorURL
+	}
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	opt := cliopt.KeyOpts{
@@ -175,7 +217,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		return false, "", nil, errors.Wrap(err, "failed to write a message data to virtual standard input")
 	}
 	_ = stdinWriter.Close()
-	err = cliverify.VerifyBlobCmd(context.Background(), opt, "", "", "", "", string(b64Sig), "-", false)
+	err = cliverify.VerifyBlobCmd(context.Background(), opt, certRef, "", oidcIssuer, certChain, string(b64Sig), "-", false)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
 	}

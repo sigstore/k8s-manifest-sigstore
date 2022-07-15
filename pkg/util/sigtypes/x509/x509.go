@@ -148,6 +148,62 @@ func LoadCertificate(certPath string) (*x509.Certificate, error) {
 	return cert, nil
 }
 
+// Load certificate chain at `certChainPath`
+// Specifying a cert secret with `k8s://` prefix is supported.
+func LoadCertificateChain(certChainPath string) ([]*x509.Certificate, error) {
+	var certPemBytes []byte
+	var err error
+
+	if strings.HasPrefix(certChainPath, kubeutil.InClusterObjectPrefix) {
+		ns, name, err := kubeutil.ParseObjectRefInCluster(certChainPath)
+		if err != nil {
+			return nil, errors.Wrap(err, fmt.Sprintf("failed to parse secret keyRef `%s`", certChainPath))
+		}
+		secret, err := kubeutil.GetSecret(ns, name)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load a kubernetes secret")
+		}
+		for _, val := range secret.Data {
+			if val != nil {
+				certPemBytes = val
+			}
+		}
+	} else if strings.HasPrefix(certChainPath, k8smnfutil.EnvVarFileRefPrefix) {
+		tmpCertBytes, err := k8smnfutil.LoadFileDataInEnvVar(certChainPath)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load the key in env var")
+		}
+		certPemBytes = tmpCertBytes
+	} else {
+		cpath := filepath.Clean(certChainPath)
+		certPemBytes, err = ioutil.ReadFile(cpath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read a cert file; %s", err.Error())
+		}
+	}
+	if certPemBytes == nil {
+		return nil, errors.New("failed to get a certificate PEM data")
+	}
+
+	certChain := []*x509.Certificate{}
+	remaining := certPemBytes
+	for len(remaining) > 0 {
+		var certDer *pem.Block
+		certDer, remaining = pem.Decode(remaining)
+
+		if certDer == nil {
+			return nil, errors.New("error during PEM decoding")
+		}
+
+		cert, err := x509.ParseCertificate(certDer.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		certChain = append(certChain, cert)
+	}
+	return certChain, nil
+}
+
 // Decode PEM bytes of x509 private key / public key / certificate
 func PEMDecode(pemBytes []byte, mode string) []byte {
 	if mode != PEMTypePrivateKey && mode != PEMTypePublicKey && mode != PEMTypeCertificate {

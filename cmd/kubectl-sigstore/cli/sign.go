@@ -42,6 +42,7 @@ func NewCmdSign() *cobra.Command {
 	var updateAnnotation bool
 	var tarballOpt string
 	var imageAnnotations []string
+	var rekorURL string
 	cmd := &cobra.Command{
 		Use:   "sign -f FILENAME [-i IMAGE]",
 		Short: "A command to sign Kubernetes YAML manifests",
@@ -52,7 +53,7 @@ func NewCmdSign() *cobra.Command {
 
 			makeTarball := (tarballOpt == "yes")
 
-			err := sign(inputDir, resBundleRef, keyPath, output, appendSignature, applySignatureConfigMap, updateAnnotation, makeTarball, imageAnnotations)
+			err := sign(inputDir, resBundleRef, keyPath, rekorURL, output, appendSignature, applySignatureConfigMap, updateAnnotation, makeTarball, imageAnnotations)
 			if err != nil {
 				log.Fatalf("error occurred during signing: %s", err.Error())
 				return nil
@@ -71,11 +72,12 @@ func NewCmdSign() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&updateAnnotation, "annotation-metadata", true, "whether to update annotation and generate signed yaml file")
 	cmd.PersistentFlags().StringVar(&tarballOpt, "tarball", "yes", "whether to make a tarball for signing (this will be default to \"no\" in v0.5.0+)")
 	cmd.PersistentFlags().StringArrayVarP(&imageAnnotations, "annotation", "a", []string{}, "extra key=value pairs to sign")
+	cmd.PersistentFlags().StringVar(&rekorURL, "rekor-url", "https://rekor.sigstore.dev", "URL of rekor STL server (default \"https://rekor.sigstore.dev\")")
 
 	return cmd
 }
 
-func sign(inputDir, resBundleRef, keyPath, output string, appendSignature, applySignatureConfigMap, updateAnnotation, tarball bool, annotations []string) error {
+func sign(inputDir, resBundleRef, keyPath, rekorURL, output string, appendSignature, applySignatureConfigMap, updateAnnotation, tarball bool, annotations []string) error {
 	if output == "" && updateAnnotation {
 		if isDir, _ := k8smnfutil.IsDir(inputDir); isDir {
 			// e.g.) "./yamls/" --> "./yamls/manifest.yaml.signed"
@@ -103,6 +105,9 @@ func sign(inputDir, resBundleRef, keyPath, output string, appendSignature, apply
 		Tarball:           &tarball,
 		ImageAnnotations:  anntns,
 		AppendSignature:   appendSignature,
+	}
+	if rekorURL != "" {
+		so.RekorURL = rekorURL
 	}
 
 	if applySignatureConfigMap && strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) {

@@ -76,7 +76,11 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 		output = so.Output
 	}
 
-	signedBytes, err := NewSigner(so.ResourceBundleRef, so.KeyPath, so.CertPath, output, so.AppendSignature, so.ApplySigConfigMap, makeTarball, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
+	cosignSignConfig := CosignSignConfig{
+		RekorURL: so.RekorURL,
+	}
+
+	signedBytes, err := NewSigner(so.ResourceBundleRef, so.KeyPath, so.CertPath, output, so.AppendSignature, so.ApplySigConfigMap, makeTarball, cosignSignConfig, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign the specified content")
 	}
@@ -88,7 +92,11 @@ type Signer interface {
 	Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error)
 }
 
-func NewSigner(resBundleRef, keyPath, certPath, output string, appendSig, doApply, tarball bool, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
+type CosignSignConfig struct {
+	RekorURL string
+}
+
+func NewSigner(resBundleRef, keyPath, certPath, output string, appendSig, doApply, tarball bool, cosignSignConfig CosignSignConfig, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
 	var prikeyPath *string
 	if keyPath != "" {
 		prikeyPath = &keyPath
@@ -102,9 +110,27 @@ func NewSigner(resBundleRef, keyPath, certPath, output string, appendSig, doAppl
 		createSigConfigMap = true
 	}
 	if resBundleRef != "" {
-		return &ImageSigner{AnnotationConfig: AnnotationConfig, resBundleRef: resBundleRef, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &ImageSigner{
+			AnnotationConfig: AnnotationConfig,
+			resBundleRef:     resBundleRef,
+			tarball:          tarball,
+			prikeyPath:       prikeyPath,
+			certPath:         certPathP,
+			passFunc:         pf,
+			CosignSignConfig: cosignSignConfig,
+		}
 	} else {
-		return &BlobSigner{AnnotationConfig: AnnotationConfig, createSigConfigMap: createSigConfigMap, appendSig: appendSig, doApply: doApply, tarball: tarball, prikeyPath: prikeyPath, certPath: certPathP, passFunc: pf}
+		return &BlobSigner{
+			AnnotationConfig:   AnnotationConfig,
+			createSigConfigMap: createSigConfigMap,
+			appendSig:          appendSig,
+			doApply:            doApply,
+			tarball:            tarball,
+			prikeyPath:         prikeyPath,
+			certPath:           certPathP,
+			passFunc:           pf,
+			CosignSignConfig:   cosignSignConfig,
+		}
 	}
 }
 
@@ -115,6 +141,8 @@ type ImageSigner struct {
 	prikeyPath       *string
 	certPath         *string
 	passFunc         cosign.PassFunc
+
+	CosignSignConfig
 }
 
 func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
@@ -143,7 +171,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.passFunc, imageAnnotations)
+	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, s.passFunc, imageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
@@ -170,6 +198,8 @@ type BlobSigner struct {
 	prikeyPath         *string
 	certPath           *string
 	passFunc           cosign.PassFunc
+
+	CosignSignConfig
 }
 
 func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
@@ -204,7 +234,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a temporary blob file")
 	}
-	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.passFunc)
+	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, s.passFunc)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign a blob file")
 	}

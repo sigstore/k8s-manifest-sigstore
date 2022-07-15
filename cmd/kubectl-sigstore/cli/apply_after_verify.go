@@ -136,9 +136,9 @@ func applyAfterVerify(filename, resBundleRef, keyPath, configPath string) error 
 
 	if verified {
 		if signerName == "" {
-			log.Infof("verifed: %s", strconv.FormatBool(verified))
+			log.Infof("verified: %s", strconv.FormatBool(verified))
 		} else {
-			log.Infof("verifed: %s, signerName: %s", strconv.FormatBool(verified), signerName)
+			log.Infof("verified: %s, signerName: %s", strconv.FormatBool(verified), signerName)
 		}
 		err := KOptions.Apply(filename)
 		if err != nil {
@@ -151,7 +151,7 @@ func applyAfterVerify(filename, resBundleRef, keyPath, configPath string) error 
 		} else {
 			errMsg = diffMsg
 		}
-		log.Fatalf("verifed: %s, error: %s", strconv.FormatBool(verified), errMsg)
+		log.Fatalf("verified: %s, error: %s", strconv.FormatBool(verified), errMsg)
 	}
 
 	return nil

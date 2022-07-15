@@ -101,6 +101,10 @@ func NewCmdVerifyResource() *cobra.Command {
 	var provResRef string
 	var manifestBundleResRef string
 	var concurrencyNum int64
+	var certRef string
+	var certChain string
+	var rekorURL string
+	var oidcIssuer string
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -131,7 +135,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, resBundleRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, outputFormat, concurrencyNum)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, resBundleRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, certRef, certChain, rekorURL, oidcIssuer, outputFormat, concurrencyNum)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -159,11 +163,17 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&manifestBundleResRef, "manifest-bundle-resource", "", "a comma-separated list of configmaps that contains signature, message, attestation, sbom")
 	cmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "output format string, either \"json\" or \"yaml\" (if empty, a result is shown as a table)")
 
+	// the following flags are based on cosign verify command
+	cmd.PersistentFlags().StringVar(&certRef, "certificate", "", "path to the public certificate")
+	cmd.PersistentFlags().StringVar(&certChain, "certificate-chain", "", "path to a list of CA certificates in PEM format which will be needed when building the certificate chain for the signing certificate. Must start with the parent intermediate CA certificate of the signing certificate and end with the root certificate")
+	cmd.PersistentFlags().StringVar(&rekorURL, "rekor-url", "https://rekor.sigstore.dev", "URL of rekor STL server (default \"https://rekor.sigstore.dev\")")
+	cmd.PersistentFlags().StringVar(&oidcIssuer, "oidc-issuer", "", "the OIDC issuer expected in a valid Fulcio certificate, e.g. https://token.actions.githubusercontent.com or https://oauth2.sigstore.dev/auth")
+
 	KOptions.ConfigFlags.AddFlags(cmd.PersistentFlags())
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, outputFormat string, concurrencyNum int64) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, certRef, certChain, rekorURL, oidcIssuer, outputFormat string, concurrencyNum int64) (bool, error) {
 	var err error
 	start := time.Now().UTC()
 	if outputFormat != "" {
@@ -261,7 +271,13 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 			signers = vo.Signers
 		}
 		// signature verification functions
-		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ResourceBundleRef, keyPath, signers, vo.AnnotationConfig)
+		cosignVerifyConfig := k8smanifest.CosignVerifyConfig{
+			CertRef:    certRef,
+			CertChain:  certChain,
+			RekorURL:   rekorURL,
+			OIDCIssuer: oidcIssuer,
+		}
+		sigVerifier := k8smanifest.NewSignatureVerifier(nil, img.ResourceBundleRef, keyPath, signers, cosignVerifyConfig, vo.AnnotationConfig)
 		if verifier, ok := sigVerifier.(*k8smanifest.ImageSignatureVerifier); ok {
 			prepareFuncs = append(prepareFuncs, reflect.ValueOf(verifier.Verify))
 		}

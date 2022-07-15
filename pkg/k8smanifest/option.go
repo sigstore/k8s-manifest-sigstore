@@ -40,7 +40,8 @@ var defaultConfigBytes []byte
 
 // option for Sign()
 type SignOption struct {
-	commonOption `json:""`
+	commonOption     `json:""`
+	cosignSignOption `json:""`
 
 	// these options should be input from CLI arguments
 	KeyPath           string                 `json:"-"`
@@ -57,9 +58,11 @@ type SignOption struct {
 
 // option for VerifyResource()
 type VerifyResourceOption struct {
-	commonOption `json:""`
-	verifyOption `json:""`
-	SkipObjects  ObjectReferenceList `json:"skipObjects,omitempty"`
+	commonOption       `json:""`
+	verifyOption       `json:""`
+	cosignVerifyOption `json:""`
+
+	SkipObjects ObjectReferenceList `json:"skipObjects,omitempty"`
 
 	Provenance            bool   `json:"-"`
 	DisableDryRun         bool   `json:"-"`
@@ -77,8 +80,9 @@ func (o *VerifyResourceOption) SetAnnotationIgnoreFields() {
 
 // option for VerifyManifest()
 type VerifyManifestOption struct {
-	commonOption `json:""`
-	verifyOption `json:""`
+	commonOption       `json:""`
+	verifyOption       `json:""`
+	cosignVerifyOption `json:""`
 }
 
 func (o *VerifyManifestOption) SetAnnotationIgnoreFields() {
@@ -121,6 +125,19 @@ func (o verifyOption) isAnnotationKeyAlreadySetToIgnoreFields() bool {
 // common options
 type commonOption struct {
 	AnnotationConfig `json:""`
+}
+
+// cosign sign option
+type cosignSignOption struct {
+	RekorURL string `json:"-"`
+}
+
+// cosign verify option
+type cosignVerifyOption struct {
+	Certificate      string `json:"-"`
+	CertificateChain string `json:"-"`
+	RekorURL         string `json:"-"`
+	OIDCIssuer       string `json:"-"`
 }
 
 // annotation config for signing and verification

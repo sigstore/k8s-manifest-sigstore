@@ -36,12 +36,16 @@ func NewCmdVerify() *cobra.Command {
 	var filename string
 	var keyPath string
 	var configPath string
+	var certRef string
+	var certChain string
+	var rekorURL string
+	var oidcIssuer string
 	cmd := &cobra.Command{
 		Use:   "verify -f FILENAME [-i IMAGE]",
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := verify(filename, resBundleRef, keyPath, configPath)
+			err := verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rekorURL, oidcIssuer)
 			if err != nil {
 				return err
 			}
@@ -54,10 +58,16 @@ func NewCmdVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&keyPath, "key", "k", "", "a comma-separated list of paths to public keys or environment variable names start with \"env://\" (if empty, do key-less verification)")
 	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "path to verification config YAML file (for advanced verification)")
 
+	// the following flags are based on cosign verify command
+	cmd.PersistentFlags().StringVar(&certRef, "certificate", "", "path to the public certificate")
+	cmd.PersistentFlags().StringVar(&certChain, "certificate-chain", "", "path to a list of CA certificates in PEM format which will be needed when building the certificate chain for the signing certificate. Must start with the parent intermediate CA certificate of the signing certificate and end with the root certificate")
+	cmd.PersistentFlags().StringVar(&rekorURL, "rekor-url", "https://rekor.sigstore.dev", "URL of rekor STL server (default \"https://rekor.sigstore.dev\")")
+	cmd.PersistentFlags().StringVar(&oidcIssuer, "oidc-issuer", "", "the OIDC issuer expected in a valid Fulcio certificate, e.g. https://token.actions.githubusercontent.com or https://oauth2.sigstore.dev/auth")
+
 	return cmd
 }
 
-func verify(filename, resBundleRef, keyPath, configPath string) error {
+func verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rekorURL, oidcIssuer string) error {
 	manifest, err := ioutil.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -89,6 +99,10 @@ func verify(filename, resBundleRef, keyPath, configPath string) error {
 	if keyPath != "" {
 		vo.KeyPath = keyPath
 	}
+	vo.Certificate = certRef
+	vo.CertificateChain = certChain
+	vo.RekorURL = rekorURL
+	vo.OIDCIssuer = oidcIssuer
 
 	objManifests := k8ssigutil.SplitConcatYAMLs(manifest)
 	verified := false
@@ -121,9 +135,9 @@ func verify(filename, resBundleRef, keyPath, configPath string) error {
 	}
 	if verified {
 		if signerName == "" {
-			log.Infof("verifed: %s", strconv.FormatBool(verified))
+			log.Infof("verified: %s", strconv.FormatBool(verified))
 		} else {
-			log.Infof("verifed: %s, signerName: %s", strconv.FormatBool(verified), signerName)
+			log.Infof("verified: %s, signerName: %s", strconv.FormatBool(verified), signerName)
 		}
 	} else {
 		errMsg := ""
@@ -132,7 +146,7 @@ func verify(filename, resBundleRef, keyPath, configPath string) error {
 		} else {
 			errMsg = diffMsg
 		}
-		log.Fatalf("verifed: %s, error: %s", strconv.FormatBool(verified), errMsg)
+		log.Fatalf("verified: %s, error: %s", strconv.FormatBool(verified), errMsg)
 	}
 
 	return nil
