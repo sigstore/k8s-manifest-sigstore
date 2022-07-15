@@ -47,7 +47,7 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIssuer string) (bool, string, *int64, error) {
+func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIssuer string, rootCerts *x509.CertPool) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", resBundleRef, err.Error())
@@ -77,9 +77,13 @@ func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIss
 			return false, "", nil, fmt.Errorf("failed to initialize rekor client; %s", err.Error())
 		}
 		co.RekorClient = rekorClient
-		co.RootCerts, err = fulcio.GetRoots()
-		if err != nil {
-			return false, "", nil, fmt.Errorf("failed to get fulcio root; %s", err.Error())
+		if rootCerts != nil {
+			co.RootCerts = rootCerts
+		} else {
+			co.RootCerts, err = fulcio.GetRoots()
+			if err != nil {
+				return false, "", nil, fmt.Errorf("failed to get fulcio root; %s", err.Error())
+			}
 		}
 		co.CertOidcIssuer = oidcIssuer
 	}

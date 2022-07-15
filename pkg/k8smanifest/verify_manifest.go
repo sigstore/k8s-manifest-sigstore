@@ -99,6 +99,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 		CertChain:  vo.CertificateChain,
 		RekorURL:   vo.RekorURL,
 		OIDCIssuer: vo.OIDCIssuer,
+		RootCerts:  vo.RootCerts,
 	}
 
 	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, sigRef, keyPath, signers, cosignVerifyConfig, vo.AnnotationConfig).Verify()

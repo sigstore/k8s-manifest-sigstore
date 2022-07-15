@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	cryptox509 "crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -50,6 +51,7 @@ type CosignVerifyConfig struct {
 	CertChain  string
 	RekorURL   string
 	OIDCIssuer string
+	RootCerts  *cryptox509.CertPool
 }
 
 func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, signers []string, cosignVerifyConfig CosignVerifyConfig, annotationConfig AnnotationConfig) SignatureVerifier {
@@ -149,7 +151,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	for i := range v.identityList {
 		identity := v.identityList[i]
 		// do normal image verification
-		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer)
+		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer, v.RootCerts)
 
 		// cosign keyless returns signerName, so check if it matches the verificationIdentity
 		if verified && identity.name != "" {

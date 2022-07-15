@@ -135,6 +135,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		CertChain:  vo.CertificateChain,
 		RekorURL:   vo.RekorURL,
 		OIDCIssuer: vo.OIDCIssuer,
+		RootCerts:  vo.RootCerts,
 	}
 
 	var sigVerified bool

@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	"crypto/x509"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -134,10 +135,11 @@ type cosignSignOption struct {
 
 // cosign verify option
 type cosignVerifyOption struct {
-	Certificate      string `json:"-"`
-	CertificateChain string `json:"-"`
-	RekorURL         string `json:"-"`
-	OIDCIssuer       string `json:"-"`
+	Certificate      string         `json:"-"`
+	CertificateChain string         `json:"-"`
+	RekorURL         string         `json:"-"`
+	OIDCIssuer       string         `json:"-"`
+	RootCerts        *x509.CertPool `json:"-"`
 }
 
 // annotation config for signing and verification
