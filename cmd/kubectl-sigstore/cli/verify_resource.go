@@ -244,6 +244,10 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 	if provResRef != "" {
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
+	vo.Certificate = certRef
+	vo.CertificateChain = certChain
+	vo.RekorURL = rekorURL
+	vo.OIDCIssuer = oidcIssuer
 
 	imagesToBeused := getAllImagesToBeUsed(vo.ResourceBundleRef, objs, vo.AnnotationConfig, vo.Provenance)
 
