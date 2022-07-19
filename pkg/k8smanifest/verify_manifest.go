@@ -94,7 +94,15 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 		signers = vo.Signers
 	}
 
-	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, sigRef, keyPath, signers, vo.AnnotationConfig).Verify()
+	cosignVerifyConfig := CosignVerifyConfig{
+		CertRef:    vo.Certificate,
+		CertChain:  vo.CertificateChain,
+		RekorURL:   vo.RekorURL,
+		OIDCIssuer: vo.OIDCIssuer,
+		RootCerts:  vo.RootCerts,
+	}
+
+	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, sigRef, keyPath, signers, cosignVerifyConfig, vo.AnnotationConfig).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "error occured during signature verification")
 	}

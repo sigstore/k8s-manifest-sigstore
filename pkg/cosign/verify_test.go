@@ -37,7 +37,7 @@ func TestVerifyBlob(t *testing.T) {
 		t.Errorf("failed to load pub key: %s", err.Error())
 		return
 	}
-	verified, _, _, err := VerifyBlob(b64EncodedTestBlob, b64EncodedTestSig, nil, nil, &pubkeyPath)
+	verified, _, _, err := VerifyBlob(b64EncodedTestBlob, b64EncodedTestSig, nil, nil, &pubkeyPath, "", "", "", "")
 	if err != nil {
 		t.Errorf("failed to verify signature with error: %s", err.Error())
 		return

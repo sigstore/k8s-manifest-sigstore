@@ -17,6 +17,7 @@
 package k8smanifest
 
 import (
+	cryptox509 "crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -45,7 +46,15 @@ type verificationIdentity struct {
 	name string // for keyless
 }
 
-func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, signers []string, annotationConfig AnnotationConfig) SignatureVerifier {
+type CosignVerifyConfig struct {
+	CertRef    string
+	CertChain  string
+	RekorURL   string
+	OIDCIssuer string
+	RootCerts  *cryptox509.CertPool
+}
+
+func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, signers []string, cosignVerifyConfig CosignVerifyConfig, annotationConfig AnnotationConfig) SignatureVerifier {
 	var resBundleRef, resourceRef string
 
 	resBundleRefAnnotationKey := annotationConfig.ResourceBundleRefAnnotationKey()
@@ -76,9 +85,21 @@ func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string
 	}
 
 	if resBundleRef != "" && resBundleRef != SigRefEmbeddedInAnnotation {
-		return &ImageSignatureVerifier{resBundleRef: resBundleRef, onMemoryCacheEnabled: true, identityList: identityList, annotationConfig: annotationConfig}
+		return &ImageSignatureVerifier{
+			resBundleRef:         resBundleRef,
+			onMemoryCacheEnabled: true,
+			identityList:         identityList,
+			annotationConfig:     annotationConfig,
+			CosignVerifyConfig:   cosignVerifyConfig,
+		}
 	} else {
-		return &BlobSignatureVerifier{annotations: annotations, resourceRef: resourceRef, identityList: identityList, annotationConfig: annotationConfig}
+		return &BlobSignatureVerifier{
+			annotations:        annotations,
+			resourceRef:        resourceRef,
+			identityList:       identityList,
+			annotationConfig:   annotationConfig,
+			CosignVerifyConfig: cosignVerifyConfig,
+		}
 	}
 }
 
@@ -87,6 +108,8 @@ type ImageSignatureVerifier struct {
 	onMemoryCacheEnabled bool
 	annotationConfig     AnnotationConfig
 	identityList         []verificationIdentity
+
+	CosignVerifyConfig
 }
 
 func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
@@ -128,7 +151,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	for i := range v.identityList {
 		identity := v.identityList[i]
 		// do normal image verification
-		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path)
+		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer, v.RootCerts)
 
 		// cosign keyless returns signerName, so check if it matches the verificationIdentity
 		if verified && identity.name != "" {
@@ -194,6 +217,8 @@ type BlobSignatureVerifier struct {
 	resourceRef      string
 	annotationConfig AnnotationConfig
 	identityList     []verificationIdentity
+
+	CosignVerifyConfig
 }
 
 func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
@@ -233,7 +258,7 @@ func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 			}
 			switch sigType {
 			case sigtypes.SigTypeCosign:
-				verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, pubkeyPtr)
+				verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, pubkeyPtr, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer)
 			case sigtypes.SigTypePGP:
 				verified, signer, _, err = pgp.VerifyBlob(msgBytes, sigBytes, pubkeyPtr)
 			case sigtypes.SigTypeX509:

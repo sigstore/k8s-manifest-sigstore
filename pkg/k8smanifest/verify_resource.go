@@ -130,9 +130,17 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 		signers = vo.Signers
 	}
 
+	cosignVerifyConfig := CosignVerifyConfig{
+		CertRef:    vo.Certificate,
+		CertChain:  vo.CertificateChain,
+		RekorURL:   vo.RekorURL,
+		OIDCIssuer: vo.OIDCIssuer,
+		RootCerts:  vo.RootCerts,
+	}
+
 	var sigVerified bool
 	log.Debug("verifying signature...")
-	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath, signers, vo.AnnotationConfig).Verify()
+	sigVerified, signerName, signedTimestamp, err = NewSignatureVerifier(objBytes, sigRef, keyPath, signers, cosignVerifyConfig, vo.AnnotationConfig).Verify()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to verify signature")
 	}

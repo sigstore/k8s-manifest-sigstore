@@ -63,7 +63,7 @@ func TestSignBlob(t *testing.T) {
 	blobPath := files["blob"].fpath
 	keyPath := files["key"].fpath
 
-	sigMap, err := SignBlob(blobPath, &keyPath, nil, passFuncForTest)
+	sigMap, err := SignBlob(blobPath, &keyPath, nil, "", passFuncForTest)
 	if err != nil {
 		t.Errorf("failed to load test files: %s", err.Error())
 		return

@@ -52,12 +52,17 @@ const (
 	defaultKeylessTlogUploadTimeout = 90 // set to 90s for keyless as cosign recommends it in the help message
 )
 
-func SignImage(resBundleRef string, keyPath, certPath *string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
+func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
 
-	rekorSeverURL := GetRekorServerURL()
+	var rekorSeverURL string
+	if rekorURL == "" {
+		rekorSeverURL = GetRekorServerURL()
+	} else {
+		rekorSeverURL = rekorURL
+	}
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	rootOpt := &cliopt.RootOptions{Timeout: defaultTlogUploadTimeout * time.Second}
@@ -92,12 +97,17 @@ func SignImage(resBundleRef string, keyPath, certPath *string, pf cosign.PassFun
 	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "")
 }
 
-func SignBlob(blobPath string, keyPath, certPath *string, pf cosign.PassFunc) (map[string][]byte, error) {
+func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, pf cosign.PassFunc) (map[string][]byte, error) {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
 
-	rekorSeverURL := GetRekorServerURL()
+	var rekorSeverURL string
+	if rekorURL == "" {
+		rekorSeverURL = GetRekorServerURL()
+	} else {
+		rekorSeverURL = rekorURL
+	}
 	fulcioServerURL := fulcioapi.SigstorePublicServerURL
 
 	opt := cliopt.KeyOpts{
