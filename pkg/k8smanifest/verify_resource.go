@@ -99,7 +99,9 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	log.Debug("fetching manifest...")
 	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
 	if err != nil {
-		return nil, errors.Wrap(err, "YAML manifest not found for this resource")
+		retErr := errors.Wrap(err, "YAML manifest not found for this resource")
+		log.Debugf("IsMessageNotFoundError(): %v", IsMessageNotFoundError(retErr))
+		return nil, retErr
 	}
 	log.Debug("matching object with manifest...")
 	var mnfMatched bool
@@ -227,37 +229,35 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		}
 		log.Debugf("found diff by direct match: %s", diffStr)
 	}
-	// if DryRun is disabled, manifest matching ends here
-	if disableDryRun {
-		return matched, diff, nil
-	}
 
-	// CASE2: dryrun create match
-	log.Debug("try dryrun create matching")
 	var dryRunBytes []byte
-	matched, diff, dryRunBytes, err = dryrunCreateMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
-	if err != nil {
-		return false, nil, errors.Wrap(err, "error occured during dryrun create match")
-	}
-	if diff != nil && len(ignoreFields) > 0 {
-		_, diff, _ = diff.Filter(ignoreFields)
-	}
-	if diff == nil || diff.Size() == 0 {
-		matched = true
-		diff = nil
-	}
-	if matched {
-		return true, nil, nil
-	} else {
-		diffStr := ""
-		if diff != nil {
-			diffStr = diff.ToJson()
+	// CASE2: dryrun create match
+	if !disableDryRun {
+		log.Debug("try dryrun create matching")
+		matched, diff, dryRunBytes, err = dryrunCreateMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
+		if err != nil {
+			return false, nil, errors.Wrap(err, "error occured during dryrun create match")
 		}
-		log.Debugf("found diff by dryrun create matching: %s", diffStr)
+		if diff != nil && len(ignoreFields) > 0 {
+			_, diff, _ = diff.Filter(ignoreFields)
+		}
+		if diff == nil || diff.Size() == 0 {
+			matched = true
+			diff = nil
+		}
+		if matched {
+			return true, nil, nil
+		} else {
+			diffStr := ""
+			if diff != nil {
+				diffStr = diff.ToJson()
+			}
+			log.Debugf("found diff by dryrun create matching: %s", diffStr)
+		}
 	}
 
 	// CASE3: dryrun apply match
-	if checkDryRunForApply {
+	if !disableDryRun && checkDryRunForApply {
 		log.Debug("try dryrun apply matching")
 		matched, diff, err = dryrunApplyMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
 		if err != nil {
@@ -284,7 +284,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 	// CASE4: manifest match for a resource in mutating admission controller
 	if checkMutatingResource {
 		log.Debug("try mutating resource matching (check inclusion relation between manifest, resource and dryrun result)")
-		matched, diff, err = inclusionMatch(foundManifestBytes, objBytes, dryRunBytes, clusterScope, isCRD)
+		matched, diff, err = inclusionMatch(foundManifestBytes, objBytes, dryRunBytes, clusterScope, isCRD, disableDryRun)
 		if err != nil {
 			return false, nil, errors.Wrap(err, "error occured during mutating resource matching")
 		}
@@ -415,7 +415,7 @@ func dryrunApplyMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope, 
 // This function covers verification for an object which is mutated by the following steps.
 // STEPS) Manifest --(mutating webhook A)--> Checking Object --(mutating webhook B)--> DryRun Result
 // This is basically useful for verification in mutating admission controller.
-func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clusterScope, isCRD bool) (bool, *mapnode.DiffResult, error) {
+func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clusterScope, isCRD, disableDryRun bool) (bool, *mapnode.DiffResult, error) {
 	mnfNode, err := mapnode.NewFromYamlBytes(messageYAMLBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize manifest node")
@@ -423,10 +423,6 @@ func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clu
 	objNode, err := mapnode.NewFromBytes(resourceJSONBytes)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "failed to initialize object node")
-	}
-	simNode, err := mapnode.NewFromYamlBytes(dryRunBytes)
-	if err != nil {
-		return false, nil, errors.Wrap(err, "failed to initialize dry-run-generated object node")
 	}
 	mask := []string{}
 	mask = append(mask, "metadata.name") // name is overwritten for dryrun like `sample-configmap-dryrun`
@@ -441,18 +437,34 @@ func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clu
 	}
 	maskedMnfNode := mnfNode.Mask(mask)
 	maskedObjNode := objNode.Mask(mask)
-	maskedSimNode := simNode.Mask(mask)
+	var diff1, diff2 *mapnode.DiffResult
 	// find diffs but ignore newly added attributes
-	diff1 := maskedMnfNode.FindUpdatedAndDeleted(maskedObjNode)
-	diff2 := inverseDiff(maskedObjNode.FindUpdatedAndDeleted(maskedSimNode)) // simNode is based on manifest, so inverse diff results
+	diff1 = maskedMnfNode.FindUpdatedAndDeleted(maskedObjNode)
 	diff1 = removeCanonicalizedImageDiff(diff1)
-	diff2 = removeCanonicalizedImageDiff(diff2)
 	diff1ok := (diff1 == nil || diff1.Size() == 0)
-	diff2ok := (diff2 == nil || diff2.Size() == 0)
+	diff2ok := false
+	if disableDryRun {
+		// if dry run is disabled, just evaluate diffs between the manfiest and the object in admission request
+		diff2ok = true
+	} else {
+		simNode, err := mapnode.NewFromYamlBytes(dryRunBytes)
+		if err != nil {
+			return false, nil, errors.Wrap(err, "failed to initialize dry-run-generated object node")
+		}
+		maskedSimNode := simNode.Mask(mask)
+		diff2 = inverseDiff(maskedObjNode.FindUpdatedAndDeleted(maskedSimNode)) // simNode is based on manifest, so inverse diff results
+		diff2 = removeCanonicalizedImageDiff(diff2)
+		diff2ok = (diff2 == nil || diff2.Size() == 0)
+	}
+
 	if diff1ok && diff2ok {
 		return true, nil, nil
 	}
-	return false, diff2, nil
+	reportDiff := diff1
+	if diff2 != nil {
+		reportDiff = diff2
+	}
+	return false, reportDiff, nil
 }
 
 // remove a diff result caused by image canonicalization

@@ -78,6 +78,65 @@ func TestVerifyResource(t *testing.T) {
 	t.Logf("verify-resource result: %s", string(resultBytes))
 }
 
+func TestVerifyResourceWithoutMessageAndSignature(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-test")
+	if err != nil {
+		t.Errorf("failed to create temp dir: %s", err.Error())
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "testpub")
+	err = initSingleTestFile(b64EncodedTestPubkey, keyPath)
+	if err != nil {
+		t.Errorf("failed to init a public key file for test: %s", err.Error())
+		return
+	}
+
+	fpath := "testdata/sample-configmap-signed.yaml"
+	objBytes, err := ioutil.ReadFile(fpath)
+	if err != nil {
+		t.Errorf("failed to load a test resource file: %s", err.Error())
+		return
+	}
+	var objWithoutMsg, objWithoutSig unstructured.Unstructured
+	err = yaml.Unmarshal(objBytes, &objWithoutMsg)
+	if err != nil {
+		t.Errorf("failed to unmarshal: %s", err.Error())
+		return
+	}
+	_ = yaml.Unmarshal(objBytes, &objWithoutSig)
+
+	originalAnnotations := objWithoutMsg.GetAnnotations()
+	msgKey := AnnotationConfig{}.MessageAnnotationKey()
+	annotationWithoutSig := map[string]string{
+		msgKey: originalAnnotations[msgKey],
+	}
+	annotationWithoutMsg := map[string]string{}
+	objWithoutSig.SetAnnotations(annotationWithoutSig)
+	objWithoutMsg.SetAnnotations(annotationWithoutMsg)
+
+	vo := &VerifyResourceOption{
+		verifyOption: verifyOption{
+			KeyPath: keyPath,
+		},
+	}
+
+	_, err = VerifyResource(objWithoutSig, vo)
+	if err == nil {
+		t.Error("VerifyResource() for an object without signture must fail, but no error was returned")
+	} else if !IsSignatureNotFoundError(err) {
+		t.Error("VerifyResource() for an object without signture must return a SignatureNotFoundError")
+	}
+
+	_, err = VerifyResource(objWithoutMsg, vo)
+	if err == nil {
+		t.Error("VerifyResource() for an object without message must fail, but no error was returned")
+	} else if !IsMessageNotFoundError(err) {
+		t.Error("VerifyResource() for an object without message must return a MessageNotFoundError")
+	}
+}
+
 func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-multisig-test")
 	if err != nil {
@@ -263,7 +322,7 @@ func TestInclusionMatch(t *testing.T) {
 		return
 	}
 
-	verified, diff, err := inclusionMatch(mnfBytes, objBytes, dyrRunBytes, false, false)
+	verified, diff, err := inclusionMatch(mnfBytes, objBytes, dyrRunBytes, false, false, false)
 	if err != nil {
 		t.Errorf("failed to check inclusionMatch: %s", err.Error())
 		return
