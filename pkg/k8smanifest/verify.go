@@ -172,7 +172,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 			allErrs = append(allErrs, err.Error())
 		}
 	}
-	return false, "", nil, fmt.Errorf("signature verification failed: %s", strings.Join(allErrs, "; "))
+	return false, "", nil, NewSignatureVerificationError(fmt.Errorf("signature verification failed: %s", strings.Join(allErrs, "; ")))
 }
 
 func (v *ImageSignatureVerifier) getResultFromCache(resBundleRef, pubkey string) (bool, bool, string, *int64, error) {
@@ -224,7 +224,10 @@ type BlobSignatureVerifier struct {
 func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 	sigSets, err := v.getSignatureSets()
 	if err != nil {
-		return false, "", nil, errors.Wrap(err, "failed to get signature")
+		return false, "", nil, NewSignatureNotFoundError(errors.Wrap(err, "failed to get signature"))
+	}
+	if len(sigSets) == 0 {
+		return false, "", nil, NewSignatureNotFoundError(nil)
 	}
 
 	var verified bool
@@ -292,7 +295,7 @@ func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 		}
 	}
 	allErrsBytes, _ := json.Marshal(allErrs)
-	return false, "", nil, fmt.Errorf("verification failed for %v signature. all trials: %s", len(sigSets), string(allErrsBytes))
+	return false, "", nil, NewSignatureVerificationError(fmt.Errorf("verification failed for %v signature. all trials: %s", len(sigSets), string(allErrsBytes)))
 }
 
 func (v *BlobSignatureVerifier) getSignatureSets() ([]map[string]string, error) {
@@ -363,7 +366,7 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 		}
 	}
 	if resBundleRefString == "" {
-		return nil, "", errors.New("no image reference is found")
+		return nil, "", NewMessageNotFoundError(errors.New("no image reference is found"))
 	}
 
 	var maxResourceManifestNumPtr *int
@@ -382,7 +385,7 @@ func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, err
 			return resourceManifests, resBundleRef, nil
 		}
 	}
-	return nil, "", errors.New("failed to find a YAML manifest in the image")
+	return nil, "", NewMessageNotFoundError(errors.New("failed to find a YAML manifest in the image"))
 }
 
 func (f *ImageManifestFetcher) fetchManifestInSingleImage(singleResourceBundleRef string) ([]byte, error) {
@@ -492,7 +495,7 @@ func (f *BlobManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, erro
 	messageAnnotationKey := f.AnnotationConfig.MessageAnnotationKey()
 	base64Msg, messageFound := annotations[messageAnnotationKey]
 	if !messageFound {
-		return nil, "", nil
+		return nil, "", NewMessageNotFoundError(nil)
 	}
 	gzipMsg, err := base64.StdEncoding.DecodeString(base64Msg)
 	if err != nil {
@@ -515,7 +518,7 @@ func (f *BlobManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, erro
 
 	found, resourceManifests := k8smnfutil.FindManifestYAML(concatYAMLbytes, objYAMLBytes, maxResourceManifestNumPtr, f.ignoreFields)
 	if !found {
-		return nil, "", errors.New("failed to find a YAML manifest in the gzipped message")
+		return nil, "", NewMessageNotFoundError(errors.New("failed to find a YAML manifest in the gzipped message"))
 	}
 	return resourceManifests, SigRefEmbeddedInAnnotation, nil
 }
