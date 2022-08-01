@@ -319,6 +319,7 @@ func directMatch(messageYAMLBytes, resourceJSONBytes []byte) (bool, *mapnode.Dif
 		return false, nil, errors.Wrap(err, "failed to initialize object node")
 	}
 	diff := mnfNode.Diff(objNode)
+	diff = removeCanonicalizedImageDiff(diff)
 	if diff == nil || diff.Size() == 0 {
 		return true, nil, nil
 	}
@@ -362,6 +363,7 @@ func dryrunCreateMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope,
 	maskedObjNode := objNode.Mask(mask)
 	maskedSimNode := simNode.Mask(mask)
 	diff := maskedSimNode.Diff(maskedObjNode)
+	diff = removeCanonicalizedImageDiff(diff)
 	if diff == nil || diff.Size() == 0 {
 		return true, nil, simBytes, nil
 	}
@@ -404,6 +406,7 @@ func dryrunApplyMatch(messageYAMLBytes, resourceJSONBytes []byte, clusterScope, 
 	maskedObjNode := objNode.Mask(mask)
 	maskedSimNode := simNode.Mask(mask)
 	diff := maskedSimNode.Diff(maskedObjNode)
+	diff = removeCanonicalizedImageDiff(diff)
 	if diff == nil || diff.Size() == 0 {
 		return true, nil, nil
 	}
