@@ -221,7 +221,7 @@ func VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes []byte, pubkeyPath *s
 		return false, "", nil, errors.Wrap(err, "failed to write a message data to virtual standard input")
 	}
 	_ = stdinWriter.Close()
-	err = cliverify.VerifyBlobCmd(context.Background(), opt, certRef, "", oidcIssuer, certChain, string(b64Sig), "-", false)
+	err = cliverify.VerifyBlobCmd(context.Background(), opt, certRef, "", oidcIssuer, certChain, string(b64Sig), "-", "", "", "", "", "", false)
 	if err != nil {
 		return false, "", nil, errors.Wrap(err, "cosign.VerifyBlobCmd() returned an error")
 	}
