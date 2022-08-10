@@ -76,7 +76,8 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 	}
 
 	cosignSignConfig := CosignSignConfig{
-		RekorURL: so.RekorURL,
+		RekorURL:     so.RekorURL,
+		NoTlogUpload: so.NoTlogUpload,
 	}
 
 	signedBytes, err := NewSigner(so.ResourceBundleRef, so.KeyPath, so.CertPath, output, so.AppendSignature, so.ApplySigConfigMap, makeTarball, cosignSignConfig, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
@@ -92,7 +93,8 @@ type Signer interface {
 }
 
 type CosignSignConfig struct {
-	RekorURL string
+	RekorURL     string
+	NoTlogUpload bool
 }
 
 func NewSigner(resBundleRef, keyPath, certPath, output string, appendSig, doApply, tarball bool, cosignSignConfig CosignSignConfig, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
@@ -170,7 +172,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, s.passFunc, imageAnnotations)
+	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.passFunc, imageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
@@ -233,7 +235,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a temporary blob file")
 	}
-	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, s.passFunc)
+	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.passFunc)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign a blob file")
 	}
