@@ -21,7 +21,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -73,7 +73,7 @@ func createTestResource(fname string, namespace string) error {
 	var obj *unstructured.Unstructured
 	var err error
 
-	objBytes, err := ioutil.ReadFile(fname)
+	objBytes, err := os.ReadFile(fname)
 	if err != nil {
 		return errors.Wrap(err, "failed to read a testdata file")
 	}
@@ -159,7 +159,7 @@ var _ = BeforeSuite(func() {
 
 	kubeutil.SetKubeConfig(cfg)
 
-	testTempDir, err = ioutil.TempDir("", "verify-resource-test")
+	testTempDir, err = os.MkdirTemp("", "verify-resource-test")
 	Expect(err).NotTo(HaveOccurred())
 
 	kubeconfigBytes, err := testUser.KubeConfig()
@@ -167,7 +167,7 @@ var _ = BeforeSuite(func() {
 	fmt.Println(err)
 	Expect(err).NotTo(HaveOccurred())
 	kubeconfigPath := filepath.Join(testTempDir, "kubeconfig")
-	err = ioutil.WriteFile(kubeconfigPath, kubeconfigBytes, 0644)
+	err = os.WriteFile(kubeconfigPath, kubeconfigBytes, 0644)
 	Expect(err).NotTo(HaveOccurred())
 
 	KOptions.SetKubeConfig(kubeconfigPath, "default")
@@ -182,7 +182,7 @@ var _ = BeforeSuite(func() {
 
 	testpubBytes, err := base64.StdEncoding.DecodeString(string(b64EncodedTestPubKey))
 	Expect(err).ToNot(HaveOccurred())
-	err = ioutil.WriteFile(filepath.Join(testTempDir, "testpub"), testpubBytes, 0644)
+	err = os.WriteFile(filepath.Join(testTempDir, "testpub"), testpubBytes, 0644)
 	Expect(err).ToNot(HaveOccurred())
 
 }, 60)

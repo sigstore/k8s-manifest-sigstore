@@ -17,7 +17,7 @@
 package kubeutil
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -87,7 +87,7 @@ var _ = Describe("Test Kubeutil Functions", func() {
 	It("DryRunCreate Test", func() {
 		var timeout int = 10
 		Eventually(func() error {
-			testObj, err := ioutil.ReadFile("testdata/sample_configmap.yaml")
+			testObj, err := os.ReadFile("testdata/sample_configmap.yaml")
 			if err != nil {
 				return err
 			}
@@ -101,7 +101,7 @@ var _ = Describe("Test Kubeutil Functions", func() {
 	It("StrategicMergePatch Test", func() {
 		var timeout int = 10
 		Eventually(func() error {
-			testObj, err := ioutil.ReadFile("testdata/sample_configmap.yaml")
+			testObj, err := os.ReadFile("testdata/sample_configmap.yaml")
 			if err != nil {
 				return err
 			}
@@ -109,7 +109,7 @@ var _ = Describe("Test Kubeutil Functions", func() {
 			if err != nil {
 				return err
 			}
-			testObjOrg, err := ioutil.ReadFile("testdata/sample_configmap_after.yaml")
+			testObjOrg, err := os.ReadFile("testdata/sample_configmap_after.yaml")
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ var _ = Describe("Test Kubeutil Functions", func() {
 	It("GetApplyPatchBytes Test", func() {
 		var timeout int = 20
 		Eventually(func() error {
-			testObj, err := ioutil.ReadFile("testdata/sample_configmap_after.yaml")
+			testObj, err := os.ReadFile("testdata/sample_configmap_after.yaml")
 			if err != nil {
 				return err
 			}

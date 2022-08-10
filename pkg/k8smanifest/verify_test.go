@@ -1,25 +1,22 @@
-//
 // Copyright 2021 The Sigstore Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 package k8smanifest
 
 import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +33,7 @@ var b64EncodedTestPubkey []byte
 const b64KeylesSignerConfig = "aGlyb2t1bmkua2l0YWhhcmExQGlibS5jb20K"
 
 func TestVerifyResource(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -51,7 +48,7 @@ func TestVerifyResource(t *testing.T) {
 	}
 
 	fpath := "testdata/sample-configmap-signed.yaml"
-	objBytes, err := ioutil.ReadFile(fpath)
+	objBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		t.Errorf("failed to load a test resource file: %s", err.Error())
 		return
@@ -79,7 +76,7 @@ func TestVerifyResource(t *testing.T) {
 }
 
 func TestVerifyResourceWithoutMessageAndSignature(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -94,7 +91,7 @@ func TestVerifyResourceWithoutMessageAndSignature(t *testing.T) {
 	}
 
 	fpath := "testdata/sample-configmap-signed.yaml"
-	objBytes, err := ioutil.ReadFile(fpath)
+	objBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		t.Errorf("failed to load a test resource file: %s", err.Error())
 		return
@@ -138,7 +135,7 @@ func TestVerifyResourceWithoutMessageAndSignature(t *testing.T) {
 }
 
 func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-multisig-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-multisig-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -153,7 +150,7 @@ func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
 	}
 
 	fpath := "testdata/sample-configmap-multi-signed.yaml"
-	objBytes, err := ioutil.ReadFile(fpath)
+	objBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		t.Errorf("failed to load a test resource file: %s", err.Error())
 		return
@@ -181,7 +178,7 @@ func TestVerifyResourceWithMultipleSignatures(t *testing.T) {
 }
 
 func TestVerifyResourceWithKeylessMultipleSignatures(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-keyless-multisig-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-keyless-multisig-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -196,7 +193,7 @@ func TestVerifyResourceWithKeylessMultipleSignatures(t *testing.T) {
 	}
 
 	fpath := "testdata/sample-configmap-keyless-multi-signed.yaml"
-	objBytes, err := ioutil.ReadFile(fpath)
+	objBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		t.Errorf("failed to load a test resource file: %s", err.Error())
 		return
@@ -232,7 +229,7 @@ func TestVerifyResourceWithKeylessMultipleSignatures(t *testing.T) {
 }
 
 func TestVerifyResourceWithoutDryRun(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-without-dryrun-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-without-dryrun-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -247,7 +244,7 @@ func TestVerifyResourceWithoutDryRun(t *testing.T) {
 	}
 
 	fpath := "testdata/sample-deployment-signed-deployed.yaml"
-	objBytes, err := ioutil.ReadFile(fpath)
+	objBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		t.Errorf("failed to load a test resource file: %s", err.Error())
 		return
@@ -282,7 +279,7 @@ func TestVerifyResourceWithoutDryRun(t *testing.T) {
 }
 
 func TestInclusionMatch(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-verify-resource-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -297,14 +294,14 @@ func TestInclusionMatch(t *testing.T) {
 	}
 
 	f1path := "testdata/sample-deployment-signed.yaml"
-	mnfBytes, err := ioutil.ReadFile(f1path)
+	mnfBytes, err := os.ReadFile(f1path)
 	if err != nil {
 		t.Errorf("failed to load a test resource file for manifest: %s", err.Error())
 		return
 	}
 
 	f2path := "testdata/sample-deployment-signed-mutating-1.yaml"
-	objYAMLBytes, err := ioutil.ReadFile(f2path)
+	objYAMLBytes, err := os.ReadFile(f2path)
 	if err != nil {
 		t.Errorf("failed to load a test resource file for obejct: %s", err.Error())
 		return
@@ -316,7 +313,7 @@ func TestInclusionMatch(t *testing.T) {
 	}
 
 	f3path := "testdata/sample-deployment-signed-mutating-2.yaml"
-	dyrRunBytes, err := ioutil.ReadFile(f3path)
+	dyrRunBytes, err := os.ReadFile(f3path)
 	if err != nil {
 		t.Errorf("failed to load a test resource file for DryRun result: %s", err.Error())
 		return

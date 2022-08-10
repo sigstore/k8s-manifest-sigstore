@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -82,7 +81,7 @@ func LoadKustomization(fpath, baseDir, gitURL, gitRevision string, inRemoteRepo 
 	if !FileExists(fpath) {
 		return nil, fmt.Errorf("%s does not exists", fpath)
 	}
-	data, err := ioutil.ReadFile(fpath)
+	data, err := os.ReadFile(fpath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read %s", fpath)
 	}

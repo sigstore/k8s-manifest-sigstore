@@ -19,7 +19,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -109,7 +109,7 @@ func (c *ManifestIntegrityConfig) LoadKeySecret() (string, error) {
 	keyPath := ""
 	for fname, keyData := range secret.Data {
 		fpath := filepath.Join(keyDir, fname)
-		err := ioutil.WriteFile(fpath, keyData, 0644)
+		err := os.WriteFile(fpath, keyData, 0644)
 		if err != nil {
 			sumErr = append(sumErr, err.Error())
 			continue

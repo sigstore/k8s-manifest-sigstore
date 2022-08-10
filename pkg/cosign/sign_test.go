@@ -1,24 +1,21 @@
-//
 // Copyright 2021 The Sigstore Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 package cosign
 
 import (
 	_ "embed"
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,7 +41,7 @@ type testFile struct {
 }
 
 func TestSignBlob(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "sign_test")
+	tmpDir, err := os.MkdirTemp("", "sign_test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -79,7 +76,7 @@ func TestSignBlob(t *testing.T) {
 
 	// b64SigBytes := sigMap["signature"]
 	// sigFileName := filepath.Join("testdata", "testsig")
-	// _ = ioutil.WriteFile(sigFileName, []byte(b64SigBytes), 0644)
+	// _ = os.WriteFile(sigFileName, []byte(b64SigBytes), 0644)
 }
 
 func passFuncForTest(b bool) ([]byte, error) {
@@ -101,7 +98,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(fpath, testblob, 0644)
+	err = os.WriteFile(fpath, testblob, 0644)
 	if err != nil {
 		return err
 	}

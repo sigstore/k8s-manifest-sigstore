@@ -19,7 +19,6 @@ package util
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -67,7 +66,7 @@ func FindYAMLsInDir(dirPath string) ([][]byte, error) {
 	foundYAMLs := [][]byte{}
 	err := filepath.Walk(dirPath, func(fpath string, info os.FileInfo, err error) error {
 		if err == nil && supportedExtensions[path.Ext(info.Name())] {
-			yamlBytes, err := ioutil.ReadFile(fpath)
+			yamlBytes, err := os.ReadFile(fpath)
 			if err == nil && isK8sResourceYAML(yamlBytes) {
 				foundYAMLs = append(foundYAMLs, yamlBytes)
 			}

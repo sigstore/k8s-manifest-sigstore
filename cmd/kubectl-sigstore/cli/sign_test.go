@@ -1,25 +1,22 @@
-//
 // Copyright 2021 The Sigstore Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 package cli
 
 import (
 	"bytes"
 	_ "embed"
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +33,7 @@ import (
 var b64EncodedTestKey []byte
 
 func TestSign(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "sign-test")
+	tmpDir, err := os.MkdirTemp("", "sign-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -58,7 +55,7 @@ func TestSign(t *testing.T) {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
 	}
-	outBytes, err := ioutil.ReadFile(outPath)
+	outBytes, err := os.ReadFile(outPath)
 	if err != nil {
 		t.Errorf("failed to read the signed file: %s", err.Error())
 		return
@@ -72,7 +69,7 @@ func TestSign(t *testing.T) {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
 	}
-	outBytes2, err := ioutil.ReadFile(outPath2)
+	outBytes2, err := os.ReadFile(outPath2)
 	if err != nil {
 		t.Errorf("failed to read the signed file: %s", err.Error())
 		return
@@ -117,7 +114,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(fpath, testblob, 0644)
+	err = os.WriteFile(fpath, testblob, 0644)
 	if err != nil {
 		return err
 	}
@@ -125,7 +122,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 }
 
 func getManifestInTarballMessage(msgBytes []byte) ([]byte, error) {
-	dir, err := ioutil.TempDir("", "kubectl-sigstore-sign-test-temp-dir")
+	dir, err := os.MkdirTemp("", "kubectl-sigstore-sign-test-temp-dir")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")
 	}

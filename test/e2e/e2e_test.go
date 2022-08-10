@@ -25,7 +25,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -109,7 +108,7 @@ var _ = BeforeSuite(func() {
 
 	kubeutil.SetKubeConfig(cfg)
 
-	testTempDir, err = ioutil.TempDir("", "k8s-manifest-sigstore-e2e-test")
+	testTempDir, err = os.MkdirTemp("", "k8s-manifest-sigstore-e2e-test")
 	Expect(err).NotTo(HaveOccurred())
 
 	kubeconfigBytes, err := testUser.KubeConfig()
@@ -117,7 +116,7 @@ var _ = BeforeSuite(func() {
 	fmt.Println(err)
 	Expect(err).NotTo(HaveOccurred())
 	kubeconfigPath := filepath.Join(testTempDir, "kubeconfig")
-	err = ioutil.WriteFile(kubeconfigPath, kubeconfigBytes, 0644)
+	err = os.WriteFile(kubeconfigPath, kubeconfigBytes, 0644)
 	Expect(err).NotTo(HaveOccurred())
 
 	cli.KOptions.SetKubeConfig(kubeconfigPath, "default")
@@ -322,7 +321,7 @@ func setup(keyPath, pubkeyPath string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(keyPath, testkeyBytes, 0644)
+	err = os.WriteFile(keyPath, testkeyBytes, 0644)
 	if err != nil {
 		return err
 	}
@@ -331,7 +330,7 @@ func setup(keyPath, pubkeyPath string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(pubkeyPath, testPubkeyBytes, 0644)
+	err = os.WriteFile(pubkeyPath, testPubkeyBytes, 0644)
 	if err != nil {
 		return err
 	}
@@ -401,7 +400,7 @@ func createTestResource(fname string, namespace string) error {
 	var obj *unstructured.Unstructured
 	var err error
 
-	objBytes, err := ioutil.ReadFile(fname)
+	objBytes, err := os.ReadFile(fname)
 	if err != nil {
 		return errors.Wrap(err, "failed to read a testdata file")
 	}
@@ -463,7 +462,7 @@ func createTestResource(fname string, namespace string) error {
 
 func loadObjYAML(fname string) (*unstructured.Unstructured, error) {
 	var obj *unstructured.Unstructured
-	objBytes, err := ioutil.ReadFile(fname)
+	objBytes, err := os.ReadFile(fname)
 	if err != nil {
 		return nil, err
 	}

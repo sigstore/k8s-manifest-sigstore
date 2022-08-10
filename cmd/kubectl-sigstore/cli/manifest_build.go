@@ -19,7 +19,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -82,7 +81,7 @@ func buildManifest(baseDir, outputPath, provenancePath, resBundleRef, keyPath st
 		return errors.Wrap(err, "failed to execute kustomize build")
 	}
 	manifestFile := outputPath
-	err = ioutil.WriteFile(manifestFile, []byte(manifest), 0644)
+	err = os.WriteFile(manifestFile, []byte(manifest), 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to create a manifest file")
 	}
@@ -107,7 +106,7 @@ func buildManifest(baseDir, outputPath, provenancePath, resBundleRef, keyPath st
 		return errors.Wrap(err, "failed to marshal provenance")
 	}
 	provFile := provenancePath
-	err = ioutil.WriteFile(provFile, provBytes, 0644)
+	err = os.WriteFile(provFile, provBytes, 0644)
 	if err != nil {
 		return errors.Wrap(err, "failed to create a provenance file")
 	}
@@ -122,7 +121,7 @@ func buildManifest(baseDir, outputPath, provenancePath, resBundleRef, keyPath st
 			return errors.Wrap(err, "failed to marshal a rekor entry data")
 		}
 		rekorEntryFile := strings.TrimSuffix(provenancePath, ".json") + "-entry.json"
-		err = ioutil.WriteFile(rekorEntryFile, attestationBytes, 0644)
+		err = os.WriteFile(rekorEntryFile, attestationBytes, 0644)
 		if err != nil {
 			return errors.Wrap(err, "failed to create a rekor entry file")
 		}

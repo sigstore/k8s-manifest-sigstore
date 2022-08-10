@@ -22,7 +22,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -70,7 +69,7 @@ func GetBlob(layer v1.Layer) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to get blob in image")
 	}
 	defer rc.Close()
-	return ioutil.ReadAll(rc)
+	return io.ReadAll(rc)
 }
 
 func GenerateConcatYAMLsFromImage(img v1.Image) ([]byte, error) {

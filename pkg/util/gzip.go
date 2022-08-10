@@ -19,7 +19,7 @@ package util
 import (
 	"bytes"
 	"compress/gzip"
-	"io/ioutil"
+	"io"
 )
 
 func GzipCompress(in []byte) []byte {
@@ -36,7 +36,7 @@ func GzipDecompress(in []byte) []byte {
 	if err != nil {
 		return in
 	}
-	out, err := ioutil.ReadAll(gzreader)
+	out, err := io.ReadAll(gzreader)
 	if err != nil {
 		return in
 	}

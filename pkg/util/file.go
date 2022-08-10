@@ -23,7 +23,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -52,7 +52,7 @@ func TarGzCompress(src string, buf io.Writer, moList ...*MutateOptions) error {
 
 	var errV error
 
-	// we cannot use ioutil.TempDir() here because it creates a direcotry with a different name everytime
+	// we cannot use os.MkdirTemp() here because it creates a direcotry with a different name everytime
 	// it results in inconsistent compression result that means inconsistent message even for the identical input.
 	// instead, we use a temporary directory which is named like `compression-tar-gz-<INPUT_FILE_DIGEST>`.
 	digest, err := getSourceDigest(src, moList)
@@ -246,7 +246,7 @@ func TarGzDecompress(src io.Reader, dst string) error {
 // copy an entire directory recursively
 func copyDir(src string, dst string) error {
 	var err error
-	var fds []os.FileInfo
+	var fds []fs.DirEntry
 	var srcinfo os.FileInfo
 
 	if srcinfo, err = os.Stat(src); err != nil {
@@ -258,7 +258,7 @@ func copyDir(src string, dst string) error {
 			return err
 		}
 
-		if fds, err = ioutil.ReadDir(src); err != nil {
+		if fds, err = os.ReadDir(src); err != nil {
 			return err
 		}
 		for _, fd := range fds {
@@ -291,12 +291,12 @@ func copyFile(src string, dst string) error {
 		return err
 	}
 
-	input, err := ioutil.ReadFile(src)
+	input, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 
-	err = ioutil.WriteFile(dst, input, fi.Mode())
+	err = os.WriteFile(dst, input, fi.Mode())
 	if err != nil {
 		return err
 	}
