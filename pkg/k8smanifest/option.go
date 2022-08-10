@@ -131,7 +131,8 @@ type commonOption struct {
 
 // cosign sign option
 type cosignSignOption struct {
-	RekorURL string `json:"-"`
+	RekorURL     string `json:"-"`
+	NoTlogUpload bool   `json:"-"`
 }
 
 // cosign verify option

@@ -51,7 +51,7 @@ const (
 	defaultKeylessTlogUploadTimeout = 90 // set to 90s for keyless as cosign recommends it in the help message
 )
 
-func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
+func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, noTlogUpload bool, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
@@ -93,10 +93,10 @@ func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, 
 	outputSignaturePath := ""
 	outputCertificatePath := ""
 
-	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "")
+	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "", noTlogUpload)
 }
 
-func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, pf cosign.PassFunc) (map[string][]byte, error) {
+func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlogUpload bool, pf cosign.PassFunc) (map[string][]byte, error) {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
@@ -167,7 +167,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, pf co
 	b64Sig := []byte(base64.StdEncoding.EncodeToString(rawSig))
 	m["signature"] = b64Sig
 
-	uploadTlog := cliopt.EnableExperimental()
+	uploadTlog := cliopt.EnableExperimental() && !noTlogUpload
 
 	var rawCert []byte
 	var rawBundle []byte
