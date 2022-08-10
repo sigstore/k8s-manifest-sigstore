@@ -15,16 +15,16 @@ package mapnode
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"testing"
 )
 
 func TestNode(t *testing.T) {
 
-	testMapBytes, _ := ioutil.ReadFile("testdata/data1.json")
-	testMap2Bytes, _ := ioutil.ReadFile("testdata/data2.json")
-	testMap4Bytes, _ := ioutil.ReadFile("testdata/data3.json")
-	deployOperatorBytes, _ := ioutil.ReadFile("testdata/data4.json")
+	testMapBytes, _ := os.ReadFile("testdata/data1.json")
+	testMap2Bytes, _ := os.ReadFile("testdata/data2.json")
+	testMap4Bytes, _ := os.ReadFile("testdata/data3.json")
+	deployOperatorBytes, _ := os.ReadFile("testdata/data4.json")
 
 	mergeTestByte := []byte(`{"metadata":{"name":"test-resource"}}`)
 	mergeTestByte2 := []byte(`{"metadata":{"namespace":"test-ns"}}`)

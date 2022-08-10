@@ -22,7 +22,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"reflect"
 	"runtime"
@@ -377,7 +377,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 
 func readManifestYAMLFile(fpath string) ([][]byte, error) {
 	var yamls [][]byte
-	content, err := ioutil.ReadFile(fpath)
+	content, err := os.ReadFile(fpath)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +386,7 @@ func readManifestYAMLFile(fpath string) ([][]byte, error) {
 }
 
 func readStdinAsYAMLs() ([][]byte, error) {
-	stdinBytes, err := ioutil.ReadAll(os.Stdin)
+	stdinBytes, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, err
 	}

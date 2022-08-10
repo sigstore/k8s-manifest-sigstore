@@ -17,7 +17,6 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,7 +33,7 @@ import (
 var b64EncodedTestKey []byte
 
 func TestSign(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "sign-test")
+	tmpDir, err := os.MkdirTemp("", "sign-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -56,7 +55,7 @@ func TestSign(t *testing.T) {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
 	}
-	outBytes, err := ioutil.ReadFile(outPath)
+	outBytes, err := os.ReadFile(outPath)
 	if err != nil {
 		t.Errorf("failed to read the signed file: %s", err.Error())
 		return
@@ -70,7 +69,7 @@ func TestSign(t *testing.T) {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
 	}
-	outBytes2, err := ioutil.ReadFile(outPath2)
+	outBytes2, err := os.ReadFile(outPath2)
 	if err != nil {
 		t.Errorf("failed to read the signed file: %s", err.Error())
 		return
@@ -115,7 +114,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(fpath, testblob, 0644)
+	err = os.WriteFile(fpath, testblob, 0644)
 	if err != nil {
 		return err
 	}
@@ -123,7 +122,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 }
 
 func getManifestInTarballMessage(msgBytes []byte) ([]byte, error) {
-	dir, err := ioutil.TempDir("", "kubectl-sigstore-sign-test-temp-dir")
+	dir, err := os.MkdirTemp("", "kubectl-sigstore-sign-test-temp-dir")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")
 	}

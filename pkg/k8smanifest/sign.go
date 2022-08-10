@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,7 +180,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
-		err = ioutil.WriteFile(output, signedBytes, 0644)
+		err = os.WriteFile(output, signedBytes, 0644)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to write a signed YAML into")
 		}
@@ -204,7 +203,7 @@ type BlobSigner struct {
 
 func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]interface{}) ([]byte, error) {
 	var inputDataBuffer bytes.Buffer
-	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
+	dir, err := os.MkdirTemp("", "kubectl-sigstore-temp-dir")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a temporary directory for signing")
 	}
@@ -230,7 +229,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	}
 	var signedBytes []byte
 	var sigMaps map[string][]byte
-	err = ioutil.WriteFile(tmpBlobFile, inputDataBuffer.Bytes(), 0777)
+	err = os.WriteFile(tmpBlobFile, inputDataBuffer.Bytes(), 0777)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a temporary blob file")
 	}
@@ -254,7 +253,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 				return nil, errors.Wrap(err, "failed to marshal a signature configmap")
 			}
 			sigResOutput := K8sResourceRef2FileName(output)
-			err = ioutil.WriteFile(sigResOutput, signedBytes, 0644)
+			err = os.WriteFile(sigResOutput, signedBytes, 0644)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to create a signature configmap YAML")
 			}
@@ -265,7 +264,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to generate a signed YAML")
 		}
-		err = ioutil.WriteFile(output, signedBytes, 0644)
+		err = os.WriteFile(output, signedBytes, 0644)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to write a signed YAML into")
 		}
@@ -288,14 +287,14 @@ func makeMessageYAML(inputDir string, outBuffer *bytes.Buffer, moList ...*k8ssig
 }
 
 func uploadFileToRegistry(inputData []byte, resBundleRef string) error {
-	dir, err := ioutil.TempDir("", "kubectl-sigstore-temp-dir")
+	dir, err := os.MkdirTemp("", "kubectl-sigstore-temp-dir")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
 
 	fpath := filepath.Join(dir, "manifest.yaml")
-	err = ioutil.WriteFile(fpath, inputData, 0644)
+	err = os.WriteFile(fpath, inputData, 0644)
 	if err != nil {
 		return err
 	}

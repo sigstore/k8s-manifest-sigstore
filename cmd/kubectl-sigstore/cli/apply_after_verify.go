@@ -18,7 +18,6 @@ package cli
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strconv"
 
@@ -72,7 +71,7 @@ func NewCmdApplyAfterVerify() *cobra.Command {
 }
 
 func applyAfterVerify(filename, resBundleRef, keyPath, configPath string) error {
-	manifest, err := ioutil.ReadFile(filename)
+	manifest, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return nil

@@ -25,7 +25,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -131,7 +131,7 @@ func LoadCertificate(certPath string) (*x509.Certificate, error) {
 		certPemBytes = tmpCertBytes
 	} else {
 		cpath := filepath.Clean(certPath)
-		certPemBytes, err = ioutil.ReadFile(cpath)
+		certPemBytes, err = os.ReadFile(cpath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read a cert file; %s", err.Error())
 		}
@@ -176,7 +176,7 @@ func LoadCertificateChain(certChainPath string) ([]*x509.Certificate, error) {
 		certPemBytes = tmpCertBytes
 	} else {
 		cpath := filepath.Clean(certChainPath)
-		certPemBytes, err = ioutil.ReadFile(cpath)
+		certPemBytes, err = os.ReadFile(cpath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read a cert file; %s", err.Error())
 		}

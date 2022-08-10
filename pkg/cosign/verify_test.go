@@ -15,14 +15,13 @@ package cosign
 
 import (
 	_ "embed"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestVerifyBlob(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "verify_test")
+	tmpDir, err := os.MkdirTemp("", "verify_test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return

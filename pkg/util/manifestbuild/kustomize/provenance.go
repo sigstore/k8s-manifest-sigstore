@@ -24,7 +24,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,11 +90,11 @@ func GenerateProvenance(artifactName, digest, kustomizeBase string, startTime, f
 // the output data contains a base64 encoded provenance and its signature.
 // it can be used in `rekor-cli upload --artifact xxxxx`.
 func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
-	b, err := ioutil.ReadFile(provPath)
+	b, err := os.ReadFile(provPath)
 	if err != nil {
 		return nil, err
 	}
-	ecdsaPriv, _ := ioutil.ReadFile(filepath.Clean(privKeyPath))
+	ecdsaPriv, _ := os.ReadFile(filepath.Clean(privKeyPath))
 	pb, _ := pem.Decode(ecdsaPriv)
 	pwd := os.Getenv(cosignPwdEnvKey) //GetPass(true)
 	x509Encoded, err := encrypted.Decrypt(pb.Bytes, []byte(pwd))
@@ -146,7 +145,7 @@ func GetDigestOfArtifact(artifactPath string) (string, error) {
 
 // overwrite `subject` in provenance with a specified artifact
 func OverwriteArtifactInProvenance(provPath, overwriteArtifact string) (string, error) {
-	b, err := ioutil.ReadFile(provPath)
+	b, err := os.ReadFile(provPath)
 	if err != nil {
 		return "", err
 	}
@@ -171,13 +170,13 @@ func OverwriteArtifactInProvenance(provPath, overwriteArtifact string) (string, 
 		prov.Subject[0] = subj
 	}
 	provBytes, _ := json.Marshal(prov)
-	dir, err := ioutil.TempDir("", "newprov")
+	dir, err := os.MkdirTemp("", "newprov")
 	if err != nil {
 		return "", err
 	}
 	basename := filepath.Base(provPath)
 	newProvPath := filepath.Join(dir, basename)
-	err = ioutil.WriteFile(newProvPath, provBytes, 0644)
+	err = os.WriteFile(newProvPath, provBytes, 0644)
 	if err != nil {
 		return "", err
 	}

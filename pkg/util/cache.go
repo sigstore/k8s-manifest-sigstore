@@ -21,7 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -135,7 +135,7 @@ func (c *LocalFileCache) Set(key string, value ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(fpath, valueBytes, 0644)
+	err = os.WriteFile(fpath, valueBytes, 0644)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (c *LocalFileCache) Get(key string) ([]interface{}, error) {
 	}
 
 	fpath := c.genFileNameFromKey(key)
-	valueBytes, err := ioutil.ReadFile(fpath)
+	valueBytes, err := os.ReadFile(fpath)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +201,8 @@ func (c *LocalFileCache) clearExpiredData() error {
 	c.mem.clearExpiredData()
 
 	var err error
-	var fds []os.FileInfo
-	if fds, err = ioutil.ReadDir(c.baseDir); err != nil {
+	var fds []fs.DirEntry
+	if fds, err = os.ReadDir(c.baseDir); err != nil {
 		return err
 	}
 	for _, fd := range fds {

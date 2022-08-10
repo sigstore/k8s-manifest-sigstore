@@ -19,7 +19,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"os"
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
@@ -90,7 +90,7 @@ func main() {
 }
 
 func (c *sandboxKubernetesCluster) initClientset() error {
-	cmBytes, err := ioutil.ReadFile(sampleCMYAMLPath)
+	cmBytes, err := os.ReadFile(sampleCMYAMLPath)
 	if err != nil {
 		return err
 	}

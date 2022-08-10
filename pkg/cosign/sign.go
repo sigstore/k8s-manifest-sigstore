@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -145,7 +144,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, pf co
 	regOpt := cliopt.RegistryOptions{}
 
 	m := map[string][]byte{}
-	rawMsg, err := ioutil.ReadFile(blobPath)
+	rawMsg, err := os.ReadFile(blobPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to load a file to be signed")
 	}
@@ -179,7 +178,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, pf co
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get rekor client")
 		}
-		blobBytes, err := ioutil.ReadFile(blobPath)
+		blobBytes, err := os.ReadFile(blobPath)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to read blob file")
 		}
@@ -256,7 +255,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, pf co
 		}
 	} else if certPath != nil {
 		certPathStr := *certPath
-		certPem, err := ioutil.ReadFile(certPathStr)
+		certPem, err := os.ReadFile(certPathStr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to load certificate at %s", certPathStr)
 		}

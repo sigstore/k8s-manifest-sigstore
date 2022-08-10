@@ -16,7 +16,6 @@ package k8smanifest
 import (
 	_ "embed"
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +30,7 @@ import (
 var b64EncodedTestKey []byte
 
 func TestSign(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-sign-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-sign-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -112,7 +111,7 @@ func TestSign(t *testing.T) {
 }
 
 func TestNonTarballSign(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "k8smanifest-sign-test")
+	tmpDir, err := os.MkdirTemp("", "k8smanifest-sign-test")
 	if err != nil {
 		t.Errorf("failed to create temp dir: %s", err.Error())
 		return
@@ -151,7 +150,7 @@ func initSingleTestFile(b64EncodedData []byte, fpath string) error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(fpath, testblob, 0644)
+	err = os.WriteFile(fpath, testblob, 0644)
 	if err != nil {
 		return err
 	}

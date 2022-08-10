@@ -17,7 +17,7 @@
 package kubeutil
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -42,7 +42,7 @@ func TestKubeConfig(t *testing.T) {
 }
 
 func TestMatchLabels(t *testing.T) {
-	testCmBytes, err := ioutil.ReadFile("testdata/sample_configmap.yaml")
+	testCmBytes, err := os.ReadFile("testdata/sample_configmap.yaml")
 	if err != nil {
 		t.Error(err)
 	}
