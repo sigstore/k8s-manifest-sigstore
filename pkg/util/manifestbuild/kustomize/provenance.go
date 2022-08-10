@@ -129,7 +129,8 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 
 // get a digest of artifact by checking artifact type
 // when the artifact is local file --> sha256 file hash
-//                   is OCI image --> image digest
+//
+//	is OCI image --> image digest
 func GetDigestOfArtifact(artifactPath string) (string, error) {
 	var digest string
 	var err error

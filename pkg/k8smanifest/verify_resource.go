@@ -473,7 +473,8 @@ func inclusionMatch(messageYAMLBytes, resourceJSONBytes, dryRunBytes []byte, clu
 // remove a diff result caused by image canonicalization
 // diffs like below can be ignored, so remove them from the result
 // e.g.) nginx:1.14.2 --> docker.io/nginx:1.14.2
-//       ubuntu --> ubuntu:latest
+//
+//	ubuntu --> ubuntu:latest
 func removeCanonicalizedImageDiff(diff *mapnode.DiffResult) *mapnode.DiffResult {
 	if diff == nil || diff.Size() == 0 {
 		return nil

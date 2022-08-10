@@ -34,6 +34,10 @@ kubectl-sigstore: build
 lint:
 	golangci-lint run
 
+.PHONY: lint-and-fix
+lint-and-fix:
+	golangci-lint run --fix
+
 .PHONY: test
 test:
 	@echo doing unit test

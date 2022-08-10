@@ -36,6 +36,7 @@ import (
 )
 
 // This is common ignore fields for changes by k8s system
+//
 //go:embed resources/default-config.yaml
 var defaultConfigBytes []byte
 
