@@ -210,7 +210,11 @@ func (c *LocalFileCache) clearExpiredData() error {
 			continue
 		} else {
 			fname := path.Join(c.baseDir, fd.Name())
-			modTime := fd.ModTime().UTC()
+			fi, err := fd.Info()
+			if err != nil {
+				return err
+			}
+			modTime := fi.ModTime().UTC()
 			now := time.Now().UTC()
 			if now.Sub(modTime) > c.TTL {
 				err = os.Remove(fname)
