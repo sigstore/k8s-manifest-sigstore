@@ -234,16 +234,11 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlo
 			return nil, errors.Wrap(err, "failed to unmarshal rekord.Spec into *models.HashedrekordV001Schema")
 		}
 
-		var b64SigInTlog string
 		var b64CertStr string
 		if rekordContent != nil {
-			b64SigInTlog = rekordContent.Signature.Content.String()
 			// this will be a certificate in keyless signing, and be a public key in keyed signing
 			// and if this is a public key, we don't add it to the annotations
 			b64CertStr = rekordContent.Signature.PublicKey.Content.String()
-		}
-		if b64SigInTlog != string(b64Sig) {
-			return nil, fmt.Errorf("signature found in tlog is different from original one; found: %s, original: %s", b64SigInTlog, string(b64Sig))
 		}
 		tmpRawCert, err := base64.StdEncoding.DecodeString(b64CertStr)
 		if err != nil {
