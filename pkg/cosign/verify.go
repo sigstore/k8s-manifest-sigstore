@@ -47,7 +47,7 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
-func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIssuer string, rootCerts *x509.CertPool) (bool, string, *int64, error) {
+func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIssuer string, rootCerts *x509.CertPool, allowInsecure bool) (bool, string, *int64, error) {
 	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return false, "", nil, fmt.Errorf("failed to parse image ref `%s`; %s", resBundleRef, err.Error())
@@ -61,6 +61,9 @@ func VerifyImage(resBundleRef, pubkeyPath, certRef, certChain, rekorURL, oidcIss
 	}
 
 	regOpt := &cliopt.RegistryOptions{}
+	if allowInsecure {
+		regOpt.AllowInsecure = true
+	}
 	reqCliOpt, err := regOpt.ClientOpts(context.Background())
 	if err != nil {
 		return false, "", nil, fmt.Errorf("failed to get registry client option; %s", err.Error())

@@ -131,8 +131,10 @@ type commonOption struct {
 
 // cosign sign option
 type cosignSignOption struct {
-	RekorURL     string `json:"-"`
-	NoTlogUpload bool   `json:"-"`
+	RekorURL      string `json:"-"`
+	NoTlogUpload  bool   `json:"-"`
+	AllowInsecure bool   `json:"-"`
+	Force         bool   `json:"-"`
 }
 
 // cosign verify option
@@ -142,6 +144,7 @@ type cosignVerifyOption struct {
 	RekorURL         string         `json:"-"`
 	OIDCIssuer       string         `json:"-"`
 	RootCerts        *x509.CertPool `json:"-"`
+	AllowInsecure    bool           `json:"-"`
 }
 
 // annotation config for signing and verification

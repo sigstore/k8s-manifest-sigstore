@@ -20,6 +20,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -27,32 +28,42 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/pkg/errors"
+	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
 	"github.com/spf13/afero"
 )
 
-func PullImage(resBundleRef string) (v1.Image, error) {
+func PullImage(resBundleRef string, allowInsecure bool) (v1.Image, error) {
 	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return nil, err
 	}
-	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	regOpt := cliopt.RegistryOptions{}
+	if allowInsecure {
+		regOpt.AllowInsecure = true
+	}
+	reqCliOpt := regOpt.GetRegistryClientOpts(context.Background())
+	img, err := remote.Image(ref, reqCliOpt...)
 	if err != nil {
 		return nil, err
 	}
 	return img, nil
 }
 
-func GetImageDigest(resBundleRef string) (string, error) {
+func GetImageDigest(resBundleRef string, allowInsecure bool) (string, error) {
 	ref, err := name.ParseReference(resBundleRef)
 	if err != nil {
 		return "", err
 	}
-	img, err := remote.Image(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	regOpt := cliopt.RegistryOptions{}
+	if allowInsecure {
+		regOpt.AllowInsecure = true
+	}
+	reqCliOpt := regOpt.GetRegistryClientOpts(context.Background())
+	img, err := remote.Image(ref, reqCliOpt...)
 	if err != nil {
 		return "", err
 	}

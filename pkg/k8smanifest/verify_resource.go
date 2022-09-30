@@ -97,7 +97,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	var resourceManifests [][]byte
 	log.Debug("fetching manifest...")
-	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objBytes)
+	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, sigResourceRefString, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum, vo.AllowInsecure).Fetch(objBytes)
 	if err != nil {
 		retErr := errors.Wrap(err, "YAML manifest not found for this resource")
 		log.Debugf("IsMessageNotFoundError(): %v", IsMessageNotFoundError(retErr))
@@ -133,11 +133,12 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 	}
 
 	cosignVerifyConfig := CosignVerifyConfig{
-		CertRef:    vo.Certificate,
-		CertChain:  vo.CertificateChain,
-		RekorURL:   vo.RekorURL,
-		OIDCIssuer: vo.OIDCIssuer,
-		RootCerts:  vo.RootCerts,
+		CertRef:       vo.Certificate,
+		CertChain:     vo.CertificateChain,
+		RekorURL:      vo.RekorURL,
+		OIDCIssuer:    vo.OIDCIssuer,
+		RootCerts:     vo.RootCerts,
+		AllowInsecure: vo.AllowInsecure,
 	}
 
 	var sigVerified bool
@@ -156,7 +157,7 @@ func VerifyResource(obj unstructured.Unstructured, vo *VerifyResourceOption) (*V
 
 	provenances := []*Provenance{}
 	if vo.Provenance {
-		provenances, err = NewProvenanceGetter(&obj, sigRef, "", vo.ProvenanceResourceRef).Get()
+		provenances, err = NewProvenanceGetter(&obj, sigRef, "", vo.ProvenanceResourceRef, vo.AllowInsecure).Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get provenance")
 		}

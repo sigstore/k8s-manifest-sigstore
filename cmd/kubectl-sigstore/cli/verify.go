@@ -39,12 +39,13 @@ func NewCmdVerify() *cobra.Command {
 	var certChain string
 	var rekorURL string
 	var oidcIssuer string
+	var allowInsecure bool
 	cmd := &cobra.Command{
 		Use:   "verify -f FILENAME [-i IMAGE]",
 		Short: "A command to verify Kubernetes YAML manifests",
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			err := verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rekorURL, oidcIssuer)
+			err := verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rekorURL, oidcIssuer, allowInsecure)
 			if err != nil {
 				return err
 			}
@@ -62,11 +63,12 @@ func NewCmdVerify() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&certChain, "certificate-chain", "", "path to a list of CA certificates in PEM format which will be needed when building the certificate chain for the signing certificate. Must start with the parent intermediate CA certificate of the signing certificate and end with the root certificate")
 	cmd.PersistentFlags().StringVar(&rekorURL, "rekor-url", "https://rekor.sigstore.dev", "URL of rekor STL server (default \"https://rekor.sigstore.dev\")")
 	cmd.PersistentFlags().StringVar(&oidcIssuer, "oidc-issuer", "", "the OIDC issuer expected in a valid Fulcio certificate, e.g. https://token.actions.githubusercontent.com or https://oauth2.sigstore.dev/auth")
+	cmd.PersistentFlags().BoolVar(&allowInsecure, "allow-insecure-registry", false, "whether to allow insecure connections to registries. Don't use this for anything but testing")
 
 	return cmd
 }
 
-func verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rekorURL, oidcIssuer string) error {
+func verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rekorURL, oidcIssuer string, allowInsecure bool) error {
 	manifest, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -97,6 +99,9 @@ func verify(filename, resBundleRef, keyPath, configPath, certRef, certChain, rek
 	}
 	if keyPath != "" {
 		vo.KeyPath = keyPath
+	}
+	if allowInsecure {
+		vo.AllowInsecure = true
 	}
 	vo.Certificate = certRef
 	vo.CertificateChain = certChain

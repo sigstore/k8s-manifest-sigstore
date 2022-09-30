@@ -50,7 +50,7 @@ func TestSign(t *testing.T) {
 
 	fpath := "testdata/sample-configmap.yaml"
 	outPath := filepath.Join(tmpDir, "sample-configmap.yaml.signed")
-	err = sign(fpath, "", keyPath, "", outPath, false, false, true, true, false, nil)
+	err = sign(fpath, "", keyPath, "", outPath, false, false, true, true, false, false, false, nil)
 	if err != nil {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return
@@ -64,7 +64,7 @@ func TestSign(t *testing.T) {
 
 	fpath2 := "testdata/sample-configmap-concat.yaml"
 	outPath2 := filepath.Join(tmpDir, "sample-configmap-concat.yaml.signed")
-	err = sign(fpath2, "", keyPath, "", outPath2, false, false, true, true, false, nil)
+	err = sign(fpath2, "", keyPath, "", outPath2, false, false, true, true, false, false, false, nil)
 	if err != nil {
 		t.Errorf("failed to sign the test file: %s", err.Error())
 		return

@@ -41,6 +41,8 @@ func NewCmdSign() *cobra.Command {
 	var applySignatureConfigMap bool
 	var updateAnnotation bool
 	var tarballOpt string
+	var allowInsecure bool
+	var force bool
 	var imageAnnotations []string
 	var rekorURL string
 	var noTlogUpload bool
@@ -54,7 +56,7 @@ func NewCmdSign() *cobra.Command {
 
 			makeTarball := (tarballOpt == "yes")
 
-			err := sign(inputDir, resBundleRef, keyPath, rekorURL, output, appendSignature, applySignatureConfigMap, updateAnnotation, makeTarball, noTlogUpload, imageAnnotations)
+			err := sign(inputDir, resBundleRef, keyPath, rekorURL, output, appendSignature, applySignatureConfigMap, updateAnnotation, makeTarball, allowInsecure, force, noTlogUpload, imageAnnotations)
 			if err != nil {
 				log.Fatalf("error occurred during signing: %s", err.Error())
 				return nil
@@ -72,6 +74,10 @@ func NewCmdSign() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&applySignatureConfigMap, "apply-signature-configmap", false, "whether to apply a generated signature configmap only when \"output\" is k8s configmap")
 	cmd.PersistentFlags().BoolVar(&updateAnnotation, "annotation-metadata", true, "whether to update annotation and generate signed yaml file")
 	cmd.PersistentFlags().StringVar(&tarballOpt, "tarball", "yes", "whether to make a tarball for signing (this will be default to \"no\" in v0.5.0+)")
+
+	// cosign cli options
+	cmd.PersistentFlags().BoolVar(&allowInsecure, "allow-insecure-registry", false, "whether to allow insecure connections to registries. Don't use this for anything but testing")
+	cmd.PersistentFlags().BoolVar(&force, "force", false, "skip warnings and confirmations")
 	cmd.PersistentFlags().StringArrayVarP(&imageAnnotations, "annotation", "a", []string{}, "extra key=value pairs to sign")
 	cmd.PersistentFlags().StringVar(&rekorURL, "rekor-url", "https://rekor.sigstore.dev", "URL of rekor STL server (default \"https://rekor.sigstore.dev\")")
 	cmd.PersistentFlags().BoolVar(&noTlogUpload, "no-tlog-upload", false, "whether to not upload the transparency log")
@@ -79,7 +85,7 @@ func NewCmdSign() *cobra.Command {
 	return cmd
 }
 
-func sign(inputDir, resBundleRef, keyPath, rekorURL, output string, appendSignature, applySignatureConfigMap, updateAnnotation, tarball, noTlogUpload bool, annotations []string) error {
+func sign(inputDir, resBundleRef, keyPath, rekorURL, output string, appendSignature, applySignatureConfigMap, updateAnnotation, tarball, allowInsecure, noTlogUpload, force bool, annotations []string) error {
 	if output == "" && updateAnnotation {
 		if isDir, _ := k8smnfutil.IsDir(inputDir); isDir {
 			// e.g.) "./yamls/" --> "./yamls/manifest.yaml.signed"
@@ -113,6 +119,12 @@ func sign(inputDir, resBundleRef, keyPath, rekorURL, output string, appendSignat
 	}
 	if noTlogUpload {
 		so.NoTlogUpload = true
+	}
+	if allowInsecure {
+		so.AllowInsecure = true
+	}
+	if force {
+		so.Force = true
 	}
 
 	if applySignatureConfigMap && strings.HasPrefix(output, kubeutil.InClusterObjectPrefix) {

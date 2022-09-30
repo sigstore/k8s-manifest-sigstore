@@ -27,6 +27,7 @@ require (
 	github.com/spf13/cobra v1.5.0
 	github.com/tektoncd/chains v0.3.0
 	github.com/theupdateframework/go-tuf v0.5.0
+	github.com/transparency-dev/merkle v0.0.1
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.23.5
@@ -234,7 +235,6 @@ require (
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/tjfoc/gmsm v1.3.2 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
-	github.com/transparency-dev/merkle v0.0.1 // indirect
 	github.com/urfave/cli v1.22.7 // indirect
 	github.com/vbatts/tar-split v0.11.2 // indirect
 	github.com/xanzy/go-gitlab v0.73.1 // indirect
