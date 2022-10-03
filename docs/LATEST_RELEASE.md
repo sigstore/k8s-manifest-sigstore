@@ -1,3 +1,56 @@
+
+# What's new in v0.4.1
+
+In this release, we updated cosign version to v1.12.1 and added some CLI options as well as cosign.
+
+## Add `--allow-insecure-registry` for sign/verify commands
+
+Using cosign v1.12.0 and later, an insecure container registry must be accessed intentionally with `--allow-insecure-registry` option.
+
+We have added the same CLi option to sign/verify command in this project too.
+
+(Note: If you use images on ghcr.io, basically need to specify this option.)
+
+## Add `--force` for sign command
+
+Now cosign has `--force` option for sign command, and we have added it to this project too.
+
+If you want to skip some validations/checks using interactive CLI input while cosign signing, this option works for it.
+
+It is also used when the signing steps are automated and when you cannot input anything while the signing.
+
+---
+
+# Backlog 
+
+---
+
+What's new in v0.4.0
+
+In this release, a new signing method is added to `kubectl sigstore sign` command. It is not a default signing option yet, but we are planning the method will be default on the release v0.5.0 and later. The detail is described below.
+
+## Add a new signing method and the original signing method will be non-default soon
+
+The original signing method (`--tarball=yes`) creates a tarball of YAML files before signing.
+
+However, this may cause verification error when multiple signatures are provided.
+
+So we have added a new signing method (`--tarball=no`) that can solve this issue.
+
+The original method is still the default option now, but the new one will be default on v0.5.0 and later.
+
+## Support multiple signatures both for signing & verification
+
+A new signing option `--append-signature` (or `-A`) has been added for users to generate a signed YAML manifest that have multiple signatures.
+
+Users don't need to manually add them anymore.
+
+## Update cosign version to v1.10.1
+
+We updated the version of cosign on which k8s-manifest-sigstore depends, and added some new command options to be consistent with cosign
+
+---
+
 # What's new in v0.3.0
 
 In this release, we mainly updated verification functions so that users can easily & flexibly use `k8s-manifest-sigstore`.
@@ -76,9 +129,7 @@ The following 2 options are added as verify-resource options to enable flexible 
 
 The dependency version of cosign is updated to v1.8.0.
 
----
 
-# Backlog 
 
 ---
 

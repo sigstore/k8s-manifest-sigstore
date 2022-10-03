@@ -28,13 +28,12 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 
+	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
 	"github.com/sigstore/cosign/pkg/cosign"
 	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
 	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
@@ -76,8 +75,10 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 	}
 
 	cosignSignConfig := CosignSignConfig{
-		RekorURL:     so.RekorURL,
-		NoTlogUpload: so.NoTlogUpload,
+		RekorURL:      so.RekorURL,
+		NoTlogUpload:  so.NoTlogUpload,
+		AllowInsecure: so.AllowInsecure,
+		Force:         so.Force,
 	}
 
 	signedBytes, err := NewSigner(so.ResourceBundleRef, so.KeyPath, so.CertPath, output, so.AppendSignature, so.ApplySigConfigMap, makeTarball, cosignSignConfig, so.AnnotationConfig, so.PassFunc).Sign(inputDir, output, so.ImageAnnotations)
@@ -93,8 +94,10 @@ type Signer interface {
 }
 
 type CosignSignConfig struct {
-	RekorURL     string
-	NoTlogUpload bool
+	RekorURL      string
+	NoTlogUpload  bool
+	AllowInsecure bool
+	Force         bool
 }
 
 func NewSigner(resBundleRef, keyPath, certPath, output string, appendSig, doApply, tarball bool, cosignSignConfig CosignSignConfig, AnnotationConfig AnnotationConfig, pf cosign.PassFunc) Signer {
@@ -167,12 +170,12 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 	}
 	var signedBytes []byte
 	// upload files as image
-	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.resBundleRef)
+	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.resBundleRef, s.AllowInsecure)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.passFunc, imageAnnotations)
+	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.Force, s.passFunc, imageAnnotations, s.AllowInsecure)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
@@ -235,7 +238,7 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a temporary blob file")
 	}
-	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.passFunc)
+	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.Force, s.passFunc)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign a blob file")
 	}
@@ -288,7 +291,7 @@ func makeMessageYAML(inputDir string, outBuffer *bytes.Buffer, moList ...*k8ssig
 	return nil
 }
 
-func uploadFileToRegistry(inputData []byte, resBundleRef string) error {
+func uploadFileToRegistry(inputData []byte, resBundleRef string, allowInsecure bool) error {
 	dir, err := os.MkdirTemp("", "kubectl-sigstore-temp-dir")
 	if err != nil {
 		return err
@@ -309,9 +312,12 @@ func uploadFileToRegistry(inputData []byte, resBundleRef string) error {
 	}
 
 	mediaTypeGetter := cremote.DefaultMediaTypeGetter
-	remoteAuthOption := remote.WithAuthFromKeychain(authn.DefaultKeychain)
-	remoteContextOption := remote.WithContext(context.Background())
-	_, err = cremote.UploadFiles(ref, files, mediaTypeGetter, remoteAuthOption, remoteContextOption)
+	regOpt := cliopt.RegistryOptions{}
+	if allowInsecure {
+		regOpt.AllowInsecure = true
+	}
+	reqCliOpt := regOpt.GetRegistryClientOpts(context.Background())
+	_, err = cremote.UploadFiles(ref, files, mediaTypeGetter, reqCliOpt...)
 	if err != nil {
 		return err
 	}

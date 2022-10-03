@@ -61,7 +61,7 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 
 	var resourceManifests [][]byte
 	var sigRef string
-	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, vo.SignatureResourceRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum).Fetch(objManifest)
+	resourceManifests, sigRef, err = NewManifestFetcher(vo.ResourceBundleRef, vo.SignatureResourceRef, vo.AnnotationConfig, ignoreFields, vo.MaxResourceManifestNum, vo.AllowInsecure).Fetch(objManifest)
 	if err != nil {
 		return nil, errors.Wrap(err, "reference YAML manifest not found for this manifest")
 	}
@@ -95,11 +95,12 @@ func VerifyManifest(objManifest []byte, vo *VerifyManifestOption) (*VerifyResult
 	}
 
 	cosignVerifyConfig := CosignVerifyConfig{
-		CertRef:    vo.Certificate,
-		CertChain:  vo.CertificateChain,
-		RekorURL:   vo.RekorURL,
-		OIDCIssuer: vo.OIDCIssuer,
-		RootCerts:  vo.RootCerts,
+		CertRef:       vo.Certificate,
+		CertChain:     vo.CertificateChain,
+		RekorURL:      vo.RekorURL,
+		OIDCIssuer:    vo.OIDCIssuer,
+		RootCerts:     vo.RootCerts,
+		AllowInsecure: vo.AllowInsecure,
 	}
 
 	sigVerified, signerName, _, err := NewSignatureVerifier(objManifest, sigRef, keyPath, signers, cosignVerifyConfig, vo.AnnotationConfig).Verify()

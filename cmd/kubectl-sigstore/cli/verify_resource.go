@@ -105,6 +105,7 @@ func NewCmdVerifyResource() *cobra.Command {
 	var certChain string
 	var rekorURL string
 	var oidcIssuer string
+	var allowInsecure bool
 	cmd := &cobra.Command{
 		Use:   "verify-resource (RESOURCE/NAME | -f FILENAME | -i IMAGE)",
 		Short: "A command to verify Kubernetes manifests of resources on cluster",
@@ -135,7 +136,7 @@ func NewCmdVerifyResource() *cobra.Command {
 				provResRef = manifestBundleResRef
 			}
 
-			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, resBundleRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, provResRef, certRef, certChain, rekorURL, oidcIssuer, outputFormat, concurrencyNum)
+			allVerified, err := verifyResource(manifestYAMLs, kubeGetArgs, resBundleRef, sigResRef, keyPath, configPath, configField, configType, disableDefaultConfig, provenance, allowInsecure, provResRef, certRef, certChain, rekorURL, oidcIssuer, outputFormat, concurrencyNum)
 			if err != nil {
 				log.Fatalf("error occurred during verify-resource: %s", err.Error())
 			}
@@ -168,12 +169,13 @@ func NewCmdVerifyResource() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&certChain, "certificate-chain", "", "path to a list of CA certificates in PEM format which will be needed when building the certificate chain for the signing certificate. Must start with the parent intermediate CA certificate of the signing certificate and end with the root certificate")
 	cmd.PersistentFlags().StringVar(&rekorURL, "rekor-url", "https://rekor.sigstore.dev", "URL of rekor STL server (default \"https://rekor.sigstore.dev\")")
 	cmd.PersistentFlags().StringVar(&oidcIssuer, "oidc-issuer", "", "the OIDC issuer expected in a valid Fulcio certificate, e.g. https://token.actions.githubusercontent.com or https://oauth2.sigstore.dev/auth")
+	cmd.PersistentFlags().BoolVar(&allowInsecure, "allow-insecure-registry", false, "whether to allow insecure connections to registries. Don't use this for anything but testing")
 
 	KOptions.ConfigFlags.AddFlags(cmd.PersistentFlags())
 	return cmd
 }
 
-func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance bool, provResRef, certRef, certChain, rekorURL, oidcIssuer, outputFormat string, concurrencyNum int64) (bool, error) {
+func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRef, keyPath, configPath, configField, configType string, disableDefaultConfig, provenance, allowInsecure bool, provResRef, certRef, certChain, rekorURL, oidcIssuer, outputFormat string, concurrencyNum int64) (bool, error) {
 	var err error
 	start := time.Now().UTC()
 	if outputFormat != "" {
@@ -218,7 +220,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 	} else if yamls != nil {
 		objs, err = getObjsFromManifests(yamls, vo.IgnoreFields)
 	} else if resBundleRef != "" {
-		manifestFetcher := k8smanifest.NewManifestFetcher(resBundleRef, "", vo.AnnotationConfig, nil, vo.MaxResourceManifestNum)
+		manifestFetcher := k8smanifest.NewManifestFetcher(resBundleRef, "", vo.AnnotationConfig, nil, vo.MaxResourceManifestNum, vo.AllowInsecure)
 		imageManifestFetcher := manifestFetcher.(*k8smanifest.ImageManifestFetcher)
 		var yamlsInImage [][]byte
 		if yamlsInImage, err = imageManifestFetcher.FetchAll(); err == nil {
@@ -244,6 +246,9 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 	if provResRef != "" {
 		vo.ProvenanceResourceRef = validateConfigMapRef(provResRef)
 	}
+	if allowInsecure {
+		vo.AllowInsecure = true
+	}
 	vo.Certificate = certRef
 	vo.CertificateChain = certChain
 	vo.RekorURL = rekorURL
@@ -260,7 +265,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 		img := imagesToBeused[i]
 		// manifest fetch functions
 		if img.imageType == k8smanifest.ArtifactManifestImage {
-			manifestFetcher := k8smanifest.NewManifestFetcher(img.ResourceBundleRef, "", vo.AnnotationConfig, nil, 0)
+			manifestFetcher := k8smanifest.NewManifestFetcher(img.ResourceBundleRef, "", vo.AnnotationConfig, nil, 0, vo.AllowInsecure)
 			if fetcher, ok := manifestFetcher.(*k8smanifest.ImageManifestFetcher); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(fetcher.FetchAll))
 			}
@@ -288,7 +293,7 @@ func verifyResource(yamls [][]byte, kubeGetArgs []string, resBundleRef, sigResRe
 
 		if vo.Provenance {
 			// provenance functions
-			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ResourceBundleRef, img.Digest, "")
+			provGetter := k8smanifest.NewProvenanceGetter(nil, img.ResourceBundleRef, img.Digest, "", allowInsecure)
 			if getter, ok := provGetter.(*k8smanifest.ImageProvenanceGetter); ok {
 				prepareFuncs = append(prepareFuncs, reflect.ValueOf(getter.Get))
 			}

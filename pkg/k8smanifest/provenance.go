@@ -96,16 +96,16 @@ type ProvenanceGetter interface {
 	Get() ([]*Provenance, error)
 }
 
-func NewProvenanceGetter(obj *unstructured.Unstructured, sigRef, imageHash, provResRef string) ProvenanceGetter {
+func NewProvenanceGetter(obj *unstructured.Unstructured, sigRef, imageHash, provResRef string, allowInsecure bool) ProvenanceGetter {
 	var resBundleRef string
 	if !strings.HasPrefix(sigRef, kubeutil.InClusterObjectPrefix) {
 		resBundleRef = sigRef
 	}
 
 	if obj != nil {
-		return &RecursiveImageProvenanceGetter{object: obj, manifestResourceBundleRef: resBundleRef, manifestProvenanceResourceRef: provResRef, cacheEnabled: true}
+		return &RecursiveImageProvenanceGetter{object: obj, manifestResourceBundleRef: resBundleRef, manifestProvenanceResourceRef: provResRef, cacheEnabled: true, allowInsecure: allowInsecure}
 	} else if resBundleRef != "" && resBundleRef != SigRefEmbeddedInAnnotation {
-		return &ImageProvenanceGetter{resBundleRef: resBundleRef, imageHash: imageHash, cacheEnabled: true}
+		return &ImageProvenanceGetter{resBundleRef: resBundleRef, imageHash: imageHash, cacheEnabled: true, allowInsecure: allowInsecure}
 	} else if provResRef != "" {
 		return &ResourceProvenanceGetter{resourceRefString: provResRef}
 	} else {
@@ -118,6 +118,7 @@ type RecursiveImageProvenanceGetter struct {
 	manifestResourceBundleRef     string
 	manifestProvenanceResourceRef string
 	cacheEnabled                  bool
+	allowInsecure                 bool
 }
 
 func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
@@ -132,7 +133,7 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 			return nil, errors.Wrap(err, "failed to get manifest image digest")
 		}
 		log.Trace("manifest image provenance getter")
-		imgGetter := NewProvenanceGetter(nil, g.manifestResourceBundleRef, digest, "")
+		imgGetter := NewProvenanceGetter(nil, g.manifestResourceBundleRef, digest, "", g.allowInsecure)
 		prov, err := imgGetter.Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get manifest image provenance")
@@ -144,7 +145,7 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 	} else if g.manifestProvenanceResourceRef != "" {
 		// manifest prov from resource
 		log.Trace("manifest resource provenance getter")
-		resGetter := NewProvenanceGetter(nil, "", "", g.manifestProvenanceResourceRef)
+		resGetter := NewProvenanceGetter(nil, "", "", g.manifestProvenanceResourceRef, g.allowInsecure)
 		prov, err := resGetter.Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get manifest resource provenance")
@@ -167,7 +168,7 @@ func (g *RecursiveImageProvenanceGetter) Get() ([]*Provenance, error) {
 		sumErr := []string{}
 		for _, img := range images {
 			log.Trace("object provenance getter for image:", img.ResourceBundleRef)
-			imgGetter := NewProvenanceGetter(nil, img.ResourceBundleRef, img.Digest, "")
+			imgGetter := NewProvenanceGetter(nil, img.ResourceBundleRef, img.Digest, "", g.allowInsecure)
 			prov, err := imgGetter.Get()
 			if err != nil {
 				sumErr = append(sumErr, err.Error())
@@ -215,14 +216,14 @@ func (g *RecursiveImageProvenanceGetter) imageDigest(resBundleRef string) (strin
 			}
 		} else {
 			log.Debug("image digest cache not found for image: ", resBundleRef)
-			digest, err = k8smnfutil.GetImageDigest(g.manifestResourceBundleRef)
+			digest, err = k8smnfutil.GetImageDigest(g.manifestResourceBundleRef, g.allowInsecure)
 			err = k8smnfutil.SetCache(cacheKey, digest, err)
 			if err != nil {
 				log.Debug("failed to set image digest cache")
 			}
 		}
 	} else {
-		digest, err = k8smnfutil.GetImageDigest(g.manifestResourceBundleRef)
+		digest, err = k8smnfutil.GetImageDigest(g.manifestResourceBundleRef, g.allowInsecure)
 	}
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get manifest image digest")
@@ -231,9 +232,10 @@ func (g *RecursiveImageProvenanceGetter) imageDigest(resBundleRef string) (strin
 }
 
 type ImageProvenanceGetter struct {
-	resBundleRef string
-	imageHash    string
-	cacheEnabled bool
+	resBundleRef  string
+	imageHash     string
+	cacheEnabled  bool
+	allowInsecure bool
 }
 
 func (g *ImageProvenanceGetter) Get() ([]*Provenance, error) {
@@ -378,6 +380,9 @@ func (g *ImageProvenanceGetter) getSBOMRef(resBundleRef string) (string, error) 
 		return "", err
 	}
 	regOpt := &cliopt.RegistryOptions{}
+	if g.allowInsecure {
+		regOpt.AllowInsecure = true
+	}
 	reqCliOpt := regOpt.GetRegistryClientOpts(context.Background())
 	dstRef, err := cremote.SBOMTag(ref, cremote.WithRemoteOptions(reqCliOpt...))
 	if err != nil {

@@ -39,19 +39,23 @@ import (
 	"github.com/sigstore/rekor/pkg/generated/client/entries"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	log "github.com/sirupsen/logrus"
+	"github.com/transparency-dev/merkle/rfc6962"
 )
 
 const (
-	rekorServerEnvKey               = "REKOR_SERVER"
-	defaultRekorServerURL           = "https://rekor.sigstore.dev"
-	defaultOIDCIssuer               = "https://oauth2.sigstore.dev/auth"
-	defaultOIDCClientID             = "sigstore"
-	cosignPasswordEnvKey            = "COSIGN_PASSWORD"
-	defaultTlogUploadTimeout        = 10
-	defaultKeylessTlogUploadTimeout = 90 // set to 90s for keyless as cosign recommends it in the help message
+	rekorServerEnvKey        = "REKOR_SERVER"
+	defaultRekorServerURL    = "https://rekor.sigstore.dev"
+	defaultOIDCIssuer        = "https://oauth2.sigstore.dev/auth"
+	defaultOIDCClientID      = "sigstore"
+	cosignPasswordEnvKey     = "COSIGN_PASSWORD"
+	defaultTlogUploadTimeout = 90 // set to 90s for keyless as cosign recommends it in the help message
 )
 
-func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, noTlogUpload bool, pf cosign.PassFunc, imageAnnotations map[string]interface{}) error {
+const treeIDHexStringLen = 16
+const uuidHexStringLen = 64
+const entryIDHexStringLen = treeIDHexStringLen + uuidHexStringLen
+
+func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, noTlogUpload, force bool, pf cosign.PassFunc, imageAnnotations map[string]interface{}, allowInsecure bool) error {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
@@ -84,6 +88,9 @@ func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, 
 	}
 
 	regOpt := cliopt.RegistryOptions{}
+	if allowInsecure {
+		regOpt.AllowInsecure = true
+	}
 
 	certPathStr := ""
 	if certPath != nil {
@@ -93,10 +100,10 @@ func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, 
 	outputSignaturePath := ""
 	outputCertificatePath := ""
 
-	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", false, false, "", noTlogUpload)
+	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", force, false, "", noTlogUpload)
 }
 
-func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlogUpload bool, pf cosign.PassFunc) (map[string][]byte, error) {
+func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlogUpload, force bool, pf cosign.PassFunc) (map[string][]byte, error) {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
@@ -153,9 +160,6 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlo
 	m["message"] = base64Msg
 
 	timeout := defaultTlogUploadTimeout
-	if keyPath == nil {
-		timeout = defaultKeylessTlogUploadTimeout
-	}
 	rootOpt := &cliopt.RootOptions{Timeout: time.Duration(timeout) * time.Second}
 	outputSignaturePath := ""
 	outputCertificatePath := ""
@@ -280,7 +284,7 @@ func GetRekorServerURL() string {
 	return url
 }
 
-// cosign has a bug in GetTlogEntry() function as of v1.9.0, so use this instead here
+// cosign has a bug in GetTlogEntry() function as of v1.12.1, so use this instead here
 func GetTlogEntry(ctx context.Context, rekorClient *rekorgenclient.Rekor, uuid string) (*models.LogEntryAnon, error) {
 	params := entries.NewGetLogEntryByUUIDParamsWithContext(ctx)
 	params.SetEntryUUID(uuid)
@@ -297,16 +301,44 @@ func GetTlogEntry(ctx context.Context, rekorClient *rekorgenclient.Rekor, uuid s
 	return nil, errors.New("empty response")
 }
 
-func verifyUUID(uuid string, e models.LogEntryAnon) error {
-	entryUUID, _ := hex.DecodeString(uuid)
+func ComputeLeafHash(e *models.LogEntryAnon) ([]byte, error) {
+	entryBytes, err := base64.StdEncoding.DecodeString(e.Body.(string))
+	if err != nil {
+		return nil, err
+	}
+	return rfc6962.DefaultHasher.HashLeaf(entryBytes), nil
+}
 
-	// Verify leaf hash matches hash of the entry body.
-	computedLeafHash, err := cosign.ComputeLeafHash(&e)
+func getUUID(entryUUID string) (string, error) {
+	switch len(entryUUID) {
+	case uuidHexStringLen:
+		if _, err := hex.DecodeString(entryUUID); err != nil {
+			return "", fmt.Errorf("uuid %v is not a valid hex string: %w", entryUUID, err)
+		}
+		return entryUUID, nil
+	case entryIDHexStringLen:
+		uid := entryUUID[len(entryUUID)-uuidHexStringLen:]
+		return getUUID(uid)
+	default:
+		return "", fmt.Errorf("invalid ID len %v for %v", len(entryUUID), entryUUID)
+	}
+}
+
+func verifyUUID(entryUUID string, e models.LogEntryAnon) error {
+	// Verify and get the UUID.
+	uid, err := getUUID(entryUUID)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(computedLeafHash, entryUUID) {
-		return fmt.Errorf("computed leaf hash did not match entry UUID")
+	uuid, _ := hex.DecodeString(uid)
+
+	// Verify leaf hash matches hash of the entry body.
+	computedLeafHash, err := ComputeLeafHash(&e)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(computedLeafHash, uuid) {
+		return fmt.Errorf("computed leaf hash did not match UUID")
 	}
 	return nil
 }

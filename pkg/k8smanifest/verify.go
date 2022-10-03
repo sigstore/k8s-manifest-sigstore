@@ -47,11 +47,12 @@ type verificationIdentity struct {
 }
 
 type CosignVerifyConfig struct {
-	CertRef    string
-	CertChain  string
-	RekorURL   string
-	OIDCIssuer string
-	RootCerts  *cryptox509.CertPool
+	CertRef       string
+	CertChain     string
+	RekorURL      string
+	OIDCIssuer    string
+	RootCerts     *cryptox509.CertPool
+	AllowInsecure bool
 }
 
 func NewSignatureVerifier(objYAMLBytes []byte, sigRef string, pubkeyPath *string, signers []string, cosignVerifyConfig CosignVerifyConfig, annotationConfig AnnotationConfig) SignatureVerifier {
@@ -151,7 +152,7 @@ func (v *ImageSignatureVerifier) Verify() (bool, string, *int64, error) {
 	for i := range v.identityList {
 		identity := v.identityList[i]
 		// do normal image verification
-		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer, v.RootCerts)
+		verified, signerName, signedTimestamp, err = k8smnfcosign.VerifyImage(resBundleRef, identity.path, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer, v.RootCerts, v.AllowInsecure)
 
 		// cosign keyless returns signerName, so check if it matches the verificationIdentity
 		if verified && identity.name != "" {
@@ -339,9 +340,9 @@ type ManifestFetcher interface {
 // `resBundleRef` is used for judging if manifest is inside an image or not.
 // `annotationConfig` is used for annotation domain config like "cosign.sigstore.dev".
 // `ignoreFields` and `maxResourceManifestNum` are used inside manifest detection logic.
-func NewManifestFetcher(resBundleRef, resourceRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int) ManifestFetcher {
+func NewManifestFetcher(resBundleRef, resourceRef string, annotationConfig AnnotationConfig, ignoreFields []string, maxResourceManifestNum int, allowInsecure bool) ManifestFetcher {
 	if resBundleRef != "" {
-		return &ImageManifestFetcher{resBundleRefString: resBundleRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, cacheEnabled: true}
+		return &ImageManifestFetcher{resBundleRefString: resBundleRef, AnnotationConfig: annotationConfig, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum, cacheEnabled: true, allowInsecure: allowInsecure}
 	} else {
 		return &BlobManifestFetcher{AnnotationConfig: annotationConfig, resourceRefString: resourceRef, ignoreFields: ignoreFields, maxResourceManifestNum: maxResourceManifestNum}
 	}
@@ -354,6 +355,7 @@ type ImageManifestFetcher struct {
 	ignoreFields           []string // used by ManifestSearchByValue()
 	maxResourceManifestNum int      // used by ManifestSearchByValue()
 	cacheEnabled           bool
+	allowInsecure          bool
 }
 
 func (f *ImageManifestFetcher) Fetch(objYAMLBytes []byte) ([][]byte, string, error) {
@@ -432,7 +434,7 @@ func (f *ImageManifestFetcher) FetchAll() ([][]byte, error) {
 }
 
 func (f *ImageManifestFetcher) getConcatYAMLFromResourceBundleRef(resBundleRef string) ([]byte, error) {
-	image, err := k8smnfutil.PullImage(resBundleRef)
+	image, err := k8smnfutil.PullImage(resBundleRef, f.allowInsecure)
 	if err != nil {
 		return nil, err
 	}
