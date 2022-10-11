@@ -10,6 +10,10 @@ before:
   - go mod tidy
 
 builds:
+  # This instructs GoReleaser to not build for linux amd64.
+  ignore:
+    - goos: linux
+      goarch: amd64
 - id: linux
   binary: kubectl-sigstore-linux-{{ .Arch }}
   no_unique_dist_dir: true
@@ -80,9 +84,4 @@ release:
 
   footer: |
     ### Thanks for all contributors!
-
-# This instructs GoReleaser to not build for linux amd64.
-ignore:
-  - goos: linux
-    goarch: amd64
 
