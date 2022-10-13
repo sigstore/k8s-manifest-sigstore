@@ -1,3 +1,13 @@
+# What's new in v0.4.2
+
+This release is a minor update to update the cosign version to v1.13.0.
+
+
+---
+
+# Backlog 
+
+---
 
 # What's new in v0.4.1
 
@@ -19,13 +29,11 @@ If you want to skip some validations/checks using interactive CLI input while co
 
 It is also used when the signing steps are automated and when you cannot input anything while the signing.
 
----
 
-# Backlog 
 
 ---
 
-What's new in v0.4.0
+# What's new in v0.4.0
 
 In this release, a new signing method is added to `kubectl sigstore sign` command. It is not a default signing option yet, but we are planning the method will be default on the release v0.5.0 and later. The detail is described below.
 
