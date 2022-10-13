@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ghodss/yaml"
@@ -170,7 +171,7 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 	}
 	var signedBytes []byte
 	// upload files as image
-	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.resBundleRef, s.AllowInsecure)
+	err = uploadFileToRegistry(inputDataBuffer.Bytes(), s.resBundleRef, s.AllowInsecure, imageAnnotations)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
@@ -291,7 +292,7 @@ func makeMessageYAML(inputDir string, outBuffer *bytes.Buffer, moList ...*k8ssig
 	return nil
 }
 
-func uploadFileToRegistry(inputData []byte, resBundleRef string, allowInsecure bool) error {
+func uploadFileToRegistry(inputData []byte, resBundleRef string, allowInsecure bool, imageAnnotations map[string]interface{}) error {
 	dir, err := os.MkdirTemp("", "kubectl-sigstore-temp-dir")
 	if err != nil {
 		return err
@@ -311,13 +312,30 @@ func uploadFileToRegistry(inputData []byte, resBundleRef string, allowInsecure b
 		return err
 	}
 
+	imageStrAnnotations := map[string]string{}
+	for key, valIf := range imageAnnotations {
+		valStr := ""
+		if valIf == nil {
+			valStr = ""
+		} else if val, ok := valIf.(string); ok {
+			valStr = val
+		} else if val, ok := valIf.(int); ok {
+			valStr = strconv.Itoa(val)
+		} else if val, ok := valIf.(float64); ok {
+			valStr = strconv.FormatFloat(val, 'f', -1, 64)
+		} else if val, ok := valIf.(bool); ok {
+			valStr = strconv.FormatBool(val)
+		}
+		imageStrAnnotations[key] = valStr
+	}
+
 	mediaTypeGetter := cremote.DefaultMediaTypeGetter
 	regOpt := cliopt.RegistryOptions{}
 	if allowInsecure {
 		regOpt.AllowInsecure = true
 	}
 	reqCliOpt := regOpt.GetRegistryClientOpts(context.Background())
-	_, err = cremote.UploadFiles(ref, files, mediaTypeGetter, reqCliOpt...)
+	_, err = cremote.UploadFiles(ref, files, imageStrAnnotations, mediaTypeGetter, reqCliOpt...)
 	if err != nil {
 		return err
 	}
