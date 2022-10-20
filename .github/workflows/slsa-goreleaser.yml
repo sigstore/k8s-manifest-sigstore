@@ -10,15 +10,26 @@ on:
 permissions: read-all
 
 jobs:
-  args: 
+  # Generate ldflags dynamically.
+  # Optional: only needed for ldflags.
+  args:
     runs-on: ubuntu-latest
     outputs:
-      ldflags: "{{ .Env.LDFLAGS }}"
+      commit-date: ${{ steps.ldflags.outputs.commit-date }}
+      commit: ${{ steps.ldflags.outputs.commit }}
+      version: ${{ steps.ldflags.outputs.version }}
+      tree-state: ${{ steps.ldflags.outputs.tree-state }}
     steps:
       - id: checkout
         uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # tag=v2.3.4
         with:
           fetch-depth: 0
+      - id: ldflags
+        run: |
+          echo "::set-output name=commit-date::$(git log --date=iso8601-strict -1 --pretty=%ct)"
+          echo "::set-output name=commit::$GITHUB_SHA"
+          echo "::set-output name=version::$(git describe --tags --always --dirty | cut -c2-)"
+          echo "::set-output name=tree-state::$(if git diff --quiet; then echo "clean"; else echo "dirty"; fi)"
 
   # Trusted builder.
   build-linux-amd64:
@@ -31,5 +42,5 @@ jobs:
     with:
       config-file: .slsa-goreleaser-linux-amd64.yml
       go-version: 1.18
-      evaluated-envs: "VERSION_LDFLAGS:${{needs.args.outputs.ldflags}}"
+      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
       #compile-builder: true # See github.com/slsa-framework/slsa-github-generator/issues/942
