@@ -1,11 +1,9 @@
 name: SLSA go releaser
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    tags:
-      - "*"
+    # available only for tags like `v1.2.3` or `v1.2.3-rc1`
+    - "v[0-9]+.[0-9]+.[0-9]+"
+    - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 permissions: read-all
 
