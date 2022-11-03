@@ -1,5 +1,10 @@
 # k8s-manifest-sigstore
 
+===============
+<!--- @begin-badges@ --->
+[![SLSA](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev/)
+<!--- @end-badges@ --->
+
 kubectl plugin for signing Kubernetes manifest YAML files with sigstore
 
 > :warning: Still under developement, not ready for production use yet!
@@ -129,6 +134,12 @@ Flags:
   -k, --key string               a comma-separated list of paths to public keys or environment variable names start with "env://" (if empty, do key-less verification)
   -o, --output string            output format string, either "json" or "yaml" (if empty, a result is shown as a table)
 ```
+
+### SLSA Provenance
+This project generates a SLSA provenance on its release! This enables you to verify the integrity
+of the downloaded artifacts and ensure that the binary's code really comes from this source code.
+
+To do so, please follow the instructions [here](https://github.com/slsa-framework/slsa-github-generator#verification-of-provenance).
 
 ## Security
 
