@@ -1,11 +1,16 @@
-# What's new in v0.4.2
+# What's new in v0.4.3
 
-This release is a minor update to update the cosign version to v1.13.0.
-
+This release is a minor update to update the cosign version to v1.13.1.
 
 ---
 
 # Backlog 
+
+---
+# What's new in v0.4.2
+
+This release is a minor update to update the cosign version to v1.13.0.
+
 
 ---
 
