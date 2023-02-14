@@ -39,7 +39,7 @@ data:
 EOS
 
 echo "Signing a sample yaml using Keyless..."
-$K8S_SIGSTORE_CLI sign --tarball=no -f sample-configmap.yaml
+$K8S_SIGSTORE_CLI sign --tarball=no --force -f sample-configmap.yaml
 
 
 echo "Verifying the signed yaml..."
