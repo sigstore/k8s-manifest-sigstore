@@ -43,6 +43,7 @@ const (
 )
 
 var asn1EmailAddressObjectIdentifier = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 1}
+var asn1SubjectAlternativeNameObjectIdentifier = asn1.ObjectIdentifier{2, 5, 29, 17}
 
 // Verify certificate with CA cert, then verify signature
 func VerifyBlob(msgBytes, sigBytes, certBytes []byte, caCertPathString *string) (bool, string, *int64, error) {
@@ -232,20 +233,55 @@ func GetPublicKeyFromCertificate(certPemBytes []byte) ([]byte, error) {
 
 // get signer name info from cert
 // try finding it in the following order
-// cert.EmailAddress > cert.Subject.Names[] > cert.Subject.CommonName
+// - cert.EmailAddress
+// - cert.Subject.Names[]
+// - cert.Subject.CommonName
+// - SubjectAlternativeName (SAN) in cert.Extensions[]
 func GetNameInfoFromX509Cert(cert *x509.Certificate) string {
 	signerName := ""
+	// EmailAddress
 	if len(cert.EmailAddresses) > 0 {
 		signerName = cert.EmailAddresses[0]
-	} else if len(cert.Subject.Names) > 0 {
+	}
+	// Subject.Names[]
+	if signerName == "" && len(cert.Subject.Names) > 0 {
 		for _, pkixName := range cert.Subject.Names {
 			if pkixName.Type.Equal(asn1EmailAddressObjectIdentifier) {
 				signerName = pkixName.Value.(string)
 				break
 			}
 		}
-	} else {
+	}
+	// Subject.CommonName
+	if signerName == "" && cert.Subject.CommonName != "" {
 		signerName = cert.Subject.CommonName
+	}
+	// Subject Alternative Name in Extensions[]
+	// kyeless signing by GitHub Action will use this for the certificate
+	if signerName == "" && len(cert.Extensions) > 0 {
+		for _, ext := range cert.Extensions {
+			if ext.Id.Equal(asn1SubjectAlternativeNameObjectIdentifier) {
+				var seq asn1.RawValue
+				rest, _ := asn1.Unmarshal(ext.Value, &seq)
+				if len(rest) > 0 {
+					continue
+				}
+				rest = seq.Bytes
+				found := false
+				for len(rest) > 0 {
+					var v asn1.RawValue
+					rest, _ = asn1.Unmarshal(rest, &v)
+					if len(rest) == 0 {
+						signerName = string(v.Bytes)
+						found = true
+						break
+					}
+				}
+				if found {
+					break
+				}
+			}
+		}
 	}
 	return signerName
 }
