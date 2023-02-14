@@ -25,6 +25,9 @@ set -o pipefail
 export COSIGN_EXPERIMENTAL=1
 K8S_SIGSTORE_CLI=./kubectl-sigstore
 
+echo "debug printenv"
+printenv | sort
+
 timestamp=$(date +%s)
 
 cat << EOS > sample-configmap.yaml
