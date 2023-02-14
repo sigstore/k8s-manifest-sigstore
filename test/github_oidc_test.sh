@@ -21,7 +21,6 @@ set -o pipefail
 : "${GIT_HASH:?Environment variable empty or not defined.}"
 : "${GITHUB_RUN_ID:?Environment variable empty or not defined.}"
 : "${GITHUB_RUN_ATTEMPT:?Environment variable empty or not defined.}"
-: "${TEST_IMAGE:?Environment variable empty or not defined.}"
 
 export COSIGN_EXPERIMENTAL=1
 K8S_SIGSTORE_CLI=./kubectl-sigstore

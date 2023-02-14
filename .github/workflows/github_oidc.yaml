@@ -38,7 +38,6 @@ jobs:
       GIT_VERSION: unstable
       GITHUB_RUN_ID: ${{ github.run_id }}
       GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-      TEST_IMAGE: ghcr.io/hirokuni-kitahara/github-oidc-test:dev
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
