@@ -48,6 +48,11 @@ e2e-test:
 	@echo doing e2e test
 	$(TEST_OPTIONS) test/e2e/e2e_test.sh
 
+.PHONY: github-oidc-test
+github-oidc-test:
+	@echo doing github OIDC test
+	test/github_oidc_test.sh
+
 # basically used only by github action for releasing
 .PHONY: release
 release:

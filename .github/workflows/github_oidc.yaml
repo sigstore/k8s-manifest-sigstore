@@ -1,0 +1,58 @@
+# Copyright 2023 The Sigstore Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Test GitHub OIDC
+on:
+  push:
+    paths:
+      - '**'
+      - '!**.md'
+      - '!doc/**'
+      - '!**.txt'
+      - '!images/**'
+      - '!LICENSE'
+      - 'test/**'
+    branches: [ 'main', 'release-*' ]
+  pull_request:
+
+jobs:
+  github-oidc:
+    permissions:
+      id-token: write
+      packages: write
+      contents: read
+    env:
+      COSIGN_EXPERIMENTAL: "true"
+      GIT_HASH: ${{ github.sha }}
+      GIT_VERSION: unstable
+      GITHUB_RUN_ID: ${{ github.run_id }}
+      GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+      TEST_IMAGE: ghcr.io/hirokuni-kitahara/github-oidc-test:dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+        with:
+          go-version: '1.18.x'
+          check-latest: true
+          cache: true
+
+      - name: build kubectl-sigstore from the HEAD
+        run: |
+          make build
+          ./kubectl-sigstore version
+      - name: keyless-sign & keyless-verify with github action OIDC
+        run: |
+          set -e
+          make github-oidc-test
