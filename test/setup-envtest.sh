@@ -28,7 +28,7 @@ if ! [ -x "$(command -v setup-envtest)" ]; then
     echo "done."  >&2
 fi
 
-path=`setup-envtest use -p path 1.21.4`
+path=`setup-envtest use -p path 1.24.1`
 echo $path
 
 # For more details: https://github.com/kubernetes-sigs/controller-runtime/tree/master/tools/setup-envtest

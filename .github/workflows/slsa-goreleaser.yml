@@ -40,7 +40,7 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.2.2
     with:
       config-file: .slsa-goreleaser-linux-amd64.yml
-      go-version: 1.18
+      go-version: 1.19
       evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
       
   build-darwin-amd64:
@@ -52,7 +52,7 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.2.2
     with:
       config-file: .slsa-goreleaser-darwin-amd64.yml
-      go-version: 1.18
+      go-version: 1.19
       evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
       
   build-windows-amd64:
@@ -64,6 +64,6 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.2.2
     with:
       config-file: .slsa-goreleaser-windows-amd64.yml
-      go-version: 1.18
+      go-version: 1.19
       evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
       

@@ -34,9 +34,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 
-	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
-	"github.com/sigstore/cosign/pkg/cosign"
-	cremote "github.com/sigstore/cosign/pkg/cosign/remote"
+	cliopt "github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
+	"github.com/sigstore/cosign/v2/pkg/cosign"
+	cremote "github.com/sigstore/cosign/v2/pkg/cosign/remote"
 	k8scosign "github.com/sigstore/k8s-manifest-sigstore/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
@@ -67,7 +67,7 @@ func Sign(inputDir string, so *SignOption) ([]byte, error) {
 	}
 
 	if makeTarball {
-		log.Warn("[DEPRECATED] The current signing method which makes a tarball for signing is deprecated in v0.3.1+, and will be unavailable in v0.5.0. You can use the new method by `--tarball=no` from CLI or `Tarball: &(false)` in SignOption from codes.")
+		log.Warn("[DEPRECATED] The signing method which makes a tarball for signing is deprecated.")
 	}
 
 	output := ""
@@ -176,7 +176,8 @@ func (s *ImageSigner) Sign(inputDir, output string, imageAnnotations map[string]
 		return nil, errors.Wrap(err, "failed to upload image with manifest")
 	}
 	// sign the image
-	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.Force, s.passFunc, imageAnnotations, s.AllowInsecure)
+	tlogUpload := !s.NoTlogUpload
+	err = k8scosign.SignImage(s.resBundleRef, s.prikeyPath, s.certPath, s.RekorURL, tlogUpload, s.Force, s.passFunc, imageAnnotations, s.AllowInsecure)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign image")
 	}
@@ -239,7 +240,8 @@ func (s *BlobSigner) Sign(inputDir, output string, imageAnnotations map[string]i
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a temporary blob file")
 	}
-	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, s.NoTlogUpload, s.Force, s.passFunc)
+	tlogUpload := !s.NoTlogUpload
+	sigMaps, err = k8scosign.SignBlob(tmpBlobFile, s.prikeyPath, s.certPath, s.RekorURL, tlogUpload, s.Force, s.passFunc)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign a blob file")
 	}

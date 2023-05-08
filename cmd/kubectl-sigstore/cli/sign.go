@@ -73,7 +73,7 @@ func NewCmdSign() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&replaceSignature, "replace-signature", true, "just to clarify the default mode of signature storing. If false, \"append-signature\" is enabled automatically")
 	cmd.PersistentFlags().BoolVar(&applySignatureConfigMap, "apply-signature-configmap", false, "whether to apply a generated signature configmap only when \"output\" is k8s configmap")
 	cmd.PersistentFlags().BoolVar(&updateAnnotation, "annotation-metadata", true, "whether to update annotation and generate signed yaml file")
-	cmd.PersistentFlags().StringVar(&tarballOpt, "tarball", "yes", "whether to make a tarball for signing (this will be default to \"no\" in v0.5.0+)")
+	cmd.PersistentFlags().StringVar(&tarballOpt, "tarball", "no", "whether to make a tarball for signing (default to `no` and `yes` is deprecated)")
 
 	// cosign cli options
 	cmd.PersistentFlags().BoolVar(&allowInsecure, "allow-insecure-registry", false, "whether to allow insecure connections to registries. Don't use this for anything but testing")

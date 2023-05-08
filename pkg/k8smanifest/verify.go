@@ -262,7 +262,7 @@ func (v *BlobSignatureVerifier) Verify() (bool, string, *int64, error) {
 			}
 			switch sigType {
 			case sigtypes.SigTypeCosign:
-				verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, pubkeyPtr, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer)
+				verified, signer, _, err = k8smnfcosign.VerifyBlob(msgBytes, sigBytes, certBytes, bundleBytes, pubkeyPtr, v.CertRef, v.CertChain, v.RekorURL, v.OIDCIssuer, nil)
 			case sigtypes.SigTypePGP:
 				verified, signer, _, err = pgp.VerifyBlob(msgBytes, sigBytes, pubkeyPtr)
 			case sigtypes.SigTypeX509:

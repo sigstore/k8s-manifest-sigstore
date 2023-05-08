@@ -30,7 +30,7 @@ import (
 //go:embed testdata/testpub
 var b64EncodedTestPubkey []byte
 
-const b64KeylesSignerConfig = "aGlyb2t1bmkua2l0YWhhcmExQGlibS5jb20K"
+const b64KeylesSignerConfig = "aGlyb2t1bmkua2l0YWhhcmExQGlibS5jb20="
 
 func TestVerifyResource(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "k8smanifest-verify-resource-test")
@@ -185,13 +185,6 @@ func TestVerifyResourceWithKeylessMultipleSignatures(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	keyPath := filepath.Join(tmpDir, "testpub")
-	err = initSingleTestFile(b64EncodedTestPubkey, keyPath)
-	if err != nil {
-		t.Errorf("failed to init a public key file for test: %s", err.Error())
-		return
-	}
-
 	fpath := "testdata/sample-configmap-keyless-multi-signed.yaml"
 	objBytes, err := os.ReadFile(fpath)
 	if err != nil {
@@ -212,7 +205,6 @@ func TestVerifyResourceWithKeylessMultipleSignatures(t *testing.T) {
 	}
 	vo := &VerifyResourceOption{
 		verifyOption: verifyOption{
-			KeyPath: keyPath,
 			Signers: SignerList{
 				string(signerConfig), // this should match with the second signature
 			},

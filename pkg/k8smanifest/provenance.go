@@ -33,8 +33,8 @@ import (
 
 	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 	"github.com/go-openapi/runtime"
-	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
-	cremote "github.com/sigstore/cosign/pkg/oci/remote"
+	cliopt "github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
+	cremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/google/go-containerregistry/pkg/authn"

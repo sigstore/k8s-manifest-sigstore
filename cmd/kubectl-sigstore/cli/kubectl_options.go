@@ -137,7 +137,7 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	if err != nil {
 		return err
 	}
-	o.ApplyOptions.DryRunVerifier = resource.NewDryRunVerifier(o.ApplyOptions.DynamicClient, f.OpenAPIGetter())
+	o.ApplyOptions.DryRunVerifier = resource.NewQueryParamVerifier(o.ApplyOptions.DynamicClient, f.OpenAPIGetter(), resource.QueryParamDryRun)
 	o.ApplyOptions.FieldManager = cmdapply.GetApplyFieldManagerFlag(cmd, o.ApplyOptions.ServerSideApply)
 
 	if o.ApplyOptions.ForceConflicts && !o.ApplyOptions.ServerSideApply {
@@ -161,7 +161,12 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	o.ApplyOptions.DeleteOptions = &delete.DeleteOptions{FilenameOptions: resource.FilenameOptions{Filenames: []string{filename}}}
 
 	o.ApplyOptions.OpenAPISchema, _ = f.OpenAPISchema()
-	o.ApplyOptions.Validator, err = f.Validator(cmdutil.GetFlagBool(cmd, "validate"))
+	fieldValidationVerifier := resource.NewQueryParamVerifier(o.ApplyOptions.DynamicClient, f.OpenAPIGetter(), resource.QueryParamFieldValidation)
+	validationDirective, err := cmdutil.GetValidationDirective(cmd)
+	if err != nil {
+		return err
+	}
+	o.ApplyOptions.Validator, err = f.Validator(validationDirective, fieldValidationVerifier)
 	if err != nil {
 		return err
 	}
