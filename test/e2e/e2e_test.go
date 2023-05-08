@@ -341,7 +341,7 @@ func sign(inPath, outPath, keyPath string) error {
 	cmd := cli.NewCmdSign()
 	b := bytes.NewBufferString("")
 	cmd.SetOut(b)
-	cmd.SetArgs([]string{"-f", inPath, "-k", keyPath, "-o", outPath})
+	cmd.SetArgs([]string{"-f", inPath, "-k", keyPath, "-o", outPath, "--force"})
 	err := cmd.Execute()
 	if err != nil {
 		return err

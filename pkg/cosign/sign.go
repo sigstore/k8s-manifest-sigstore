@@ -19,24 +19,28 @@ package cosign
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
-	cligen "github.com/sigstore/cosign/cmd/cosign/cli/generate"
-	cliopt "github.com/sigstore/cosign/cmd/cosign/cli/options"
-	clisign "github.com/sigstore/cosign/cmd/cosign/cli/sign"
-	"github.com/sigstore/cosign/pkg/cosign"
-	"github.com/sigstore/cosign/pkg/cosign/bundle"
+	cligen "github.com/sigstore/cosign/v2/cmd/cosign/cli/generate"
+	cliopt "github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
+	clisign "github.com/sigstore/cosign/v2/cmd/cosign/cli/sign"
+	"github.com/sigstore/cosign/v2/pkg/cosign"
+	"github.com/sigstore/cosign/v2/pkg/cosign/bundle"
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekorclient "github.com/sigstore/rekor/pkg/client"
+	"github.com/sigstore/rekor/pkg/generated/client"
 	rekorgenclient "github.com/sigstore/rekor/pkg/generated/client"
 	"github.com/sigstore/rekor/pkg/generated/client/entries"
+	"github.com/sigstore/rekor/pkg/generated/client/index"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	log "github.com/sirupsen/logrus"
 	"github.com/transparency-dev/merkle/rfc6962"
@@ -55,10 +59,7 @@ const treeIDHexStringLen = 16
 const uuidHexStringLen = 64
 const entryIDHexStringLen = treeIDHexStringLen + uuidHexStringLen
 
-func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, noTlogUpload, force bool, pf cosign.PassFunc, imageAnnotations map[string]interface{}, allowInsecure bool) error {
-	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
-	sk := false
-	idToken := ""
+func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, tlogUpload, force bool, pf cosign.PassFunc, imageAnnotations map[string]interface{}, allowInsecure bool) error {
 
 	var rekorSeverURL string
 	if rekorURL == "" {
@@ -70,8 +71,6 @@ func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, 
 
 	rootOpt := &cliopt.RootOptions{Timeout: defaultTlogUploadTimeout * time.Second}
 	opt := cliopt.KeyOpts{
-		Sk:           sk,
-		IDToken:      idToken,
 		RekorURL:     rekorSeverURL,
 		FulcioURL:    fulcioServerURL,
 		OIDCIssuer:   defaultOIDCIssuer,
@@ -83,27 +82,53 @@ func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, 
 		opt.PassFunc = pf
 	}
 
-	if keyPath != nil {
-		opt.KeyRef = *keyPath
+	imageAnnotationList := []string{}
+	for k, v := range imageAnnotations {
+		kv := fmt.Sprintf("%s=%v", k, v)
+		imageAnnotationList = append(imageAnnotationList, kv)
+	}
+
+	signOpt := cliopt.SignOptions{
+		TlogUpload: tlogUpload,
+		Upload:     true,
+		Rekor: cliopt.RekorOptions{
+			URL: rekorSeverURL,
+		},
+		Fulcio: cliopt.FulcioOptions{
+			URL: fulcioServerURL,
+		},
+		OIDC: cliopt.OIDCOptions{
+			Issuer:   defaultOIDCIssuer,
+			ClientID: defaultOIDCClientID,
+		},
+		AnnotationOptions: cliopt.AnnotationOptions{
+			Annotations: imageAnnotationList,
+		},
 	}
 
 	regOpt := cliopt.RegistryOptions{}
 	if allowInsecure {
 		regOpt.AllowInsecure = true
 	}
+	signOpt.Registry = regOpt
 
-	certPathStr := ""
 	if certPath != nil {
-		certPathStr = *certPath
+		signOpt.Cert = *certPath
 	}
 
-	outputSignaturePath := ""
-	outputCertificatePath := ""
+	if keyPath != nil {
+		opt.KeyRef = *keyPath
+		signOpt.Key = *keyPath
+	}
 
-	return clisign.SignCmd(rootOpt, opt, regOpt, imageAnnotations, []string{resBundleRef}, certPathStr, "", true, outputSignaturePath, outputCertificatePath, "", force, false, "", noTlogUpload)
+	if force {
+		opt.SkipConfirmation = true
+	}
+
+	return clisign.SignCmd(rootOpt, opt, signOpt, []string{resBundleRef})
 }
 
-func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlogUpload, force bool, pf cosign.PassFunc) (map[string][]byte, error) {
+func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, tlogUpload, force bool, pf cosign.PassFunc) (map[string][]byte, error) {
 	// TODO: add support for sk (security key) and idToken (identity token for cert from fulcio)
 	sk := false
 	idToken := ""
@@ -133,6 +158,10 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlo
 
 	if keyPath != nil {
 		opt.KeyRef = *keyPath
+	}
+
+	if force {
+		opt.SkipConfirmation = true
 	}
 
 	// TODO: find a better way to call cosigncli.SignBlobCmd() with interactive stdin and captured stdout
@@ -148,8 +177,6 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlo
 		}
 	}
 
-	regOpt := cliopt.RegistryOptions{}
-
 	m := map[string][]byte{}
 	rawMsg, err := os.ReadFile(blobPath)
 	if err != nil {
@@ -163,7 +190,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlo
 	rootOpt := &cliopt.RootOptions{Timeout: time.Duration(timeout) * time.Second}
 	outputSignaturePath := ""
 	outputCertificatePath := ""
-	rawSig, err := clisign.SignBlobCmd(rootOpt, opt, regOpt, blobPath, false, outputSignaturePath, outputCertificatePath)
+	rawSig, err := clisign.SignBlobCmd(rootOpt, opt, blobPath, false, outputSignaturePath, outputCertificatePath, tlogUpload)
 	if err != nil {
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
@@ -171,22 +198,18 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, noTlo
 	b64Sig := []byte(base64.StdEncoding.EncodeToString(rawSig))
 	m["signature"] = b64Sig
 
-	uploadTlog := cliopt.EnableExperimental() && !noTlogUpload
-
 	var rawCert []byte
 	var rawBundle []byte
 
-	// cosign.SignBlobCmd() does not create a rekor entry bundle as of v1.8.0, so do it here
-	if uploadTlog && certPath == nil {
+	// cosign.SignBlobCmd() does not return a rekor entry bundle as of v2.0.2, so find it here
+	if tlogUpload && certPath == nil {
 		rClient, err := rekorclient.GetRekorClient(opt.RekorURL)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get rekor client")
 		}
-		blobBytes, err := os.ReadFile(blobPath)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to read blob file")
-		}
-		uuids, err := cosign.FindTLogEntriesByPayload(context.Background(), rClient, blobBytes)
+		blobBytes := rawMsg
+		// uuids, err := cosign.FindTLogEntriesByPayload(context.Background(), rClient, blobBytes)
+		uuids, err := FindTLogEntriesByPayload(context.Background(), rClient, blobBytes)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to find tlog entry")
 		}
@@ -299,6 +322,22 @@ func GetTlogEntry(ctx context.Context, rekorClient *rekorgenclient.Rekor, uuid s
 		return &e, nil
 	}
 	return nil, errors.New("empty response")
+}
+
+// FindTLogEntriesByPayload is removed in cosign v2.x, so we implement it here
+func FindTLogEntriesByPayload(ctx context.Context, rekorClient *client.Rekor, payload []byte) (uuids []string, err error) {
+	params := index.NewSearchIndexParamsWithContext(ctx)
+	params.Query = &models.SearchIndex{}
+
+	h := sha256.New()
+	h.Write(payload)
+	params.Query.Hash = fmt.Sprintf("sha256:%s", strings.ToLower(hex.EncodeToString(h.Sum(nil))))
+
+	searchIndex, err := rekorClient.Index.SearchIndex(params)
+	if err != nil {
+		return nil, err
+	}
+	return searchIndex.GetPayload(), nil
 }
 
 func ComputeLeafHash(e *models.LogEntryAnon) ([]byte, error) {

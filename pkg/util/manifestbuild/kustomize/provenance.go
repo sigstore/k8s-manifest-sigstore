@@ -17,6 +17,7 @@
 package kustomize
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -113,13 +114,13 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 		return nil, err
 	}
 
-	envelope, err := signer.SignPayload("application/vnd.in-toto+json", b)
+	envelope, err := signer.SignPayload(context.Background(), "application/vnd.in-toto+json", b)
 	if err != nil {
 		return nil, err
 	}
 
 	// Now verify
-	_, err = signer.Verify(envelope)
+	_, err = signer.Verify(context.Background(), envelope)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +283,7 @@ type IntotoSigner struct {
 }
 
 // sign a provenance data
-func (it *IntotoSigner) Sign(data []byte) ([]byte, error) {
+func (it *IntotoSigner) Sign(ctx context.Context, data []byte) ([]byte, error) {
 	h := sha256.Sum256(data)
 	sig, err := it.key.Sign(rand.Reader, h[:], crypto.SHA256)
 	if err != nil {
@@ -292,7 +293,7 @@ func (it *IntotoSigner) Sign(data []byte) ([]byte, error) {
 }
 
 // sverify a provenance data and its signature
-func (it *IntotoSigner) Verify(data, sig []byte) error {
+func (it *IntotoSigner) Verify(ctx context.Context, data, sig []byte) error {
 	h := sha256.Sum256(data)
 	ok := ecdsa.VerifyASN1(&it.key.PublicKey, h[:], sig)
 	if ok {

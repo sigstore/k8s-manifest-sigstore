@@ -1,7 +1,7 @@
 
 VERSION_PKG ?= github.com/sigstore/k8s-manifest-sigstore/pkg/util
 
-TEST_OPTIONS ?= COSIGN_EXPERIMENTAL=0 KUBEBUILDER_ASSETS=$$(test/setup-envtest.sh)
+TEST_OPTIONS ?= KUBEBUILDER_ASSETS=$$(test/setup-envtest.sh)
 
 # Set version variables for LDFLAGS
 GIT_VERSION ?= $(shell git describe --tags --always --dirty)
