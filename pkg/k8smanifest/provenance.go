@@ -19,8 +19,6 @@ package k8smanifest
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -31,7 +29,6 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 	"github.com/go-openapi/runtime"
 	cliopt "github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
 	cremote "github.com/sigstore/cosign/v2/pkg/oci/remote"
@@ -46,13 +43,12 @@ import (
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	"github.com/sigstore/rekor/pkg/client"
-	genclient "github.com/sigstore/rekor/pkg/generated/client"
 	"github.com/sigstore/rekor/pkg/generated/client/entries"
 	"github.com/sigstore/rekor/pkg/generated/client/index"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	"github.com/sigstore/rekor/pkg/types"
 	_ "github.com/sigstore/rekor/pkg/types/intoto/v0.0.1"
-	rekorutil "github.com/sigstore/rekor/pkg/util"
+	rekorverify "github.com/sigstore/rekor/pkg/verify"
 	tektonchainsprov "github.com/tektoncd/chains/pkg/chains/provenance"
 )
 
@@ -518,8 +514,8 @@ func getAttestationEntry(hash string) ([]byte, *int, error) {
 			continue
 		}
 
-		if verified, err := verifyLogEntry(context.Background(), rekorClient, entry); err != nil || !verified {
-			return nil, nil, fmt.Errorf("unable to verify entry was added to log %w", err)
+		if err := rekorverify.VerifyInclusion(context.Background(), &entry); err != nil {
+			return nil, nil, fmt.Errorf("unable to verify inclusion of the transparency log %w", err)
 		}
 
 		attestationEntry, err := parseEntry(k, entry)
@@ -538,45 +534,6 @@ func getAttestationEntry(hash string) ([]byte, *int, error) {
 		return decodedAttestation, &attestationLogIndexNum, nil
 	}
 	return nil, nil, fmt.Errorf("attestation transparancy log not found for uuid: %s", uuid)
-}
-
-func verifyLogEntry(ctx context.Context, rekorClient *genclient.Rekor, logEntry models.LogEntryAnon) (bool, error) {
-	if logEntry.Verification == nil {
-		return false, nil
-	}
-	// verify the entry
-	if logEntry.Verification.SignedEntryTimestamp == nil {
-		return false, fmt.Errorf("signature missing")
-	}
-
-	le := &models.LogEntryAnon{
-		IntegratedTime: logEntry.IntegratedTime,
-		LogIndex:       logEntry.LogIndex,
-		Body:           logEntry.Body,
-		LogID:          logEntry.LogID,
-	}
-
-	payload, err := le.MarshalBinary()
-	if err != nil {
-		return false, err
-	}
-	canonicalized, err := jsoncanonicalizer.Transform(payload)
-	if err != nil {
-		return false, err
-	}
-
-	// get rekor's public key
-	rekorPubKey, err := rekorutil.PublicKey(ctx, rekorClient)
-	if err != nil {
-		return false, err
-	}
-
-	// verify the SET against the public key
-	hash := sha256.Sum256(canonicalized)
-	if !ecdsa.VerifyASN1(rekorPubKey, hash[:], []byte(logEntry.Verification.SignedEntryTimestamp)) {
-		return false, fmt.Errorf("unable to verify")
-	}
-	return true, nil
 }
 
 func parseEntry(uuid string, e models.LogEntryAnon) (*rekorCLIGetCmdOutput, error) {
