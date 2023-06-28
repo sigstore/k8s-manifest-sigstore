@@ -107,9 +107,10 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 		return nil, err
 	}
 
-	signer, err := dsse.NewEnvelopeSigner(&IntotoSigner{
+	intotoSigner := &IntotoSigner{
 		key: priv.(*ecdsa.PrivateKey),
-	})
+	}
+	signer, err := dsse.NewEnvelopeSigner(intotoSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,9 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 	}
 
 	// Now verify
-	_, err = signer.Verify(context.Background(), envelope)
+	data := []byte(envelope.Payload)
+	sig := []byte(envelope.Signatures[0].Sig)
+	err = intotoSigner.Verify(context.Background(), data, sig)
 	if err != nil {
 		return nil, err
 	}
