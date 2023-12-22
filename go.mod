@@ -13,7 +13,7 @@ require (
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.27.7
-	github.com/open-policy-agent/gatekeeper v0.0.0-20210824170141-dd97b8a7e966
+	github.com/open-policy-agent/gatekeeper/v3 v3.14.0
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff v1.1.0
 	github.com/secure-systems-lab/go-securesystemslib v0.6.0
