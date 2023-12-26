@@ -32,13 +32,14 @@ import (
 	"text/tabwriter"
 	"time"
 
+	gkmatch "github.com/open-policy-agent/gatekeeper/v3/pkg/mutation/match"
+	"github.com/open-policy-agent/gatekeeper/v3/pkg/mutation/types"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ghodss/yaml"
-	gkmatch "github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/k8smanifest"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
@@ -544,7 +545,8 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 	if len(constraintMatch.Namespaces) > 0 {
 		for _, nsNamePattern := range constraintMatch.Namespaces {
 			for _, nsObj := range allNamespaces {
-				if k8ssigutil.MatchSinglePattern(nsNamePattern, nsObj.GetName()) {
+				stringNsNamePattern := string(nsNamePattern)
+				if k8ssigutil.MatchSinglePattern(stringNsNamePattern, nsObj.GetName()) {
 					nsName := nsObj.GetName()
 					namespaces[nsName] = nsObj
 				}
@@ -565,9 +567,13 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 	// step 4
 	// check ExcludeNamespace conditions if exist
 	if len(constraintMatch.ExcludedNamespaces) > 0 {
+		var stringExcludeNamespace []string
+		for _, excNamespace := range constraintMatch.ExcludedNamespaces {
+			stringExcludeNamespace = append(stringExcludeNamespace, string(excNamespace))
+		}
 		tmpNamespaces := map[string]*corev1.Namespace{}
 		for nsName, nsObj := range namespaces {
-			if !k8ssigutil.ExactMatchWithPatternArray(nsName, constraintMatch.ExcludedNamespaces) {
+			if !k8ssigutil.ExactMatchWithPatternArray(nsName, stringExcludeNamespace) {
 				tmpNamespaces[nsName] = nsObj
 			}
 		}
@@ -633,8 +639,15 @@ func getObjsByConstraint(constraintRef, matchField, inscopeField string, concurr
 	}
 
 	objs := []unstructured.Unstructured{}
+
+	var target gkmatch.Matchable
 	for _, od := range objDataList {
-		matched, err := gkmatch.Matches(constraintMatch, od.obj, od.namespace)
+		target = gkmatch.Matchable{
+			Object:    od.obj,
+			Namespace: od.namespace,
+			Source:    types.SourceType(od.kind.Name),
+		}
+		matched, err := gkmatch.Matches(constraintMatch, &target)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to check if the constraint matches this object %s %s", od.kind.Kind, od.obj.GetName())
 		}
