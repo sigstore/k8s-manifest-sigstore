@@ -1,6 +1,6 @@
 module github.com/sigstore/k8s-manifest-sigstore
 
-go 1.19
+go 1.21
 
 require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c
