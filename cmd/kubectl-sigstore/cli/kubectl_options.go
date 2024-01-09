@@ -121,7 +121,7 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(o.ConfigFlags.WithDeprecatedPasswordFlag())
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
 
-	options, err := cmdapply.NewApplyFlags(f, ioStreams).ToOptions(cmd, "kubectl sigstore", []string{})
+	options, err := cmdapply.NewApplyFlags(ioStreams).ToOptions(f, cmd, "kubectl sigstore", []string{})
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,6 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	if err != nil {
 		return err
 	}
-	o.ApplyOptions.DryRunVerifier = resource.NewQueryParamVerifier(o.ApplyOptions.DynamicClient, f.OpenAPIGetter(), resource.QueryParamDryRun)
 	o.ApplyOptions.FieldManager = cmdapply.GetApplyFieldManagerFlag(cmd, o.ApplyOptions.ServerSideApply)
 
 	if o.ApplyOptions.ForceConflicts && !o.ApplyOptions.ServerSideApply {
@@ -161,12 +160,11 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 	o.ApplyOptions.DeleteOptions = &delete.DeleteOptions{FilenameOptions: resource.FilenameOptions{Filenames: []string{filename}}}
 
 	o.ApplyOptions.OpenAPISchema, _ = f.OpenAPISchema()
-	fieldValidationVerifier := resource.NewQueryParamVerifier(o.ApplyOptions.DynamicClient, f.OpenAPIGetter(), resource.QueryParamFieldValidation)
 	validationDirective, err := cmdutil.GetValidationDirective(cmd)
 	if err != nil {
 		return err
 	}
-	o.ApplyOptions.Validator, err = f.Validator(validationDirective, fieldValidationVerifier)
+	o.ApplyOptions.Validator, err = f.Validator(validationDirective)
 	if err != nil {
 		return err
 	}
