@@ -37,7 +37,7 @@ jobs:
       contents: write # To upload assets to release.
       actions: read # To read the workflow path.
     needs: args
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.2.2
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.9.0
     with:
       config-file: .slsa-goreleaser-linux-amd64.yml
       go-version: 1.21
@@ -49,7 +49,7 @@ jobs:
       contents: write # To upload assets to release.
       actions: read # To read the workflow path.
     needs: args
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.2.2
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.9.0
     with:
       config-file: .slsa-goreleaser-darwin-amd64.yml
       go-version: 1.21
@@ -61,7 +61,7 @@ jobs:
       contents: write # To upload assets to release.
       actions: read # To read the workflow path.
     needs: args
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.2.2
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.9.0
     with:
       config-file: .slsa-goreleaser-windows-amd64.yml
       go-version: 1.21
