@@ -35,7 +35,7 @@ import (
 
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	intotoprov02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
-	"github.com/theupdateframework/go-tuf/encrypted"
+	"github.com/secure-systems-lab/go-securesystemslib/encrypted"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"

@@ -90,7 +90,7 @@ func LoadKustomization(fpath, baseDir, gitURL, gitRevision string, inRemoteRepo 
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal a content of %s into %T", fpath, k)
 	}
-	k.FixKustomizationPostUnmarshalling()
+	k.FixKustomization()
 
 	// these resources are used as "provenance materials" later
 	// files in a local filesystem --> File resource
