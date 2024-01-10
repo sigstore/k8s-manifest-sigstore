@@ -18,6 +18,7 @@ jobs:
       commit: ${{ steps.ldflags.outputs.commit }}
       version: ${{ steps.ldflags.outputs.version }}
       tree-state: ${{ steps.ldflags.outputs.tree-state }}
+      version-package: github.com/sigstore/k8s-manifest-sigstore/pkg/util
     steps:
       - id: checkout
         uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 # tag=v2.3.4
@@ -41,7 +42,7 @@ jobs:
     with:
       config-file: .slsa-goreleaser-linux-amd64.yml
       go-version: 1.21
-      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
+      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}, VERSION_PKG:${{needs.args.outputs.version-package}}"
       
   build-darwin-amd64:
     permissions:
@@ -53,7 +54,7 @@ jobs:
     with:
       config-file: .slsa-goreleaser-darwin-amd64.yml
       go-version: 1.21
-      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
+      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}, VERSION_PKG:${{needs.args.outputs.version-package}}"
       
   build-windows-amd64:
     permissions:
@@ -65,5 +66,5 @@ jobs:
     with:
       config-file: .slsa-goreleaser-windows-amd64.yml
       go-version: 1.21
-      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
+      evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}, VERSION_PKG:${{needs.args.outputs.version-package}}"
       
