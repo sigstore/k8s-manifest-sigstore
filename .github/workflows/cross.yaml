@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-latest, macos-14, ubuntu-latest, windows-latest]
         include:
           - os: macos-latest
             TARGET: kubectl-sigstore-darwin-amd64
