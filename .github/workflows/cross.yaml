@@ -27,6 +27,9 @@ jobs:
           - os: macos-latest
             TARGET: kubectl-sigstore-darwin-amd64
             # COSIGN_PASSWORD: COSIGN_PASSWORD
+          - os: macos-14
+            TARGET: kubectl-sigstore-darwin-arm64
+            # COSIGN_PASSWORD: COSIGN_PASSWORD
           - os: ubuntu-latest
             TARGET: kubectl-sigstore-linux-amd64
             # COSIGN_PASSWORD: COSIGN_PASSWORD
