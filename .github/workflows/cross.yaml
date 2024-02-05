@@ -22,10 +22,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-latest, macos-14, ubuntu-latest, windows-latest]
         include:
           - os: macos-latest
             TARGET: kubectl-sigstore-darwin-amd64
+            # COSIGN_PASSWORD: COSIGN_PASSWORD
+          - os: macos-14
+            TARGET: kubectl-sigstore-darwin-arm64
             # COSIGN_PASSWORD: COSIGN_PASSWORD
           - os: ubuntu-latest
             TARGET: kubectl-sigstore-linux-amd64
