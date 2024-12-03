@@ -147,6 +147,12 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 			return nil, errors.Wrap(err, "tarReader.Next() failed while decompressing tar gz")
 		}
 
+		// Skip files that have path starting with ".."
+		// Ref: CWE-22
+		if !strings.Contains(header.Name, "..") {
+			continue
+		}
+
 		switch header.Typeflag {
 		case tar.TypeDir:
 			fpath := filepath.Join(dir, header.Name)
