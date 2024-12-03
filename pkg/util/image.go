@@ -149,7 +149,7 @@ func GetYAMLsInArtifact(blob []byte) ([][]byte, error) {
 
 		// Skip files that have path starting with ".."
 		// Ref: CWE-22
-		if !strings.Contains(header.Name, "..") {
+		if strings.HasPrefix(header.Name, "..") {
 			continue
 		}
 
