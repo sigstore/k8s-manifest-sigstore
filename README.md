@@ -140,11 +140,11 @@ of the downloaded artifacts and ensure that the binary's code really comes from 
 To do so, please follow the instructions [here](https://github.com/slsa-framework/slsa-github-generator#verification-of-provenance).
 
 ### Kyverno Integration
-[Kyverno](https://main.kyverno.io/) is an open-source policy engine designed for Kubernetes resources.
+[Kyverno](https://kyverno.io/) is an open-source policy engine designed for Kubernetes resources.
 
 It has the built-in feature to verify signed Kubernetes YAML manifests created with k8s-manifest-sigstore project.
 
-Please refer to the [document](https://main.kyverno.io/docs/writing-policies/validate/#manifest-validation) for more details.
+Please refer to the [document](https://kyverno.io/docs/policy-types/cluster-policy/validate/#manifest-validation) for more details.
 
 ## Security
 
