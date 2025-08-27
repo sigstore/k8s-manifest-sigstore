@@ -41,7 +41,7 @@ lint-and-fix:
 .PHONY: test
 test:
 	@echo doing unit test
-	$(TEST_OPTIONS) go test -v ./...
+	$(TEST_OPTIONS) go test -vvv ./...
 
 .PHONY: e2e-test
 e2e-test:
