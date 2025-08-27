@@ -53,8 +53,8 @@ func TarGzCompress(src string, buf io.Writer, moList ...*MutateOptions) error {
 	var errV error
 
 	// we cannot use os.MkdirTemp() here because it creates a direcotry with a different name everytime
-	// it results in inconsistent compression result that means inconsistent message even for the identical input.
-	// instead, we use a temporary directory which is named like `compression-tar-gz-<INPUT_FILE_DIGEST>`.
+	// It results in inconsistent compression result that means inconsistent message even for the identical input.
+	// Instead, we use a temporary directory which is named like `compression-tar-gz-<INPUT_FILE_DIGEST>`.
 	digest, err := getSourceDigest(src, moList)
 	if err != nil {
 		return errors.Wrap(err, "error occurred during getting digest of the input for tar gz compression")
