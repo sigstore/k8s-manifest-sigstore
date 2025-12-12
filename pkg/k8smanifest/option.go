@@ -28,7 +28,7 @@ import (
 	"github.com/ghodss/yaml"
 	gkmatch "github.com/open-policy-agent/gatekeeper/v3/pkg/mutation/match"
 	"github.com/pkg/errors"
-	"github.com/sigstore/cosign/v2/pkg/cosign"
+	"github.com/sigstore/cosign/v3/pkg/cosign"
 	k8ssigutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	kubeutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util/kubeutil"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/mapnode"

@@ -32,7 +32,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/pkg/errors"
-	cliopt "github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
+	cliopt "github.com/sigstore/cosign/v3/cmd/cosign/cli/options"
 	"github.com/spf13/afero"
 )
 
