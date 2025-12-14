@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
+	cosignsig "github.com/sigstore/cosign/v3/pkg/signature"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/pgp"
 	"github.com/sigstore/k8s-manifest-sigstore/pkg/util/sigtypes/x509"
 	log "github.com/sirupsen/logrus"

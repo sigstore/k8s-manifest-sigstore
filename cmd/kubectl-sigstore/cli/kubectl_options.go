@@ -159,7 +159,6 @@ func (o *KubectlOptions) InitApply(cmd *cobra.Command, filename string) error {
 
 	o.ApplyOptions.DeleteOptions = &delete.DeleteOptions{FilenameOptions: resource.FilenameOptions{Filenames: []string{filename}}}
 
-	o.ApplyOptions.OpenAPISchema, _ = f.OpenAPISchema()
 	validationDirective, err := cmdutil.GetValidationDirective(cmd)
 	if err != nil {
 		return err

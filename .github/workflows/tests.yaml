@@ -23,26 +23,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      # https://github.com/mvdan/github-actions-golang#how-do-i-set-up-caching-between-builds
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          # In order:
-          # * Module download cache
-          # * Build cache (Linux)
-          # * Build cache (Mac)
-          # * Build cache (Windows)
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-            ~/Library/Caches/go-build
-            %LocalAppData%\go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - uses: actions/setup-go@v2
-        with:
-          go-version: '1.21.x'
+          go-version: '1.25.x'
+          check-latest: true
+          cache: true
       # - name: install ko
       #   run: |
       #     curl -L https://github.com/google/ko/releases/download/v0.8.3/ko_0.8.3_Linux_x86_64.tar.gz | tar xzf - ko && \
@@ -61,10 +47,10 @@ jobs:
     name: license boilerplate check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.21.x'
+          go-version: '1.25.x'
       - name: Install addlicense
         run: go install github.com/google/addlicense@latest
       - name: Check license headers
@@ -77,10 +63,14 @@ jobs:
     name: Run lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v2
-        timeout-minutes: 5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
+          go-version: '1.25.x'
+          cache: false
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
           version: latest
+          install-mode: goinstall
+          args: --timeout=10m

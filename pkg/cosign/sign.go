@@ -29,11 +29,11 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	cligen "github.com/sigstore/cosign/v2/cmd/cosign/cli/generate"
-	cliopt "github.com/sigstore/cosign/v2/cmd/cosign/cli/options"
-	clisign "github.com/sigstore/cosign/v2/cmd/cosign/cli/sign"
-	"github.com/sigstore/cosign/v2/pkg/cosign"
-	"github.com/sigstore/cosign/v2/pkg/cosign/bundle"
+	cligen "github.com/sigstore/cosign/v3/cmd/cosign/cli/generate"
+	cliopt "github.com/sigstore/cosign/v3/cmd/cosign/cli/options"
+	clisign "github.com/sigstore/cosign/v3/cmd/cosign/cli/sign"
+	"github.com/sigstore/cosign/v3/pkg/cosign"
+	"github.com/sigstore/cosign/v3/pkg/cosign/bundle"
 	fulcioapi "github.com/sigstore/fulcio/pkg/api"
 	k8smnfutil "github.com/sigstore/k8s-manifest-sigstore/pkg/util"
 	rekorclient "github.com/sigstore/rekor/pkg/client"
@@ -125,7 +125,7 @@ func SignImage(resBundleRef string, keyPath, certPath *string, rekorURL string, 
 		opt.SkipConfirmation = true
 	}
 
-	return clisign.SignCmd(rootOpt, opt, signOpt, []string{resBundleRef})
+	return clisign.SignCmd(context.TODO(), rootOpt, opt, signOpt, []string{resBundleRef})
 }
 
 func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, tlogUpload, force bool, pf cosign.PassFunc) (map[string][]byte, error) {
@@ -190,7 +190,7 @@ func SignBlob(blobPath string, keyPath, certPath *string, rekorURL string, tlogU
 	rootOpt := &cliopt.RootOptions{Timeout: time.Duration(timeout) * time.Second}
 	outputSignaturePath := ""
 	outputCertificatePath := ""
-	rawSig, err := clisign.SignBlobCmd(rootOpt, opt, blobPath, false, outputSignaturePath, outputCertificatePath, tlogUpload)
+	rawSig, err := clisign.SignBlobCmd(context.TODO(), rootOpt, opt, blobPath, "", "", false, outputSignaturePath, outputCertificatePath, tlogUpload)
 	if err != nil {
 		return nil, errors.Wrap(err, "cosign.SignBlobCmd() returned an error")
 	}
