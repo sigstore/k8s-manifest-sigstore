@@ -205,7 +205,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 	// `after`: attributes in the specified resource (or the resource in admission request in case of admission check)
 	matched, diff, err = directMatch(foundManifestBytes, objBytes)
 	if err != nil {
-		return false, nil, errors.Wrap(err, "error occured during diract match")
+		return false, nil, errors.Wrap(err, "error occurred during diract match")
 	}
 	if diff != nil && len(ignoreFields) > 0 {
 		_, diff, _ = diff.Filter(ignoreFields)
@@ -237,7 +237,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		log.Debug("try dryrun create matching")
 		matched, diff, dryRunBytes, err = dryrunCreateMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
 		if err != nil {
-			return false, nil, errors.Wrap(err, "error occured during dryrun create match")
+			return false, nil, errors.Wrap(err, "error occurred during dryrun create match")
 		}
 		if diff != nil && len(ignoreFields) > 0 {
 			_, diff, _ = diff.Filter(ignoreFields)
@@ -262,7 +262,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		log.Debug("try dryrun apply matching")
 		matched, diff, err = dryrunApplyMatch(foundManifestBytes, objBytes, clusterScope, isCRD, dryRunNamespace)
 		if err != nil {
-			return false, nil, errors.Wrap(err, "error occured during dryrun apply match")
+			return false, nil, errors.Wrap(err, "error occurred during dryrun apply match")
 		}
 		if diff != nil && len(ignoreFields) > 0 {
 			_, diff, _ = diff.Filter(ignoreFields)
@@ -287,7 +287,7 @@ func matchResourceWithManifest(obj unstructured.Unstructured, foundManifestBytes
 		log.Debug("try mutating resource matching (check inclusion relation between manifest, resource and dryrun result)")
 		matched, diff, err = inclusionMatch(foundManifestBytes, objBytes, dryRunBytes, clusterScope, isCRD, disableDryRun)
 		if err != nil {
-			return false, nil, errors.Wrap(err, "error occured during mutating resource matching")
+			return false, nil, errors.Wrap(err, "error occurred during mutating resource matching")
 		}
 		if diff != nil && len(ignoreFields) > 0 {
 			_, diff, _ = diff.Filter(ignoreFields)
