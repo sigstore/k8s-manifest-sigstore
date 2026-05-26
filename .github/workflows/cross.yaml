@@ -6,6 +6,9 @@ on:
   pull_request:
 
 name: Cross Platfrom Build
+permissions:
+  contents: read
+
 jobs:
   sanity-build:
     name: build
