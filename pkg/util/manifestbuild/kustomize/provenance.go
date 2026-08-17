@@ -95,8 +95,14 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 	if err != nil {
 		return nil, err
 	}
-	ecdsaPriv, _ := os.ReadFile(filepath.Clean(privKeyPath))
+	ecdsaPriv, err := os.ReadFile(filepath.Clean(privKeyPath))
+	if err != nil {
+		return nil, err
+	}
 	pb, _ := pem.Decode(ecdsaPriv)
+	if pb == nil {
+		return nil, errors.Errorf("failed to decode PEM private key in %s", privKeyPath)
+	}
 	pwd := os.Getenv(cosignPwdEnvKey) //GetPass(true)
 	x509Encoded, err := encrypted.Decrypt(pb.Bytes, []byte(pwd))
 	if err != nil {
@@ -107,8 +113,12 @@ func GenerateAttestation(provPath, privKeyPath string) (*dsse.Envelope, error) {
 		return nil, err
 	}
 
+	ecdsaKey, ok := priv.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, errors.Errorf("expected an ECDSA private key in %s, but found %T", privKeyPath, priv)
+	}
 	intotoSigner := &IntotoSigner{
-		key: priv.(*ecdsa.PrivateKey),
+		key: ecdsaKey,
 	}
 	signer, err := dsse.NewEnvelopeSigner(intotoSigner)
 	if err != nil {
