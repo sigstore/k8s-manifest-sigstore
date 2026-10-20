@@ -69,8 +69,7 @@ jobs:
           go-version: '1.25.x'
           cache: false
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
-          install-mode: goinstall
+          version: v2.15
           args: --timeout=10m
