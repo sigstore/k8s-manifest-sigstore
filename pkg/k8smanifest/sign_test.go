@@ -54,6 +54,7 @@ func TestSign(t *testing.T) {
 		UpdateAnnotation: true,
 	}
 	so.Force = true
+	so.NoTlogUpload = true
 
 	signedBytes, err := Sign(fpath, so)
 	if err != nil {
@@ -138,6 +139,7 @@ func TestNonTarballSign(t *testing.T) {
 		UpdateAnnotation: true,
 	}
 	so.Force = true
+	so.NoTlogUpload = true
 
 	signedBytes, err := Sign(fpath, so)
 	if err != nil {
