@@ -15,34 +15,60 @@
 
 # TODO: enable some disabled linters below
 
+version: "2"
+
 linters:
   enable:
   - asciicheck
   - errcheck
   # - errorlint
-  - gofmt
-  - goimports
   # - gosec
   # - gocritic
   - importas
   # - prealloc
   # - revive
   # - misspell
-  # - stylecheck
   - tparallel
   # - unconvert
   # - unparam
   # - whitespace
+  settings:
+    # staticcheck in v2 bundles the former stylecheck (ST*) and quickfix (QF*)
+    # check groups. Keep SA*/S* (correctness and simplifications) and drop the
+    # style/quickfix groups to match pre-v2 behaviour.
+    staticcheck:
+      checks:
+      - all
+      - -ST*
+      - -QF*
+  exclusions:
+    presets:
+    - comments
+    - common-false-positives
+    - legacy
+    - std-error-handling
+    rules:
+    - path: _test\.go
+      linters:
+      - errcheck
+      - gosec
+    # in-toto-golang v0.11.0 marks Statement/StatementHeader/Subject as
+    # deprecated in favour of the new in-toto/attestation Go module. Migrating
+    # the provenance code is tracked separately; silence SA1019 in those files
+    # until that migration lands.
+    - path: provenance\.go
+      text: "SA1019"
+
+formatters:
+  enable:
+  - gofmt
+  - goimports
+
 issues:
   uniq-by-line: false
-
-  exclude-rules:
-  - path: _test\.go
-    linters:
-    - errcheck
-    - gosec
   max-issues-per-linter: 0
   max-same-issues: 0
+
 run:
   issues-exit-code: 1
   timeout: 10m
